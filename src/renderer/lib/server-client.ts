@@ -240,7 +240,10 @@ function publishRuntimeEvent(
   aiInstructionsChanged: ReadonlySet<(repositoryIds: string[]) => void>,
 ): void {
   if (event.type === 'repository.changed') {
-    for (const listener of repositoryChanged) listener(event.repositoryId, event.scope);
+    for (const listener of repositoryChanged) {
+      if (event.watch) listener(event.repositoryId, event.scope, event.watch);
+      else listener(event.repositoryId, event.scope);
+    }
   } else if (event.type === 'repository.active-changed') {
     for (const listener of activeRepositoryChanged) listener(event.repository);
   } else if (event.type === 'ai.instructions-changed') {

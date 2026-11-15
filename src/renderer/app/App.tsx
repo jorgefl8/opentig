@@ -79,7 +79,8 @@ import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
 import { isUserIdle } from '@/lib/window-focus';
 import { dropFilesAhead, prefetchFile } from '@/features/viewer/viewer-prefetch';
-import { changeGeneration, noteChange, type FileStamp } from '@/features/viewer/content-cache';
+import { changeGeneration, noteChange, setWatching, type FileStamp } from '@/features/viewer/content-cache';
+import type { RepositoryWatchState } from '../../shared/runtime-events';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -116,6 +117,8 @@ const VIEW_STORAGE_KEY = 'opentig.lastView';
 const BACKGROUND_REFRESH_RETRY_MS = 1_000;
 const WORKTREE_AGENTS_REFRESH_MS = 10_000;
 const HISTORY_STALE_MS = 30_000;
+/** How often a repository the server cannot fully watch is read again. */
+const UNWATCHED_REFRESH_MS = 10_000;
 /** A branch switch Git refused over local changes; `allowAgents` keeps a confirmed agent warning confirmed. */
 interface BlockedBranchSwitch { ref: string; label: string; files: string[]; allowAgents?: boolean }
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
@@ -267,6 +270,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // A path we just created/renamed/moved the viewer onto; it may be missing from
   // an in-flight (stale) file snapshot, so don't declare it deleted until it appears.
   const pendingViewerPathRef = useRef<string | null>(null);
+  // The open repository's watch on the server, when it is not reporting every change.
+  const [watchTrouble, setWatchTrouble] = useState<{ repositoryId: string; state: RepositoryWatchState } | null>(null);
   /** Shown instead of the section's own selection once a requested section switch lands. */
   const pendingSectionSelectionRef = useRef<ViewerSelection>(null);
   // What each section last showed, per repository; and which section of which repository the viewer shows now.
@@ -501,6 +506,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
       setBootstrap(data);
       setRepository(data.activeRepository);
+      setWatchTrouble(data.activeRepository && data.activeRepositoryWatch && data.activeRepositoryWatch !== 'watching'
+        ? { repositoryId: data.activeRepository.id, state: data.activeRepositoryWatch } : null);
       setUnavailableRepositoryIds(new Set(data.unavailableRepositoryIds ?? []));
       setUnavailableRepository(data.recentRepositories.find((item) => item.id === data.unavailableActiveRepositoryId) ?? null);
     }).catch((reason) => {
@@ -1131,7 +1138,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection, sectionSelections]);
 
-  useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope) => {
+  useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope, watch) => {
+    if (watch) setWatchTrouble(watch === 'watching' ? null : { repositoryId, state: watch });
     if (repositoryId !== repository?.id) return;
     void refresh({ background: true, scope });
     // An open refs manager may be showing a worktree whose removal another request finished.
@@ -1140,9 +1148,22 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubInfo(repositoryId) });
     // A file read ahead of a click may be the one that just changed.
     if (scope !== 'refs' && scope !== 'worktrees') dropFilesAhead(repositoryId);
-    // So may any file or change the viewer keeps; a moved HEAD changes what is staged.
-    if (scope !== 'worktrees') noteChange();
+    // So may any file or change the viewer keeps: a moved HEAD changes what is staged, and a
+    // linked worktree's index lives among the worktree metadata.
+    noteChange();
   }), [appQueryClient, refresh, repository?.id]);
+
+  // While the server cannot report every change in the open repository, it is read on a timer instead,
+  // and nothing the viewer read before is trusted to be current.
+  const repositoryWatchDegraded = watchTrouble !== null && watchTrouble.repositoryId === repository?.id;
+  useEffect(() => {
+    setWatching(!repositoryWatchDegraded);
+    if (!repositoryWatchDegraded) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && !isUserIdle()) void refresh({ background: true, scope: 'unknown' });
+    }, UNWATCHED_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [refresh, repositoryWatchDegraded]);
 
   useEffect(() => {
     if (!bootstrap?.performanceAutomation) return;

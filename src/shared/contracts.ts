@@ -6,6 +6,7 @@ import type { SerializedOperationError } from './errors';
 import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
 import type { OpenTigServerIdentity } from './server-protocol';
+import type { RepositoryWatchState } from './runtime-events';
 import type { RepositoryChangeScope } from './repository-change';
 import type { AiLogEntry } from './ai-log';
 import type { ProblemLogEntry, ProblemLogRecordInput } from './problems-log';
@@ -57,6 +58,8 @@ export interface DiffResult {
   binary: boolean;
   truncated: boolean;
   lineCount: number;
+  /** A working-tree diff whose file the server is watching, so a change to it will be reported. */
+  watched?: boolean;
 }
 
 export interface FileResult {
@@ -72,6 +75,8 @@ export interface FileResult {
    * them, so the client keeps such a read only until something changes. Absent from older servers.
    */
   readAtMs?: number;
+  /** The server is watching this file's folder, so a change to it will be reported. Absent from older servers. */
+  watched?: boolean;
 }
 
 export type ImageFileResult =
@@ -850,6 +855,8 @@ export interface BootstrapData {
   unavailableActiveRepositoryId?: string | null;
   /** Present when bootstrap arrived through the authoritative server transport. */
   server?: OpenTigServerIdentity;
+  /** How the active repository is watched for changes; absent from older servers, which watch it or say nothing. */
+  activeRepositoryWatch?: RepositoryWatchState;
 }
 
 /** Another saved repository found in the folder a moved repository now lives in. */
@@ -1084,7 +1091,8 @@ export interface OpenTigApi {
     onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void): () => void;
     /** The connection to the server came back, after events may have been missed. */
     onReconnected(callback: () => void): () => void;
-    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
+    /** `watch` is set when the server's watch of the repository ran into trouble or recovered. */
+    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };
   projects: {

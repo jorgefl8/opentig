@@ -76,12 +76,14 @@ export function registerServerCommands(
   handle(IPC.bootstrap, 'bootstrap', async () => {
     const activeRepository = await services.repositories.restore();
     if (activeRepository) services.watcher.start(activeRepository);
+    const activeRepositoryWatch = activeRepository ? services.watcher.state(activeRepository.id) : undefined;
     const unavailableRepositoryIds = await services.repositories.unavailableIds();
     const activeId = services.settings.activeRepositoryId;
     return {
       unavailableRepositoryIds,
       unavailableActiveRepositoryId: !activeRepository && activeId && unavailableRepositoryIds.includes(activeId) ? activeId : null,
       onboardingVersion: services.settings.onboardingVersion,
+      ...(activeRepositoryWatch ? { activeRepositoryWatch } : {}),
       recentRepositories: services.repositories.recents(),
       repositoryProjects: services.settings.repositoryProjects,
       filesTreeStates: services.settings.filesTreeStates,
@@ -198,7 +200,13 @@ export function registerServerCommands(
     directoryPath === '' ? '' : stringArg(directoryPath, 'directory-entries'),
   ));
   // Reads a client may stop (see `cancel` in the WebSocket protocol) take the request's signal.
-  handleWithContext(IPC.repositoryReadFile, 'read-file', (context, id, filePath, allowLarge) => services.files.read(stringArg(id, 'read-file', 64), stringArg(filePath, 'read-file'), allowLarge === true, context.signal));
+  handleWithContext(IPC.repositoryReadFile, 'read-file', async (context, id, filePath, allowLarge) => {
+    const repositoryId = stringArg(id, 'read-file', 64);
+    const relativePath = stringArg(filePath, 'read-file');
+    // Asked before reading: a watch that started meanwhile may not have seen a change made before it.
+    const watched = services.watcher.covers(repositoryId, relativePath);
+    return { ...await services.files.read(repositoryId, relativePath, allowLarge === true, context.signal), watched };
+  });
   handle(IPC.repositoryLineBlame, 'line-blame', (id, filePath, draft) => services.operations.lineBlame(
     stringArg(id, 'line-blame', 64),
     stringArg(filePath, 'line-blame'),
@@ -356,13 +364,12 @@ export function registerServerCommands(
   handle(IPC.repositoryFileHistoryState, 'file-history-state', (id) => services.fileHistory.state(stringArg(id, 'file-history-state', 64)));
   handle(IPC.repositoryUndoFileOperation, 'undo-file-operation', (id) => services.fileHistory.undo(stringArg(id, 'undo-file-operation', 64)));
   handle(IPC.repositoryRedoFileOperation, 'redo-file-operation', (id) => services.fileHistory.redo(stringArg(id, 'redo-file-operation', 64)));
-  handleWithContext(IPC.diffGet, 'diff', (context, raw) => {
+  handleWithContext(IPC.diffGet, 'diff', async (context, raw) => {
     const request = raw as Partial<DiffRequest>;
-    return services.operations.diff({
-      repositoryId: stringArg(request.repositoryId, 'diff', 64),
-      path: stringArg(request.path, 'diff'),
-      kind: request.kind === 'staged' ? 'staged' : 'unstaged',
-    }, context.signal);
+    const repositoryId = stringArg(request.repositoryId, 'diff', 64);
+    const diffPath = stringArg(request.path, 'diff');
+    const watched = services.watcher.covers(repositoryId, diffPath);
+    return { ...await services.operations.diff({ repositoryId, path: diffPath, kind: request.kind === 'staged' ? 'staged' : 'unstaged' }, context.signal), watched };
   });
   handleWithContext(IPC.diffCommit, 'commit-diff', (context, id, oid) => services.operations.commitDiff(stringArg(id, 'commit-diff', 64), stringArg(oid, 'commit-diff', 128), context.signal));
   handleWithContext(IPC.diffCommitFile, 'commit-file-diff', (context, id, oid, filePath, oldPath) => services.operations.commitFileDiff(

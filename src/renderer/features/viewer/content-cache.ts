@@ -19,7 +19,10 @@ import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
  * necessarily carries a later time. This is Git's rule for racily clean index
  * entries. Tools that put back an older time on purpose are not caught.
  *
- * Without a working watcher none of this is trusted, and every open reads again.
+ * Only reads the server marks as `watched` are kept: a file in a folder the
+ * server does not watch, such as a Git-ignored one on Linux, or a server that
+ * does not say, is read again on every open. Without a working watcher none of
+ * this is trusted either.
  */
 
 /** Wider than the coarsest common timestamp granularity, FAT's two seconds. */
@@ -73,8 +76,9 @@ const fileKey = (repositoryId: string, path: string) => `${repositoryId}\0${path
 const diffKey = (repositoryId: string, kind: 'staged' | 'unstaged', path: string) => `${repositoryId}\0${kind}\0${path}`;
 
 export function keepFile(repositoryId: string, value: FileResult, readAt: number): void {
-  // A preview limited by size, or read past that limit on request, is read again each time.
-  if (value.tooLarge || value.binary) return;
+  // A preview limited by size, or read past that limit on request, is read again each time, and so is
+  // a file no watcher would report a change to.
+  if (value.tooLarge || value.binary || value.watched !== true) return;
   files.set(fileKey(repositoryId, value.path), { generation: readAt, value });
 }
 
@@ -94,6 +98,7 @@ export function keptFile(repositoryId: string, path: string, stamp: FileStamp | 
 }
 
 export function keepDiff(repositoryId: string, kind: 'staged' | 'unstaged', path: string, value: DiffResult, readAt: number): void {
+  if (value.watched !== true) return;
   diffs.set(diffKey(repositoryId, kind, path), { generation: readAt, value });
 }
 

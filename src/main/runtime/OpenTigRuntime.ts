@@ -3,7 +3,7 @@ import { githubRepositoryKey, type GitHubAccountDetection } from '../../shared/g
 import type { OpenTigPlatform, OpenTigRuntimeMode, RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { mergeRepositoryChangeScopes } from '../../shared/repository-change';
-import type { OpenTigRuntimeEvent } from '../../shared/runtime-events';
+import type { OpenTigRuntimeEvent, RepositoryWatchState } from '../../shared/runtime-events';
 import type { CommitMessageService } from '../ai/CommitMessageService';
 import type { CliProcessRunner } from '../ai/CliProcessRunner';
 import type { PullRequestDraftService } from '../ai/PullRequestDraftService';
@@ -101,6 +101,13 @@ export class OpenTigRuntime {
     if (this.closePromise) return;
     const repositoryIds = this.services.repositories.recents().filter(repository => githubRepositoryKey(repository.commonDir) === githubRepositoryKey(commonDir)).map(repository => repository.id);
     this.onEvent({ type: 'ai.instructions-changed', repositoryIds });
+  }
+
+  /** The watch ran into trouble or recovered: clients read the repository again and know whether to keep doing so. */
+  publishRepositoryWatch(repositoryId: string, state: RepositoryWatchState): void {
+    if (this.closePromise) return;
+    this.services.repositories.invalidateIfKnown(repositoryId);
+    this.onEvent({ type: 'repository.changed', repositoryId, scope: 'unknown', watch: state });
   }
 
   publishActiveRepositoryChange(repository: RepositoryInfo): void {
