@@ -105,11 +105,12 @@ interface ViewerProps {
   onDiscardDiff?: ((path: string) => void) | undefined;
 }
 
+/** A document on screen, and the repository it was read from: while another loads, it may not be the open one. */
 type ViewerData =
-  | { docKey: string; type: 'diff'; value: DiffResult }
-  | { docKey: string; type: 'commit-files'; value: CommitFile[] }
-  | { docKey: string; type: 'file' | 'conflict'; value: FileResult }
-  | { docKey: string; type: 'image'; value: ImageFileResult }
+  | { docKey: string; repositoryId: string; type: 'diff'; value: DiffResult }
+  | { docKey: string; repositoryId: string; type: 'commit-files'; value: CommitFile[] }
+  | { docKey: string; repositoryId: string; type: 'file' | 'conflict'; value: FileResult }
+  | { docKey: string; repositoryId: string; type: 'image'; value: ImageFileResult }
   | null;
 
 /** A file shown as source by `EditableFileViewer`, not through a preview of its own. */
@@ -196,7 +197,7 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
           if (selection.type === 'file' && isKnownImagePath(selection.path)) {
             const value = await withSignal(signal, () => opentig.repository.readImage(repositoryId, selection.path));
             if (token !== requestToken.current) return;
-            setData({ docKey, type: 'image', value });
+            setData({ docKey, repositoryId, type: 'image', value });
             return;
           }
           const large = selection.type === 'conflict' ? true : allowLarge;
@@ -208,7 +209,7 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
           if (!kept && selection.type === 'file' && !large) keepFile(repositoryId, value, generation);
           if (token !== requestToken.current) return;
           if (selection.type === 'conflict') {
-            setData({ docKey, type: 'conflict', value });
+            setData({ docKey, repositoryId, type: 'conflict', value });
             return;
           }
           // Another file keeps the previous document on screen a moment longer to open
@@ -225,12 +226,12 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
             && current.value.content === value.content && current.value.size === value.size
             && current.value.binary === value.binary && current.value.tooLarge === value.tooLarge
             ? current
-            : { docKey, type: 'file', value });
+            : { docKey, repositoryId, type: 'file', value });
         } else if (selection.type === 'commit') {
           // A commit opens as the list of its files; each file's diff is read when it unfolds.
           const files = await commitFiles(repositoryId, selection.oid, signal);
           if (token !== requestToken.current) return;
-          setData((current) => current && current.docKey === docKey && current.type === 'commit-files' ? current : { docKey, type: 'commit-files', value: files });
+          setData((current) => current && current.docKey === docKey && current.type === 'commit-files' ? current : { docKey, repositoryId, type: 'commit-files', value: files });
         } else {
           let value: DiffResult;
           if (selection.type === 'commit-file') {
@@ -251,7 +252,7 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
           setData((current) => current && current.docKey === docKey && current.type === 'diff'
             && current.value.patch === next.patch && current.value.binary === next.binary
             ? current
-            : { docKey, type: 'diff', value: next });
+            : { docKey, repositoryId, type: 'diff', value: next });
         }
       } catch (reason) {
         if (token === requestToken.current && !signal.aborted) setError(reason instanceof Error ? reason.message : 'Could not load the viewer.');
@@ -270,16 +271,21 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
   const handleFileDirtyChange = useCallback((dirty: boolean) => {
     fileDirty.current = dirty;
   }, []);
+  // An editor belongs to the document on screen, which stays there while another repository's loads:
+  // its drafts and saves go to that document's repository, not to the one now open.
+  const documentRepositoryId = data?.repositoryId ?? repositoryId;
+  const shownDocKey = data?.docKey ?? null;
   const saveFile = useCallback(async (path: string, content: string, expectedContent: string): Promise<WriteFileResult> => {
     // A draft that survived a tab switch keeps the text the file had when the
     // edit began; saving against a freshly read disk copy would overwrite an
     // external change instead of reporting the conflict.
-    const draft = draftFor(path, repositoryId);
-    const result = await opentig.repository.writeFile(repositoryId, path, content, draft?.expectedContent ?? expectedContent);
+    const draft = draftFor(path, documentRepositoryId);
+    const result = await opentig.repository.writeFile(documentRepositoryId, path, content, draft?.expectedContent ?? expectedContent);
     if (result.status === 'saved') {
-      fileDirty.current = false;
-      onDraftSaved(path, repositoryId);
-      setData((current) => current?.type === 'file' && current.value.path === path
+      // Only the document that was saved, if it is still the one on screen, takes the saved content.
+      if (shown.current.docKey === shownDocKey) fileDirty.current = false;
+      onDraftSaved(path, documentRepositoryId);
+      setData((current) => current?.type === 'file' && current.docKey === shownDocKey && current.value.path === path
         ? {
           ...current,
           value: {
@@ -294,7 +300,7 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
         : current);
     }
     return result;
-  }, [draftFor, onDraftSaved, repositoryId]);
+  }, [documentRepositoryId, draftFor, onDraftSaved, shownDocKey]);
 
   // Keyed on the path alone. This used to key on the draft's `mtimeMs`, but
   // that value bumps on every successful save, which remounted the editor -
@@ -302,8 +308,8 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
   // never remounts while the tab stays open; `useEditableFileDraft` handles
   // resyncing the draft in place when the file genuinely changes on disk.
   const fileMountKey = useCallback((file: FileResult): string => file.path, []);
-  const draftContent = useCallback((file: FileResult): string => draftFor(file.path, repositoryId)?.content ?? file.content, [draftFor, repositoryId]);
-  const reportDraft = useCallback((file: FileResult) => (content: string) => onDraftChange(file.path, content, file.content, file.mtimeMs, repositoryId), [onDraftChange, repositoryId]);
+  const draftContent = useCallback((file: FileResult): string => draftFor(file.path, documentRepositoryId)?.content ?? file.content, [documentRepositoryId, draftFor]);
+  const reportDraft = useCallback((file: FileResult) => (content: string) => onDraftChange(file.path, content, file.content, file.mtimeMs, documentRepositoryId), [documentRepositoryId, onDraftChange]);
   // While a new document loads, the previous one stays on screen; the swap
   // animates when the fresh data arrives instead of blanking to a spinner.
   const reloading = loading && data !== null && !error;
