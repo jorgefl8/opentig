@@ -150,7 +150,7 @@ describe('GitHub answers kept on the server', () => {
   });
 
   it('never shows a finished run as current: it may have been started again on GitHub', async () => {
-    const { service, state } = server(path.join(await folder(), 'github-cache.json'));
+    const { service, state, clock } = server(path.join(await folder(), 'github-cache.json'));
     expect((await service.getActionRun('repo', 5)).conclusion).toBe('failure');
     // Moments later, a client that can mark it gets it marked, and the run is read again behind it.
     const client = keptSink();
@@ -158,7 +158,13 @@ describe('GitHub answers kept on the server', () => {
     expect(client.answers).toHaveLength(1);
     await client.answers[0]!.refresh;
     expect(state.views).toBe(2);
-    // A client that cannot mark it waits for GitHub.
+    // Told of the refresh, the client reads again without accepting a kept answer: the refresh's answer, not another read.
+    const after = keptSink();
+    expect((await service.getActionRun('repo', 5)).conclusion).toBe('success');
+    expect(after.answers).toHaveLength(0);
+    expect(state.views).toBe(2);
+    // Past that moment, a client that cannot mark it waits for GitHub.
+    clock.now += 10_000;
     await service.getActionRun('repo', 5);
     expect(state.views).toBe(3);
   });

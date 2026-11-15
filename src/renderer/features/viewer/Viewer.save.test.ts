@@ -48,7 +48,7 @@ it('reports a save as done in the repository it began in, though another is open
   expect(onDraftSaved).toHaveBeenCalledExactlyOnceWith('README.md', 'worktree-a');
 });
 
-function viewerProps(repositoryId: string, handlers: { onDraftSaved?: unknown; onDraftChange?: unknown } = {}) {
+function viewerProps(repositoryId: string, handlers: Partial<Parameters<typeof Viewer>[0]> = {}) {
   return {
     repositoryId, selection: { type: 'file' as const, path: 'README.md' }, commits: [], diffView: 'unified' as const, wrapLines: false, theme: 'light' as const, revision: 0, readOnly: false,
     draftFor: () => null, onSelect: vi.fn(), onOpenFile: vi.fn(), onDiffViewChange: vi.fn(), onWrapLinesChange: vi.fn(),
