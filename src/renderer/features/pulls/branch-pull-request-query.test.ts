@@ -6,6 +6,8 @@ import { branchPullRequestQueryOptions } from './branch-pull-request-query';
 import { queryKeys, resetGitHubQueries } from '@/lib/query-client';
 
 const { find } = vi.hoisted(() => ({ find: vi.fn() }));
+// These tests follow each query's own cadence over many minutes with nobody at the window; pausing while idle is covered in window-focus.test.ts.
+vi.mock('@/lib/window-focus', async (original) => ({ ...await original<typeof import('@/lib/window-focus')>(), pausePollingWhileIdle: () => {} }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: { findPullRequestForBranch: find } } }));
 let client: QueryClient;
 let unsubscribe: (() => void) | undefined;

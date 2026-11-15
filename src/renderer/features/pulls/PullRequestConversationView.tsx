@@ -8,16 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
-import { opentig } from '@/lib/opentig-api';
-import { queryKeys } from '@/lib/query-client';
 import { openOnGitHub } from './gh-utils';
+import { pullRequestConversationQueryOptions, type RenderedEntry } from './pull-request-conversation-query';
 import { GitHubAvatar } from './GitHubAvatar';
 import { PullRequestComposer } from './PullRequestComposer';
 import { PullRequestEntryEditor, PullRequestEntryMenu } from './PullRequestEntryActions';
 import { hasViewerDraft, pullRequestEntryEditDraft } from './viewer-drafts';
 import { Spinner } from '@/components/ui/spinner';
 
-type RenderedEntry = PullRequestConversationEntry & { html: string };
 
 const VERDICT_TEXT: Record<NonNullable<PullRequestConversationEntry['verdict']>, { text: string; className?: string }> = {
   APPROVED: { text: 'approved', className: 'verdict-approved' },
@@ -26,16 +24,6 @@ const VERDICT_TEXT: Record<NonNullable<PullRequestConversationEntry['verdict']>,
   DISMISSED: { text: 'gave a dismissed review' },
   PENDING: { text: 'is reviewing' },
 };
-
-async function readConversation(repositoryId: string, number: number) {
-  const conversation = await opentig.github.getPullRequestConversation(repositoryId, number);
-  const { renderMarkdown } = await import('@/features/markdown/render-markdown');
-  const entries = await Promise.all(conversation.entries.map(async (entry): Promise<RenderedEntry> => ({
-    ...entry,
-    html: entry.body.trim() ? await renderMarkdown(entry.body).catch(() => '<p>Could not render this comment.</p>') : '',
-  })));
-  return { ...conversation, entries };
-}
 
 /** Comments and reviews come from third parties: they only reach the page through the sanitizing Markdown pipeline. */
 export function PullRequestConversationView({ repositoryId, number, url, live, active = true, draft, onDraftChange }: {
@@ -50,12 +38,7 @@ export function PullRequestConversationView({ repositoryId, number, url, live, a
   onDraftChange(value: string): void;
 }) {
   const [hideBots, setHideBots] = useState(false);
-  const query = useQuery({
-    queryKey: queryKeys.pullRequestConversation(repositoryId, number),
-    queryFn: () => readConversation(repositoryId, number),
-    // The PR's live state reloads it as soon as GitHub reports a change.
-    staleTime: 60_000,
-  });
+  const query = useQuery(pullRequestConversationQueryOptions(repositoryId, number));
   const conversation = query.data;
   const entries = conversation?.entries ?? [];
   const shown = hideBots ? entries.filter((entry) => !entry.author?.isBot) : entries;

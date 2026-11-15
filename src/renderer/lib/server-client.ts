@@ -27,6 +27,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   const aiInstructionsChanged = new Set<(repositoryIds: string[]) => void>();
   const githubAccountsChanged = new Set<(repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void>();
   const activeRepositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>();
+  const reconnected = new Set<() => void>();
   const invoke = <Command extends Parameters<OpenTigWebSocketTransport['request']>[0]>(
     command: Command,
     ...args: Parameters<OpenTigServerApiMethod<Command>>
@@ -201,6 +202,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     events: {
       onAiInstructionsChanged: (callback) => subscribe(aiInstructionsChanged, callback),
       onGitHubAccountsChanged: (callback) => subscribe(githubAccountsChanged, callback),
+      onReconnected: (callback) => subscribe(reconnected, callback),
       onRepositoryChanged: (callback) => subscribe(repositoryChanged, callback),
       onActiveRepositoryChanged: (callback) => subscribe(activeRepositoryChanged, callback),
     },
@@ -210,7 +212,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   transport.onReconnect(async () => {
     const data = await api.app.bootstrap();
     for (const listener of aiInstructionsChanged) listener([]);
-    for (const listener of githubAccountsChanged) listener();
+    // Not an account change, which empties what was read with the old account: what GitHub said is read again while it stays on screen.
+    for (const listener of reconnected) listener();
     if (!data.activeRepository) return;
     for (const listener of activeRepositoryChanged) listener(data.activeRepository);
     for (const listener of repositoryChanged) listener(data.activeRepository.id, 'unknown');

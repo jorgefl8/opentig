@@ -76,6 +76,8 @@ Set **Settings → General → Repository sync → Remote check interval** to co
 | **Preset or custom** | Choose a common interval, or 5–300 seconds in steps of five |
 | **Off** | Disables periodic checks; checks still run when you pull or push |
 
+Periodic checks pause while the window is hidden and after six minutes without any activity in it, and resume with the next one.
+
 Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and then refresh the local workspace, even with automatic checks off. The icon rotates while refreshing and returns to rest afterward.
 
 Refresh also checks for app updates immediately instead of waiting for the five-minute update interval.

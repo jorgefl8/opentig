@@ -31,7 +31,7 @@ vi.mock('@/lib/opentig-api', () => ({
     diagnostics: { record: async () => {} },
     events: {
       onGitHubAccountsChanged: (callback: () => void) => { calls.accountsChanged = callback; return () => {}; },
-      onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {},
+      onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {}, onReconnected: () => () => {},
     },
   },
   serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },

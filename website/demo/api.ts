@@ -457,6 +457,7 @@ export const opentig: OpenTigApi = {
     onActiveRepositoryChanged: () => () => {},
     onAiInstructionsChanged: () => () => {},
     onGitHubAccountsChanged: () => () => {},
+    onReconnected: () => () => {},
   },
 };
 export const serverClient = {

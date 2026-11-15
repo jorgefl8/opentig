@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconRefresh, IconX } from '@tabler/icons-react';
 import { formatDateTime } from '@shared/date-format';
 import type { ActionRunDetails, ActionRunJob } from '../../../shared/contracts';
@@ -13,6 +13,7 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { ActionStatusIcon } from './ActionStatusIcon';
+import { listedRun } from './action-queries';
 import { actionStatusLabel, actionTone, elapsed, eventLabel, formatDuration, runDuration, runSentence } from './action-status';
 import { WorkflowCanvas } from './WorkflowCanvas';
 import './actions.css';
@@ -44,17 +45,21 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
     queryFn: () => opentig.github.getActionRun(repositoryId, runId),
     refetchInterval: (current) => current.state.data && current.state.data.status !== 'completed' ? ACTIVE_RUN_REFRESH_MS : false,
   });
-  const run = query.data ?? null;
+  const details = query.data ?? null;
+  // The list row already has the header's facts, so the run shows at once and its jobs fill in.
+  const queryClient = useQueryClient();
+  const [listed] = useState(() => listedRun(queryClient, repositoryId, runId));
+  const run = details ?? listed;
   const [selectedJobId, setSelectedJobId] = useState<number | null>(jobId);
   useEffect(() => { setSelectedJobId(jobId); }, [jobId]);
   const active = run !== null && run.status !== 'completed';
   const now = useNow(active);
-  const jobs = useMemo(() => new Map((run?.jobs ?? []).map((job) => [job.id, job])), [run?.jobs]);
+  const jobs = useMemo(() => new Map((details?.jobs ?? []).map((job) => [job.id, job])), [details?.jobs]);
   const selectedJob = selectedJobId === null ? null : jobs.get(selectedJobId) ?? null;
   const title = run ? run.title : `Run ${runId}`;
   const bar = <MobileViewerTitle title={title} subtitle={run ? `${run.workflowName} #${run.number}` : undefined} />;
 
-  if (query.isError && !run) {
+  if (query.isError && !details) {
     return (
       <div className="viewer-message flex-col gap-3">
         {bar}
@@ -83,7 +88,7 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
             </span>}
           </div>
           <div className="pr-viewer-status">
-            <span className={`workflow-run-state action-${tone}`}><ActionStatusIcon tone={tone} /> {runSentence(run.status, run.conclusion, run.jobs)}</span>
+            <span className={`workflow-run-state action-${tone}`}><ActionStatusIcon tone={tone} /> {runSentence(run.status, run.conclusion, details?.jobs ?? [])}</span>
             <span>{run.workflowName} #{run.number}{run.attempt > 1 ? ` · attempt ${run.attempt}` : ''}</span>
             {run.branch && <span className="pr-branches">{run.branch}</span>}
             <span className="pr-branches">{run.headSha.slice(0, 7)}</span>
@@ -92,10 +97,12 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
           </div>
         </div>
       </header>
-      <RunNotes run={run} />
+      {details && <RunNotes run={details} />}
       <div className={`workflow-run-body ${selectedJob ? 'with-job' : ''}`}>
-        {run.graph.length
-          ? <WorkflowCanvas graph={run.graph} jobs={jobs} runCompleted={!active} selectedJobId={selectedJobId} onSelectJob={setSelectedJobId} now={now} />
+        {!details
+          ? <div className="viewer-message" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading jobs…" /></div>
+          : details.graph.length
+          ? <WorkflowCanvas graph={details.graph} jobs={jobs} runCompleted={!active} selectedJobId={selectedJobId} onSelectJob={setSelectedJobId} now={now} />
           : <div className="viewer-message">{active ? 'Waiting for the first job to start…' : 'This run has no jobs.'}</div>}
         <AnimatePresence initial={false}>
           {selectedJob && <JobPanel key="job" job={selectedJob} now={now} reduceMotion={Boolean(reduceMotion)} onClose={() => setSelectedJobId(null)} />}

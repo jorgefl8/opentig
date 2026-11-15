@@ -1076,6 +1076,8 @@ export interface OpenTigApi {
     onAiInstructionsChanged(callback: (repositoryIds: string[]) => void): () => void;
     /** `detected` reports an account OpenTig chose for the listed repository because the default had no access. */
     onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void): () => void;
+    /** The connection to the server came back, after events may have been missed. */
+    onReconnected(callback: () => void): () => void;
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };

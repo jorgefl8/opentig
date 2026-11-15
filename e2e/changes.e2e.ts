@@ -82,7 +82,8 @@ test('a changed HTML file opens as a diff, and Open file shows its preview', asy
 
   // The rendered page stays one step away.
   await clickRowAction(changeRow(page, 'Changes', 'index.html'), 'Open file');
-  await expect(page.getByRole('tab', { name: 'Preview' })).toHaveAttribute('aria-selected', 'true');
+  // The file's own tab above is named "index.html, preview", so only the exact name is the viewer's.
+  await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTitle('Preview of index.html')).toBeVisible();
 });
 

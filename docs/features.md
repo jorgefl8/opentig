@@ -85,6 +85,8 @@ Desktop and paired browsers share an authenticated WebSocket backend. Repository
 
 On desktop, a supervised utility process keeps repository watchers and in-flight server state alive through a renderer reload or crash while the desktop process remains open. Unexpected backend exits restart with bounded backoff. Native folder selection and Explorer reveal are desktop-only; browser headers use the full width without reserving desktop window-control space.
 
+Resting the pointer on a file in **Files** or a commit in **History** for a moment reads it, so clicking it shows it without a wait; passing over rows reads nothing.
+
 The workspace shell loads first. Settings, History, PR creation, Files, and Search load when first opened; for a GitHub repository, the GitHub section is prepared in the background. Overlapping watcher and manual refreshes are combined; status-only or reference-only updates keep the current diff mounted.
 
 [Development profiles](development.md) separate Dev application data from production. Repositories and authenticated host CLIs remain real resources in either profile.

@@ -70,12 +70,14 @@ import {
   mergeRefreshRequests, refreshOperationsForScope, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
-import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
+import { queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
 import { listAgents } from '@/features/refs/local-refs-model';
 import { AgentMarks } from '@/features/refs/AgentLabel';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
+import { isUserIdle } from '@/lib/window-focus';
+import { prefetchFile } from '@/features/viewer/viewer-prefetch';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -315,6 +317,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       button: { title: 'Change', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } },
     });
   }), [appQueryClient]);
+  useEffect(() => opentig.events.onReconnected(() => { void refreshGitHubQueries(appQueryClient); }), [appQueryClient]);
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
   // Set by an explicit refresh, so the next read skips the list the backend keeps for a few seconds.
   const freshPulls = useRef(false);
@@ -920,7 +923,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     let inFlight = false;
 
     const run = async () => {
-      if (cancelled || inFlight || addingRepository.current || document.visibilityState === 'hidden') return;
+      // Nobody is looking, or nobody has touched the window for a while: the next turn fetches again.
+      if (cancelled || inFlight || addingRepository.current || document.visibilityState === 'hidden' || isUserIdle()) return;
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
@@ -1051,7 +1055,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => {
     if (view !== 'files' || !repository) return;
     const reconcile = () => {
-      if (document.visibilityState === 'visible') void refreshFilesOnly();
+      if (document.visibilityState === 'visible' && !isUserIdle()) void refreshFilesOnly();
     };
     const timer = window.setInterval(reconcile, 5_000);
     document.addEventListener('visibilitychange', reconcile);
@@ -2899,6 +2903,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     fileClipboardAvailable={capabilities?.fileClipboard === true}
                     revealAvailable={capabilities?.revealInFileManager === true}
                     onQuickOpen={() => setQuickOpen(true)}
+                    onFileIntent={(path) => prefetchFile(repository.id, path)}
                     historyState={fileHistoryState}
                     openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
                     onActivateFile={activateFileTab}

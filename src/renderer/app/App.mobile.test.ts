@@ -16,7 +16,7 @@ vi.mock('@/lib/opentig-api', () => ({
     github: { status: async () => ({ installed: false }), repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }) },
     commits: { list: async () => ({ commits: [], nextCursor: null }) },
     diagnostics: { record: async () => {} },
-    events: { onGitHubAccountsChanged: () => () => {}, onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {} },
+    events: { onGitHubAccountsChanged: () => () => {}, onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {}, onReconnected: () => () => {} },
   },
   serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
 }));

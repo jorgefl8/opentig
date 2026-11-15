@@ -54,3 +54,35 @@ test('switching between sections stays within its request budget', async ({ pair
   // History is read when it first opens, not on every visit; the fetch may read it once more.
   expect(all.reduce((sum, [, requested]) => sum + (requested['commits:list'] ?? 0), 0), JSON.stringify(measured)).toBeLessThanOrEqual(3);
 });
+
+test('resting the pointer on a file or a commit reads it, so the click has nothing left to load', async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'First line\n', 'Add the notes');
+  await openRepository(page, repository);
+  const sidebar = page.getByRole('complementary');
+
+  // Files is the section a new repository opens on.
+  const file = sidebar.getByRole('tree', { name: 'Files' }).getByRole('treeitem', { name: 'notes.txt' });
+  const passedOver = await requestsDuring(page, async () => {
+    // Crossing rows on the way somewhere else asks for nothing.
+    await sidebar.getByRole('treeitem', { name: 'README.md' }).hover();
+    await page.mouse.move(700, 400);
+  });
+  expect(passedOver['repository:read-file'], JSON.stringify(passedOver)).toBeUndefined();
+  const rested = await requestsDuring(page, () => file.hover());
+  expect(rested['repository:read-file'], JSON.stringify(rested)).toBe(1);
+  const opened = await requestsDuring(page, async () => {
+    await file.click();
+    await expect(page.getByRole('textbox', { name: 'notes.txt' })).toContainText('First line');
+  });
+  expect(opened['repository:read-file'], JSON.stringify(opened)).toBeUndefined();
+
+  await section(page, 'History').click();
+  const commit = sidebar.getByRole('list', { name: 'Commit history' }).getByRole('button', { name: 'Add the notes', exact: true });
+  const restedOnCommit = await requestsDuring(page, () => commit.hover());
+  expect(restedOnCommit['diff:commit'], JSON.stringify(restedOnCommit)).toBe(1);
+  const openedCommit = await requestsDuring(page, async () => {
+    await commit.click();
+    await expect(page.getByText('notes.txt').last()).toBeVisible();
+  });
+  expect(openedCommit['diff:commit'], JSON.stringify(openedCommit)).toBeUndefined();
+});

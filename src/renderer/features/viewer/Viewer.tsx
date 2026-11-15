@@ -19,9 +19,9 @@ import { isHtmlPath, isMarkdownPath } from '@/features/files/file-tree';
 import { copyCommitHash } from '@/features/history/copy-commit-hash';
 import { canUndoCommit, commitGitHubUrl } from '@/features/history/history-presentation';
 import { openExternalUrl } from '@/lib/browser-capabilities';
-import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
 import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
+import { commitDiffKey, immutableDiff, takeFileAhead, scopeDiffCache } from './viewer-prefetch';
 import { ContentFade } from '@/components/Reveal';
 import { Spinner } from '@/components/ui/spinner';
 // The code viewers start downloading with the document they will show, so it mounts once, on a viewer that is already there.
@@ -92,15 +92,6 @@ type ViewerData =
   | { docKey: string; type: 'file' | 'conflict'; value: FileResult }
   | { docKey: string; type: 'image'; value: ImageFileResult }
   | null;
-// Commit contents are immutable per oid; only those selections are cached.
-// Patches are JS strings, so two bytes per code unit is a practical upper-bound
-// estimate. Oversized patches remain visible but bypass this cache entirely.
-const diffCache = new ByteBudgetLru<string, DiffResult>({
-  maxEntries: 8,
-  maxBytes: 16 * 1024 * 1024,
-  sizeOf: (value) => value.patch.length * 2 + value.path.length * 2 + 256,
-});
-let diffCacheRepositoryId: string | null = null;
 
 /** A file shown as source by `EditableFileViewer`, not through a preview of its own. */
 function isSourcePath(path: string): boolean {
@@ -156,10 +147,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   }, []);
 
   useEffect(() => {
-    if (diffCacheRepositoryId !== repositoryId) {
-      diffCache.clear();
-      diffCacheRepositoryId = repositoryId;
-    }
+    scopeDiffCache(repositoryId);
     const token = ++requestToken.current;
     setError(null);
     // Pull request selections fetch their own data inside PullRequestViewer.
@@ -180,7 +168,9 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
             setData({ docKey, type: 'image', value });
             return;
           }
-          const value = await opentig.repository.readFile(repositoryId, selection.path, selection.type === 'conflict' ? true : allowLarge);
+          // A file the pointer rested on is already being read; a refresh of the open file always reads again.
+          const ahead = selection.type === 'file' && !allowLarge && shown.current.docKey !== docKey ? takeFileAhead(repositoryId, selection.path) : null;
+          const value = await ahead?.catch(() => null) ?? await opentig.repository.readFile(repositoryId, selection.path, selection.type === 'conflict' ? true : allowLarge);
           if (token !== requestToken.current) return;
           if (selection.type === 'conflict') {
             setData({ docKey, type: 'conflict', value });
@@ -202,16 +192,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
             ? current
             : { docKey, type: 'file', value });
         } else {
-          const immutable = selection.type !== 'diff';
-          let value = immutable ? diffCache.get(docKey) : undefined;
-          if (!value) {
-            value = selection.type === 'commit'
-              ? await opentig.diff.getCommit(repositoryId, selection.oid)
-              : selection.type === 'commit-file'
-                ? await opentig.diff.getCommitFile(repositoryId, selection.oid, selection.path, selection.oldPath)
-                : await opentig.diff.get({ repositoryId, path: selection.path, kind: selection.kind });
-            if (immutable) diffCache.set(docKey, value);
-          }
+          // A commit never changes, so it is read once, by this or by the row the pointer rested on.
+          const value = selection.type === 'commit'
+            ? await immutableDiff(commitDiffKey(repositoryId, selection.oid), () => opentig.diff.getCommit(repositoryId, selection.oid))
+            : selection.type === 'commit-file'
+              ? await immutableDiff(docKey, () => opentig.diff.getCommitFile(repositoryId, selection.oid, selection.path, selection.oldPath))
+              : await opentig.diff.get({ repositoryId, path: selection.path, kind: selection.kind });
           if (token !== requestToken.current) return;
           const next = value;
           // A whole commit opens with its files folded, so it has nothing to highlight yet.

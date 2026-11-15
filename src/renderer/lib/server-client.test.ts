@@ -107,6 +107,23 @@ describe('OpenTig server client', () => {
     expect(fixture.request).toHaveBeenCalledWith(IPC.bootstrap, []);
   });
 
+  it('tells a reconnect apart from an account change, so what GitHub said is refreshed rather than emptied', async () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const accountsChanged = vi.fn();
+    const reconnected = vi.fn();
+    api.events.onGitHubAccountsChanged(accountsChanged);
+    api.events.onReconnected(reconnected);
+
+    await fixture.reconnect();
+    expect(reconnected).toHaveBeenCalledOnce();
+    expect(accountsChanged).not.toHaveBeenCalled();
+
+    fixture.event({ type: 'github.accounts-changed' });
+    expect(accountsChanged).toHaveBeenCalledOnce();
+    expect(reconnected).toHaveBeenCalledOnce();
+  });
+
   it('loads authenticated image bytes over HTTP', async () => {
     const fixture = transportFixture();
     const fetchRequest = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), {

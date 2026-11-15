@@ -33,6 +33,16 @@ export function latestActionRunsOptions(repositoryId: string, workflowId: number
   });
 }
 
+/** A run as a list already holds it, so its viewer has something to show while it reads the jobs. */
+export function listedRun(client: QueryClient, repositoryId: string, runId: number): ActionRunSummary | null {
+  for (const [, data] of client.getQueriesData<unknown>({ queryKey: ['repository', repositoryId, 'action-runs'] })) {
+    const runs = Array.isArray(data) ? data as ActionRunSummary[] : runsOfPages((data as { pages?: ActionRunPage[] } | undefined)?.pages);
+    const found = runs.find((run) => run.id === runId);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** Every run any list has shown, so a new one can be told apart. */
 export function listedRunIds(client: QueryClient, repositoryId: string): Set<number> {
   const ids = new Set<number>();

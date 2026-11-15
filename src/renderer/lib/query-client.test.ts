@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { QueryClient } from '@tanstack/react-query';
-import { queryKeys, queryResourcesForScope, resetGitHubQueries } from './query-client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { GITHUB_DATA_GC_MS, keepGitHubData, queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from './query-client';
 
 describe('renderer query policy', () => {
   it('discards old-account results in every repository while preserving Git data', async () => {
@@ -78,4 +78,57 @@ it('refreshes global default metadata and followers without resetting explicitly
   expect(client.getQueryData(queryKeys.githubAccount('follower'))).toBeUndefined();
   expect(client.getQueryData(queryKeys.githubAccount('fixed'))).toBe('alice');
   client.clear();
+});
+
+describe('GitHub data between visits', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('keeps what GitHub said for half an hour after it was last shown, but not a PR\'s code or local Git data', async () => {
+    vi.useFakeTimers();
+    // The lifetime a browser gives a query by default; outside one, TanStack Query never drops any.
+    const client = new QueryClient({ defaultOptions: { queries: { gcTime: 5 * 60_000 } } });
+    keepGitHubData(client);
+    client.mount();
+    const read = (queryKey: readonly unknown[]) => client.fetchQuery({ queryKey, queryFn: async () => 'read' });
+    const pullRequest = queryKeys.pullRequest('repo', 1);
+    const runs = queryKeys.actionRuns('repo', null);
+    const code = [...queryKeys.pullRequestDiff('repo', 1), 'base', 'head'];
+    const status = queryKeys.status('repo');
+    await Promise.all([pullRequest, runs, code, status].map(read));
+    // Past the five minutes everything else is kept for.
+    await vi.advanceTimersByTimeAsync(6 * 60_000);
+    expect(client.getQueryData(pullRequest)).toBe('read');
+    expect(client.getQueryData(runs)).toBe('read');
+    expect(client.getQueryData(code)).toBeUndefined();
+    expect(client.getQueryData(status)).toBeUndefined();
+    // Reading it again with the app's usual options doesn't shorten its life.
+    await client.fetchQuery({ queryKey: pullRequest, queryFn: async () => 'read again', gcTime: 5 * 60_000 });
+    await vi.advanceTimersByTimeAsync(GITHUB_DATA_GC_MS - 1);
+    expect(client.getQueryData(pullRequest)).toBe('read again');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(client.getQueryData(pullRequest)).toBeUndefined();
+    client.unmount();
+  });
+
+  it('reads GitHub again after a reconnect while keeping what was on screen', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = queryKeys.pullRequest('repo', 1);
+    let answer!: (value: string) => void;
+    let reads = 0;
+    const observer = new QueryObserver(client, { queryKey: key, queryFn: () => ++reads === 1 ? 'before' : new Promise<string>((resolve) => { answer = resolve; }) });
+    const unsubscribe = observer.subscribe(() => undefined);
+    client.setQueryData(queryKeys.status('repo'), 'git status');
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe('before'));
+
+    const refreshed = refreshGitHubQueries(client);
+    await vi.waitFor(() => expect(reads).toBe(2));
+    // The connection dropping must not turn the PR into a placeholder.
+    expect(observer.getCurrentResult()).toMatchObject({ data: 'before', isFetching: true });
+    expect(client.getQueryState(queryKeys.status('repo'))?.isInvalidated).toBe(false);
+    answer('after');
+    await refreshed;
+    expect(observer.getCurrentResult().data).toBe('after');
+    unsubscribe();
+    client.clear();
+  });
 });

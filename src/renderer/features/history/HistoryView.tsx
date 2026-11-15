@@ -1,4 +1,6 @@
 import { formatDate, formatDateTime } from '@shared/date-format';
+import { useIntentPrefetch } from '@/lib/use-intent-prefetch';
+import { prefetchCommitDiff } from '@/features/viewer/viewer-prefetch';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconArrowDown, IconChevronRight, IconFilter, IconRestore, IconSearch } from '@tabler/icons-react';
@@ -36,6 +38,8 @@ const MOBILE_LOAD_MORE_HEIGHT = 48;
 export function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, baseRef, activeOid, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
   const mobile = useMobileLayout();
   const scrollRef = useRef<HTMLDivElement>(null);
+  // A commit the pointer rests on is read then, so clicking it shows it.
+  const readAhead = useIntentPrefetch((oid: string) => prefetchCommitDiff(repositoryId, oid));
   const [expandedCommits, setExpandedCommits] = useState<Set<string>>(new Set());
   const [compact, setCompact] = useState(true);
   const [grouped, setGrouped] = useState(false);
@@ -109,7 +113,8 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
             {commitVirtualizer.getVirtualItems().map((virtualRow) => {
               const { commit, grouped: groupedCommits } = rows[virtualRow.index]!;
               return (
-                <div key={virtualRow.key} ref={commitVirtualizer.measureElement} data-index={virtualRow.index} className="virtual-row" style={{ transform: `translateY(${virtualRow.start}px)` }}>
+                <div key={virtualRow.key} ref={commitVirtualizer.measureElement} data-index={virtualRow.index} className="virtual-row" style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  onPointerEnter={(event) => readAhead.rest(commit.oid, event)} onPointerLeave={readAhead.leave}>
                   <CommitRow phone={mobile} repositoryId={repositoryId} upstream={upstream} baseRef={baseRef} commit={commit}
                     graphRow={graph.rows[virtualRow.index]!} showGraph={showGraph} branchRefs={graph.hasBranch} graphWidth={graphWidth} rowHeight={rowHeight}
                     active={activeOid === commit.oid || groupedCommits.some((item) => item.oid === activeOid)} match={matchesHistory(commit, search)} currentMatch={matches[currentMatch] === virtualRow.index}

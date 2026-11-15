@@ -135,8 +135,9 @@ test('a single file picked from an expanded commit opens alone, including a rena
   await expect(viewer.getByRole('button', { name: 'README.txt', exact: true })).toBeVisible();
   await expect(viewer.getByText('from README.md')).toBeVisible();
 
-  await viewer.getByRole('button', { name: 'All files' }).click();
-  await expect(viewer.getByRole('button', { name: 'All files' })).toBeHidden();
+  // The whole commit has "Expand all files" and "Collapse all files", so only the exact name is this button.
+  await viewer.getByRole('button', { name: 'All files', exact: true }).click();
+  await expect(viewer.getByRole('button', { name: 'All files', exact: true })).toBeHidden();
   await expect(viewer.getByRole('button', { name: 'README.txt', exact: true })).toBeVisible();
   await expect(viewer.getByRole('button', { name: /^docs\/\s*guide\.md$/ })).toBeVisible();
 });
