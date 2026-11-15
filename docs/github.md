@@ -253,7 +253,7 @@ Each job of the workflow file is a box, connected to the jobs it needs, and a ma
 
 **Read a job's log**
 
-**View log**, or a step of the job, opens the job's log in place of the graph; the arrow at its top left, or `Esc`, goes back to the run. The log is shown by step, each folded under a line with its state and its count of errors and warnings. It opens on why the job failed: the failed step unfolded at its first error, or at its last lines when GitHub marked no error. Choosing a step opens the log on that step instead.
+**View log**, or a step of the job, opens the job's log in place of the graph; the arrow at its top left, or `Esc`, goes back to the run. The log is shown by step, each folded under a line with its state and its count of errors and warnings. It opens on why the job failed: the failed step unfolded at its first error, or at its last lines when GitHub marked no error. Choosing a step opens the log on that step instead. GitHub's log doesn't mark where each step starts, so OpenTig finds the line GitHub writes at the start of each step, within the step's times; when it can't place a step that ran, it shows the log whole, with a note, rather than split wrongly.
 
 - Lines GitHub marks as errors, warnings, and notices (`##[error]`, `##[warning]`, `##[notice]`) are highlighted, and the arrows beside **Error 1 of 3** move between errors, unfolding what hides them. Groups (`##[group]`) fold under their title, and those with an error start unfolded.
 - Each line shows its number within the step. Times are hidden; the clock button shows when each line was written, in your time zone.

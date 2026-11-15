@@ -12,38 +12,62 @@ const MARKER_KINDS: Record<string, ActionJobLogLineKind> = {
 /** What JSON adds to each line around its text, in bytes, near enough to keep the answer within the transport's size. */
 const LINE_OVERHEAD = 56;
 
+/** How long the parse runs before letting the server's other work through: every client shares its one thread. */
+const SLICE_MS = 8;
+/** What a line holds before its text: its time and GitHub's marker. */
+const LINE_PREFIX = 64;
+
 /**
- * Splits the text of a job's log, as GitHub serves it, into its steps.
+ * Splits the text of a job's log, as GitHub serves it, into its steps (see `splitSteps`).
  *
- * The log has no step markers: each step starts with the `##[group]Run …` line
- * GitHub writes for it, a post step with `Post job cleanup.`, and the job's last
- * step with `Cleaning up orphan processes`. Steps are matched to those lines in
- * order, within the times GitHub gives each step (to the second), preferring the
- * line that repeats the step's own name. Lines before the second step belong to
- * the first; a step whose start isn't found keeps no lines, and its output stays
- * with the step before it.
+ * It runs in slices of `SLICE_MS`, yielding to the server's other work between them and
+ * stopping when `signal` aborts. Each line is cut to `limits.lineCharacters` before
+ * anything else reads it, so no line, however long or full of escape codes, costs more
+ * than its first characters.
  *
  * `readCut` says the text is only the start of the log: its last, possibly
  * partial, line is dropped. What is shown is bounded by `limits`: every step
  * keeps its last lines, then failed steps keep more, then steps with errors, then the rest.
  */
-export function parseActionJobLog(raw: string, job: { id: number; steps: readonly ActionRunStep[] }, readCut: boolean, limits: Limits = ACTION_JOB_LOG_LIMITS): Extract<ActionJobLog, { state: 'ready' }> {
-  const rawLines = raw.replace(/^﻿/, '').split('\n');
-  if (rawLines.at(-1) === '' || readCut) rawLines.pop();
+export async function parseActionJobLog(raw: string, job: { id: number; steps: readonly ActionRunStep[] }, readCut: boolean, options: { limits?: Limits; signal?: AbortSignal } = {}): Promise<Extract<ActionJobLog, { state: 'ready' }>> {
+  const limits = options.limits ?? ACTION_JOB_LOG_LIMITS;
+  const lines: ParsedLine[] = [];
+  const nested: boolean[] = [];
+  let depth = 0;
   let displayCut = false;
-  const lines = rawLines.map((line) => {
-    const parsed = parseLine(line, limits.lineCharacters);
+  let position = raw.charCodeAt(0) === 0xFEFF ? 1 : 0;
+  let sliceStart = performance.now();
+  while (position < raw.length) {
+    const newline = raw.indexOf('\n', position);
+    // The last line of a log read only in part may itself be cut.
+    if (newline < 0 && readCut) break;
+    const end = newline < 0 ? raw.length : newline;
+    const read = Math.min(end - position, limits.lineCharacters + LINE_PREFIX);
+    const parsed = parseLine(raw.slice(position, position + read), limits.lineCharacters, read < end - position);
     if (parsed.clipped) displayCut = true;
-    return parsed;
-  });
-  const sections = splitSteps(lines, job.steps);
-  const kept = allocate(sections, limits);
+    // A composite action's own steps sit between these lines: their `Run …` and cleanup lines are not the job's steps.
+    if (parsed.kind === 'output' && parsed.text.startsWith('##[start-action ')) depth++;
+    else if (parsed.kind === 'output' && parsed.text.startsWith('##[end-action ')) depth = Math.max(0, depth - 1);
+    lines.push(parsed);
+    nested.push(depth > 0);
+    position = end + 1;
+    if ((lines.length & 255) === 0 && performance.now() - sliceStart > SLICE_MS) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (options.signal?.aborted) throw options.signal.reason ?? new Error('The log is no longer needed.');
+      sliceStart = performance.now();
+    }
+  }
+  const split = splitSteps(lines, nested, job.steps);
+  const kept = allocate(split.sections, limits);
   if (kept.some((section) => section.omittedLines > 0)) displayCut = true;
-  return { state: 'ready', jobId: job.id, steps: kept, totalLines: lines.length, readCut, displayCut };
+  return { state: 'ready', jobId: job.id, steps: kept, totalLines: lines.length, readCut, displayCut, ...(split.unsplit ? { unsplit: true as const } : {}) };
 }
 
-/** One line: its time taken off, GitHub's marker read, and only the escape codes that color text kept. */
-export function parseLine(line: string, maxCharacters: number = ACTION_JOB_LOG_LIMITS.lineCharacters): ParsedLine {
+/**
+ * One line: its time taken off, GitHub's marker read, cut to `maxCharacters`, and only then
+ * cleaned to the escape codes that color text. `longer` says the line went on past `line`.
+ */
+export function parseLine(line: string, maxCharacters: number = ACTION_JOB_LOG_LIMITS.lineCharacters, longer = false): ParsedLine {
   let text = line.endsWith('\r') ? line.slice(0, -1) : line;
   let time: number | null = null;
   const stamp = TIMESTAMP.exec(text);
@@ -61,13 +85,14 @@ export function parseLine(line: string, maxCharacters: number = ACTION_JOB_LOG_L
     kind = 'command';
     text = text.slice('[command]'.length);
   }
-  text = sanitizeTerminalText(text);
-  let clipped = false;
+  let clipped = longer;
   if (text.length > maxCharacters) {
-    text = clipText(text, maxCharacters);
+    text = text.slice(0, maxCharacters);
     clipped = true;
   }
-  return { time, kind, text, clipped };
+  // Never end inside a surrogate pair; a color code cut short is dropped with the other escapes.
+  if (clipped && /[\uD800-\uDBFF]$/.test(text)) text = text.slice(0, -1);
+  return { time, kind, text: sanitizeTerminalText(text), clipped };
 }
 
 /**
@@ -97,14 +122,6 @@ export function sanitizeTerminalText(value: string): string {
   return text.replace(/[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f-\x9f]/g, '');
 }
 
-function clipText(text: string, maxCharacters: number): string {
-  let clipped = text.slice(0, maxCharacters);
-  // Never end inside a surrogate pair or a color code.
-  if (/[\uD800-\uDBFF]$/.test(clipped)) clipped = clipped.slice(0, -1);
-  // eslint-disable-next-line no-control-regex -- terminal escape codes are what is being removed.
-  return clipped.replace(/\x1b(?:\[[0-9;]*)?$/, '');
-}
-
 interface Section { number: number | null; name: string; status: string; conclusion: string | null; lines: ParsedLine[] }
 
 function seconds(value: string | null): number | null {
@@ -113,50 +130,127 @@ function seconds(value: string | null): number | null {
   return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
 }
 
-function splitSteps(lines: ParsedLine[], steps: readonly ActionRunStep[]): Section[] {
+type StepKind = 'run' | 'post' | 'complete' | 'containers' | 'stop-containers';
+
+/** How a step's first line looks, when GitHub writes one: a step of the workflow file starts with `##[group]Run …`. */
+const STEP_MARKERS: Record<StepKind, (line: ParsedLine) => boolean> = {
+  run: (line) => line.kind === 'group' && line.text.startsWith('Run '),
+  post: (line) => line.kind === 'output' && line.text === 'Post job cleanup.',
+  complete: (line) => line.kind === 'output' && /^(Evaluate and set job outputs|Cleaning up orphan processes)/.test(line.text),
+  containers: (line) => line.kind === 'group' && line.text === 'Checking docker version',
+  'stop-containers': (line) => line.kind === 'output' && /^(Print service container logs|Stop and remove container|Remove container network): /.test(line.text),
+};
+
+/**
+ * Which step each line belongs to. The text has no step boundaries, so each step that ran is
+ * matched to the first line GitHub writes for it, outside any composite action's own steps,
+ * within the step's times (to the second): a step of the workflow file to its `##[group]Run …`
+ * line, preferring the one that repeats a default name such as `Run npm test` and never taking
+ * the one of a later step's default name; GitHub's own post step (`Post <an earlier step>`) to
+ * `Post job cleanup.`; and the job's container and closing steps to the lines those start with.
+ * Each line is claimed once, in order: a step starts after the step before it. The first step
+ * starts at the first line. A container or closing step whose line isn't found takes the lines
+ * written within its own times, after the step before it ended, and nothing before or after.
+ *
+ * If a step of the workflow file that ran can't be placed, the log can't be split with
+ * confidence: it is returned whole, marked `unsplit`, rather than split wrongly.
+ */
+function splitSteps(lines: ParsedLine[], nested: boolean[], steps: readonly ActionRunStep[]): { sections: Section[]; unsplit: boolean } {
   const sections: Section[] = steps.map((step) => ({ number: step.number, name: step.name, status: step.status, conclusion: step.conclusion, lines: [] }));
   const ran = steps.map((step, index) => ({ step, index })).filter(({ step }) => step.conclusion !== 'skipped' && step.startedAt !== null);
-  if (!ran.length) {
-    return lines.length ? [{ number: null, name: 'Log', status: 'completed', conclusion: null, lines }] : sections;
-  }
-  const starts: Array<{ index: number; line: number }> = [{ index: ran[0]!.index, line: 0 }];
-  let cursor = 0;
-  for (const { step, index } of ran.slice(1)) {
-    const found = findStepStart(lines, step, cursor + 1);
-    if (found === null) continue;
-    starts.push({ index, line: found });
-    cursor = found;
-  }
-  starts.forEach((start, position) => {
-    const end = starts[position + 1]?.line ?? lines.length;
-    sections[start.index]!.lines = lines.slice(start.line, end);
+  const whole = (unsplit: boolean) => ({
+    sections: lines.length ? [{ number: null, name: 'Log', status: 'completed', conclusion: ran.some(({ step }) => step.conclusion === 'failure') ? 'failure' : null, lines }] : sections,
+    unsplit: unsplit && lines.length > 0,
   });
-  return sections;
+  if (!ran.length) return whole(false);
+  const names = new Set(steps.map((step) => step.name));
+  const kindOf = (step: ActionRunStep, position: number): StepKind => {
+    if (step.name === 'Complete job' && position === ran.length - 1) return 'complete';
+    if (step.name === 'Initialize containers') return 'containers';
+    if (step.name === 'Stop containers') return 'stop-containers';
+    if (step.name.startsWith('Post ') && names.has(step.name.slice('Post '.length))) return 'post';
+    return 'run';
+  };
+  // The lines that can start a step, by kind, found once: the matching below only walks these.
+  const markers = Object.fromEntries(Object.keys(STEP_MARKERS).map((kind) => [kind, [] as number[]])) as Record<StepKind, number[]>;
+  lines.forEach((line, index) => {
+    if (nested[index]) return;
+    for (const kind of Object.keys(STEP_MARKERS) as StepKind[]) if (STEP_MARKERS[kind](line)) markers[kind].push(index);
+  });
+  const starts = new Map<number, number>([[ran[0]!.index, 0]]);
+  const timed: number[] = [];
+  let cursor = 0;
+  for (let position = 1; position < ran.length; position++) {
+    const { step, index } = ran[position]!;
+    const kind = kindOf(step, position);
+    const later = new Set(ran.slice(position + 1).map((item) => item.step.name));
+    const found = findMarker(lines, markers[kind], cursor, step, kind === 'run' ? later : null);
+    if (found !== null) {
+      starts.set(index, found);
+      cursor = found;
+    } else if (kind === 'run' || kind === 'post') {
+      return whole(true);
+    } else timed.push(position);
+  }
+  // A step placed by its times starts after the step before it ended, and before the next step's line.
+  for (const position of timed) {
+    const { step, index } = ran[position]!;
+    const previous = ran[position - 1]!;
+    const after = Math.max(...ran.slice(0, position).map((item) => starts.get(item.index) ?? 0));
+    const next = ran.slice(position + 1).map((item) => starts.get(item.index)).find((line) => line !== undefined) ?? lines.length;
+    const from = Math.max(seconds(previous.step.completedAt) ?? -Infinity, (seconds(step.startedAt) ?? Infinity) - 1) + 1;
+    const until = seconds(step.completedAt) ?? Infinity;
+    for (let line = after + 1; line < next; line++) {
+      const time = lines[line]!.time;
+      if (time === null) continue;
+      const second = Math.floor(time / 1000);
+      if (second > until + 1) break;
+      if (second >= from) { starts.set(index, line); break; }
+    }
+  }
+  const ordered = [...starts].sort((left, right) => left[1] - right[1]);
+  ordered.forEach(([index, line], position) => {
+    const end = ordered[position + 1]?.[1] ?? lines.length;
+    sections[index]!.lines = lines.slice(line, end);
+  });
+  return { sections, unsplit: false };
 }
 
-function findStepStart(lines: ParsedLine[], step: ActionRunStep, from: number): number | null {
-  const startSecond = seconds(step.startedAt);
+/** Marker lines a step's search looks at before giving up, so a log full of look-alike lines stays cheap. */
+const MAX_MARKERS_PER_STEP = 2_000;
+
+/**
+ * The first of `candidates` after `cursor` within the step's times: the one that repeats the step's
+ * own name if there is one, otherwise the first that isn't a later step's (`later`, for `Run …` lines).
+ */
+function findMarker(lines: ParsedLine[], candidates: number[], cursor: number, step: ActionRunStep, later: Set<string> | null): number | null {
+  let low = 0;
+  let high = candidates.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (candidates[middle]! <= cursor) low = middle + 1;
+    else high = middle;
+  }
   const endSecond = seconds(step.completedAt);
-  const within = (line: ParsedLine) => {
-    if (line.time === null) return true;
-    const second = Math.floor(line.time / 1000);
-    return (startSecond === null || second >= startSecond - 1) && (endSecond === null || second <= endSecond + 1);
-  };
-  const isStart = step.name.startsWith('Post ')
-    ? (line: ParsedLine) => line.kind === 'output' && line.text === 'Post job cleanup.'
-    : step.name === 'Complete job'
-      ? (line: ParsedLine) => line.kind === 'output' && /^(Evaluate and set job outputs|Cleaning up orphan processes)/.test(line.text)
-      : (line: ParsedLine) => line.kind === 'group' && line.text.startsWith('Run ');
   let first: number | null = null;
-  for (let index = from; index < lines.length; index++) {
-    const line = lines[index]!;
+  for (let at = low; at < candidates.length && at < low + MAX_MARKERS_PER_STEP; at++) {
+    const line = lines[candidates[at]!]!;
     if (line.time !== null && endSecond !== null && Math.floor(line.time / 1000) > endSecond + 1) break;
-    if (!isStart(line) || !within(line)) continue;
-    // The line that names the step itself is its start, even after a nested step's line.
-    if (line.kind === 'group' && line.text === step.name) return index;
-    first ??= index;
+    if (!within(line, step)) continue;
+    if (later && line.text === step.name) return candidates[at]!;
+    if (first === null && !later?.has(line.text)) first = candidates[at]!;
+    if (!later) return first;
   }
   return first;
+}
+
+/** Whether a line was written within a step's times, to the second GitHub gives them; a line without a time could be. */
+function within(line: ParsedLine, step: ActionRunStep): boolean {
+  if (line.time === null) return true;
+  const second = Math.floor(line.time / 1000);
+  const startSecond = seconds(step.startedAt);
+  const endSecond = seconds(step.completedAt);
+  return (startSecond === null || second >= startSecond - 1) && (endSecond === null || second <= endSecond + 1);
 }
 
 /** Lines from the end of every step kept before any step gets more, so each still shows how it ended. */

@@ -30,6 +30,15 @@ describe('CliProcessRunner', () => {
     await expect(runner.run(process.execPath, ['-e', 'process.stdout.write("x".repeat(2048))'], { maxOutputBytes: 32, timeoutMs: 5_000 })).rejects.toMatchObject({ detail: { code: 'AI_CONTEXT_TOO_LARGE' } });
   });
 
+  it('keeps output up to a limit counted in bytes, not characters', async () => {
+    const runner = new CliProcessRunner();
+    // Three bytes a character: counted in characters, 3,000 of them would pass a 4,096 limit at 9,000 bytes.
+    const result = await runner.run(process.execPath, ['-e', 'process.stdout.write("€".repeat(100_000))'], { maxOutputBytes: 4_096, allowTruncatedOutput: true, timeoutMs: 5_000 });
+    expect(result.truncated).toBe(true);
+    expect(Buffer.byteLength(result.stdout.replace(/\uFFFD$/, ''))).toBeLessThanOrEqual(4_096);
+    expect(result.stdout.startsWith('€'.repeat(1_000))).toBe(true);
+  });
+
   it('maps spawn failures', async () => {
     const runner = new CliProcessRunner();
     await expect(runner.run('opentig-command-that-does-not-exist', [], { timeoutMs: 5_000 })).rejects.toMatchObject({ detail: { code: 'AI_PROCESS_FAILED' } });

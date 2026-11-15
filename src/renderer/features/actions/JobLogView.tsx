@@ -186,6 +186,9 @@ function ReadyJobLog({ log, job, initialStep, onOpenJob }: { log: ReadyLog; job:
           <TooltipContent>{showTimes ? 'Hide times' : 'Show when each line was written'}</TooltipContent>
         </Tooltip>
       </div>
+      {log.unsplit && <div className="job-log-notice" role="note">
+        <p>OpenTig couldn’t tell which lines belong to which step, so this log is shown whole rather than split wrongly.</p>
+      </div>}
       {(log.readCut || log.displayCut) && <div className="job-log-notice" role="note">
         <p>{log.readCut
           ? `This log is larger than ${formatMegabytes(ACTION_JOB_LOG_LIMITS.readBytes)}. OpenTig read only its start, so later steps may show nothing here.`
