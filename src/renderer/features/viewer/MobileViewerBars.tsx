@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
-import { IconBrandGithub, IconCopy, IconFileArrowRight, IconGitPullRequest, IconRestore, IconTextWrap } from '@tabler/icons-react';
+import { useContext, useMemo } from 'react';
+import { IconBrandGithub, IconCopy, IconFileArrowRight, IconGitPullRequest, IconHistory, IconRestore, IconTextWrap } from '@tabler/icons-react';
+import { FileHistoryContext } from '@/features/history/file-history-context';
 import type { DiffResult } from '@shared/contracts';
 import type { CommitInfo } from '@shared/git-types';
 import { MobileActionsMenu, MobileViewerActions, MobileViewerTitle, type MobileMenuItem } from '@/components/MobileChrome';
@@ -26,8 +27,12 @@ export function MobileDiffBar({ path, kind, diff, wrapLines, readOnly, onOpenFil
 }) {
   const { name, folder } = nameAndFolder(path);
   const stats = useMemo(() => diff ? patchLineStats(diff.patch) : null, [diff]);
+  const openHistory = useContext(FileHistoryContext);
+  // A deleted file has no history to start from here.
+  const deleted = diff ? /^deleted file mode /m.test(diff.patch) : false;
   const items: MobileMenuItem[] = [
     { label: 'Open file', icon: <IconFileArrowRight />, onSelect: () => onOpenFile(path) },
+    ...(openHistory && !deleted ? [{ label: 'File history', icon: <IconHistory />, onSelect: () => openHistory(path) }] : []),
     { label: 'Wrap lines', icon: <IconTextWrap />, checked: wrapLines, onSelect: () => onWrapLinesChange(!wrapLines) },
     ...(onDiscard && kind === 'unstaged' ? [{ label: 'Discard changes', icon: <IconRestore />, danger: true, disabled: readOnly, onSelect: () => onDiscard(path) }] : []),
   ];
@@ -57,8 +62,10 @@ export function MobileCommitBar({ oid, path, commit, canUndo, githubRepository, 
   const shortOid = commit?.shortOid ?? oid.slice(0, 7);
   const githubUrl = commitGitHubUrl(githubRepository, oid, commit);
   const reference = commit && githubRepository && onOpenPullRequest ? commitReference(commit) : null;
+  const openHistory = useContext(FileHistoryContext);
   const items: MobileMenuItem[] = [
     { label: 'Copy hash', icon: <IconCopy />, onSelect: () => void copyCommitHash(oid) },
+    ...(path && openHistory ? [{ label: 'File history', icon: <IconHistory />, onSelect: () => openHistory(path) }] : []),
     ...(reference ? [{ label: `Open pull request #${reference.number}`, icon: <IconGitPullRequest />, onSelect: () => onOpenPullRequest!(reference.number) }] : []),
     ...(githubUrl ? [{ label: 'Open on GitHub', icon: <IconBrandGithub />, onSelect: () => openExternalUrl(githubUrl) }] : []),
     ...(commit && onUndo && canUndo && canUndoCommit(commit) ? [{ label: 'Undo commit…', icon: <IconRestore />, danger: true, onSelect: () => onUndo(commit) }] : []),

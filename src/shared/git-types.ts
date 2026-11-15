@@ -71,6 +71,30 @@ export interface CommitPage {
   baseRef?: string | null;
 }
 
+/** A commit that changed one file, with how it changed it. */
+export interface FileHistoryEntry {
+  commit: CommitInfo;
+  /** The file's path in this commit: its name then, which a later rename may have changed. */
+  path: string;
+  /** The name it had before, for the commit that renamed or copied it. */
+  oldPath: string | null;
+  /** How the commit changed it; null for a merge, which lists no change of its own. */
+  kind: ChangeKind | null;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+}
+
+/** A page of the commits that changed a file, newest first, following its renames. */
+export interface FileHistoryPage {
+  path: string;
+  entries: FileHistoryEntry[];
+  /** Opaque: where the next page starts. */
+  nextCursor: string | null;
+  /** The file has more commits than OpenTig lists; the rest are older than the last one listed. */
+  limited: boolean;
+}
+
 export interface CommitFile {
   path: string;
   oldPath: string | null;

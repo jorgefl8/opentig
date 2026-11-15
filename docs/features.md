@@ -16,7 +16,7 @@ Use OpenTig to review changes, edit files, and prepare commits in an existing Gi
 
 - **Organize your work:** [repositories and projects](#repositories-and-projects), [branches and worktrees](#branches-and-worktrees).
 - **Prepare and share changes:** [diffs and commits](#changes-diffs-and-commits), [pull and push](#safe-pull-and-push), [GitHub pull requests](#github-pull-requests).
-- **Explore the repository:** [files and editing](#files-and-editing), [search](#quick-open-and-repository-search), [history](#history).
+- **Explore the repository:** [files and editing](#files-and-editing), [search](#quick-open-and-repository-search), [history](#history), including the [history of one file](#history).
 - **Set up your workflow:** [AI assistance](#optional-ai-assistance), [preferences](#preferences), [keyboard shortcuts](#keyboard-shortcuts).
 
 ### Repositories and projects
@@ -335,6 +335,14 @@ Click a file's header to fold or unfold its diff, or, with several files, the to
 The commit's **⋯** menu copies the full hash, opens a published commit on GitHub, undoes the commit, and closes the viewer. In the list, click a short hash to copy the full one.
 
 Only the latest commit can be undone, and only when OpenTig can prove it is still local and safe to undo. The undo button appears with the chevron when you hover or focus its row, and both stay visible on touch screens. On a phone the row is a single target: open the commit, and undo it from its **⋯**.
+
+**History of a file**
+
+To see the commits that changed one file, open its history from the file: the history button at the right of its tab in **Files**, **Show History** in its context menu in the Files tree, or **File history** beside a diff's **Open file** in a change, a commit, or a pull request. On a phone, **File history** is in the file's **⋯** sheet, in the Files list's sheet for a file, and in a change's **⋯** menu. A file that has been deleted has no file to start from, so these places don't offer it.
+
+**History** then lists only the commits that changed the file, newest first, with the same rows, 100 at a time with **Load more**, and a bar above them that names the file. It follows the file across renames as `git log --follow` does: the commit that renamed it says **from** and its old path, as a diff's header does, and older commits say **as** and the path it had then. Each row also shows the lines the commit added and removed in the file, and **deleted** for the commit that deleted it. On a wide screen the newest commit opens at once; choose another to see that file's diff in it, and **All files** above the diff opens the whole commit. The arrow at the left of the bar returns to the file, or wherever the history was opened from, as it was; the **×** at its right goes back to every commit and stays in History. Opening another repository or worktree closes a file's history.
+
+A file's history is read from your local repository, never from GitHub: it lists what you have fetched, and a file Git has never recorded, such as one that's new or in an ignored folder, has no commits. A file deleted since keeps its history, ending with the commit that deleted it. The list stops after a file's newest 10,000 commits, and says so. Each page is read again from the commit the first page started at, so a commit made meanwhile doesn't shift the pages; refreshing reads the list again from the current branch.
 
 **Find a commit**
 

@@ -69,4 +69,6 @@ export interface OpenTigServerIdentity {
   repositorySnapshots?: true;
   /** Answers `github:action-job-log`. Absent on servers older than it. */
   actionJobLogs?: true;
+  /** Answers `commits:file-history`. Absent on servers older than it. */
+  fileHistory?: true;
 }

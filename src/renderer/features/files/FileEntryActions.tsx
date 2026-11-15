@@ -1,4 +1,6 @@
-import { IconClipboard, IconCopy, IconCut, IconEdit, IconExternalLink, IconFilePlus, IconFolder, IconFolderSymlink, IconTrash } from '@tabler/icons-react';
+import { useContext } from 'react';
+import { IconClipboard, IconCopy, IconCut, IconEdit, IconExternalLink, IconFilePlus, IconFolder, IconFolderSymlink, IconHistory, IconTrash } from '@tabler/icons-react';
+import { FileHistoryContext } from '@/features/history/file-history-context';
 import type { FileTreeEntry } from '@shared/git-types';
 import { parentDirectory } from './file-tree';
 import type { FilesViewProps } from './FilesView';
@@ -15,8 +17,10 @@ export function FileEntryActions({ target, actions, run, onOpenFolder, onMove, o
   onMove(entry: FileTreeEntry): void;
   onRename(entry: FileTreeEntry): void;
 }) {
+  const openHistory = useContext(FileHistoryContext);
   return <>
     {target.type === 'file' && <button className="mobile-sheet-action" onClick={() => run(() => actions.onOpenFile(target.path, 'pinned'))}><IconFilePlus /><span>Keep file open</span></button>}
+    {target.type === 'file' && openHistory && <button className="mobile-sheet-action" onClick={() => run(() => openHistory(target.path))}><IconHistory /><span>File history</span></button>}
     {target.type === 'directory' && onOpenFolder && <button className="mobile-sheet-action" onClick={() => run(() => onOpenFolder(target.path))}><IconFolder /><span>Open folder</span></button>}
     <button className="mobile-sheet-action" disabled={actions.readOnly} onClick={() => run(() => onMove(target))}><IconFolderSymlink /><span>Move to…</span></button>
     <button className="mobile-sheet-action" disabled={actions.readOnly} onClick={() => run(() => onRename(target))}><IconEdit /><span>Rename</span></button>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Ref } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { IconX } from '@tabler/icons-react';
 import { closestCenter, DndContext, DragOverlay, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable';
@@ -18,6 +18,8 @@ interface OpenFilesStripProps {
   onReorder(path: string, toIndex: number): void;
   /** Receives the element at the end of the bar where the viewer puts its tools. */
   toolsRef?: Ref<HTMLDivElement>;
+  /** What the bar offers for the open file itself, before the viewer's tools. */
+  trailing?: ReactNode;
 }
 
 /**
@@ -25,7 +27,7 @@ interface OpenFilesStripProps {
  * no files; every calculation comes from the pure helpers in
  * `open-files-model.ts` so the behaviour is testable without a DOM.
  */
-export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder, toolsRef }: OpenFilesStripProps) {
+export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder, toolsRef, trailing }: OpenFilesStripProps) {
   const stripRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
   const [fades, setFades] = useState({ start: false, end: false });
@@ -131,6 +133,7 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder,
               />
             ))}
           </div>
+          {trailing && <div className="open-files-file-tools">{trailing}</div>}
           <div ref={toolsRef} className="open-files-tools" />
         </div>
       </SortableContext>

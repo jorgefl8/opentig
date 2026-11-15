@@ -120,6 +120,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'commits.undoLatest': command(IPC.commitUndoLatest, 'undo-latest-commit', true),
   'commits.list': command(IPC.commitsList, 'history', false),
   'commits.files': command(IPC.commitsFiles, 'commit-files', false),
+  'commits.fileHistory': command(IPC.commitsFileHistory, 'file-history', false, { timeoutMs: 60_000 }),
   'commits.recognize': command(IPC.commitsRecognize, 'commit-recognize', false),
   'commits.countAfter': command(IPC.commitsCountAfter, 'commits-after', false),
 

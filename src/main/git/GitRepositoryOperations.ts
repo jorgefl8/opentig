@@ -1,7 +1,7 @@
 import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
-  FileChange, LocalRefsSnapshot, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
+  FileChange, FileHistoryPage, LocalRefsSnapshot, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
 } from '../../shared/git-types';
 import { AiOperationError, GitOperationError } from '../../shared/errors';
 import { createHash } from 'node:crypto';
@@ -13,6 +13,7 @@ import type { RepositoryInstructionFile } from '../ai/RepositoryAiInstructions';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
 import { LOG_FORMAT, parseLog } from './LogParser';
+import { FILE_HISTORY_WALK_FORMAT, parseFileHistoryWalk } from './FileHistoryParser';
 import { selectHistoryBase } from './HistoryBase';
 import { REF_FORMAT, parseRefs } from './RefParser';
 import type { RepositoryService } from './RepositoryService';
@@ -38,6 +39,10 @@ import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../
  * purpose: a commit plan is only as good as the changes it can actually see, and
  * the budget is shared fairly across files rather than spent on the first ones.
  */
+/** Commits in a page of a file's history, as many as History lists in one. */
+const FILE_HISTORY_PAGE = 100;
+/** Commits a file's history lists at most; the walk behind its last page reads only their hashes and changes. */
+const FILE_HISTORY_LIMIT = 10_000;
 const AI_PATCH_BUDGET = 400_000;
 const AI_SUMMARY_BUDGET = 24_000;
 type GitTaskRunner = (
@@ -482,6 +487,74 @@ export class GitRepositoryOperations {
       if (!cursor && error instanceof GitOperationError && /does not have any commits|unknown revision|bad revision/i.test(error.message)) return { commits: [], nextCursor: null };
       throw error;
     }
+  }
+
+  /**
+   * The commits that changed one file, newest first, as one `git log --follow` walk finds them: past
+   * a rename, under the name the file had then. A page holds `FILE_HISTORY_PAGE` commits. Git follows
+   * a rename only in a commit it shows, so a page can't skip ahead: each walks from where the first
+   * page started (kept in the cursor, so a moved HEAD doesn't change the list) up to its own end,
+   * reading only each commit's hash and change of this file, then reads the details of its own
+   * commits. The list ends after `FILE_HISTORY_LIMIT` commits. The path need not exist any more: a
+   * deleted file's history starts with the commit that deleted it.
+   */
+  async fileHistory(repositoryId: string, filePath: string, cursor?: string, signal?: AbortSignal): Promise<FileHistoryPage> {
+    const repository = this.repositories.get(repositoryId);
+    const [target] = this.repositories.validatePaths(repositoryId, [filePath]);
+    const pathspec = target!.replace(/^\.\//, '');
+    if (!pathspec || pathspec === '.' || pathspec.endsWith('/')) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'file-history', message: 'Choose a file to see its history.' });
+    }
+    const cancel = signal ? { signal } : {};
+    let start: string;
+    let skip = 0;
+    if (cursor) {
+      const match = /^([0-9a-f]{40,64}):(\d{1,6})$/i.exec(cursor);
+      if (!match || Number(match[2]) % FILE_HISTORY_PAGE !== 0 || Number(match[2]) >= FILE_HISTORY_LIMIT) {
+        throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'file-history', message: 'Invalid history position.' });
+      }
+      start = match[1]!;
+      skip = Number(match[2]);
+    } else {
+      const head = await this.git.run(repository.path, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { operation: 'file-history-head', readOnly: true, ...cancel })
+        .catch((error: unknown) => { if (signal?.aborted) throw error; return null; });
+      const oid = head?.stdout.toString('utf8').trim() ?? '';
+      // A repository without commits has no history yet.
+      if (!/^[0-9a-f]{40,64}$/i.test(oid)) return { path: pathspec, entries: [], nextCursor: null, limited: false };
+      start = oid;
+    }
+    const end = skip + FILE_HISTORY_PAGE;
+    const walk = await this.git.run(repository.path, [
+      '--literal-pathspecs', 'log', '--follow', '-M', '--no-color', '--no-ext-diff', '--no-textconv', `--max-count=${end + 1}`,
+      `--format=${FILE_HISTORY_WALK_FORMAT}`, '--raw', '--numstat', '-z', start, '--', pathspec,
+    ], { operation: 'file-history', readOnly: true, maxOutputBytes: 32 * 1024 * 1024, ...cancel });
+    const changes = parseFileHistoryWalk(walk.stdout.toString('utf8'), pathspec);
+    const page = changes.slice(skip, end);
+    if (!page.length) return { path: pathspec, entries: [], nextCursor: null, limited: false };
+    const [details, localOids] = await Promise.all([
+      this.git.run(repository.path, ['log', '--no-walk=unsorted', '--date=iso-strict', `--format=${LOG_FORMAT}`, ...page.map((change) => change.oid), '--'],
+        { operation: 'file-history-commits', readOnly: true, maxOutputBytes: 8 * 1024 * 1024, ...cancel }),
+      // Which commits aren't on the upstream yet: none is known without one, as in History.
+      this.localOnlyOids(repository.path, '@{upstream}', false),
+    ]);
+    const commits = new Map(parseLog(details.stdout.toString('utf8')).map((commit) => [commit.oid, commit]));
+    const entries = page.flatMap(({ oid, ...change }) => {
+      const commit = commits.get(oid);
+      if (!commit) return [];
+      // Each one can open in the commit viewer, the whole commit or this file of it.
+      this.rememberOid(repositoryId, oid);
+      return [{
+        ...change,
+        commit: {
+          ...commit,
+          isHead: oid === start && !cursor,
+          upstreamState: localOids === null ? 'unknown' as const : localOids.has(oid) ? 'local-only' as const : 'published' as const,
+        },
+      }];
+    });
+    const more = changes.length > end;
+    const limited = more && end >= FILE_HISTORY_LIMIT;
+    return { path: pathspec, entries, nextCursor: more && !limited ? `${start}:${end}` : null, limited };
   }
 
   async undoLatestCommit(repositoryId: string, expectedOid: string): Promise<UndoLatestCommitResult> {

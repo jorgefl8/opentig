@@ -98,7 +98,7 @@ export const opentig: OpenTigApi = {
       preferences,
       performanceAutomation: false,
       // The sample answers the commands of these features as an installed server would.
-      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true },
+      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true, fileHistory: true },
     }),
     capabilities: async () => ({
       runtimeMode: "headless",
@@ -297,6 +297,7 @@ export const opentig: OpenTigApi = {
       baseRef: "main",
     }),
     files: async (_id, oid) => model.commitFiles(oid),
+    fileHistory: async (_id, path) => ({ path, entries: model.historyOfFile(path), nextCursor: null, limited: false }),
     recognize: async (_id, oid) => model.commits.some((commit) => commit.info.oid === oid),
     countAfter: async (_id, oid) => model.commitsAfter(oid),
     authorship: async () => ({
