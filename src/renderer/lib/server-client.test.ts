@@ -107,7 +107,8 @@ describe('OpenTig server client', () => {
     expect(changed).toHaveBeenCalledWith('repo-id', 'unknown', 'degraded');
     expect(activeChanged).toHaveBeenCalledWith(expect.objectContaining({ id: 'repo-id' }));
     expect(changed).toHaveBeenCalledWith('repo-id', 'unknown');
-    expect(fixture.request).toHaveBeenCalledWith(IPC.bootstrap, []);
+    // The repository the server moved it to is the one it asks for again.
+    expect(fixture.request).toHaveBeenCalledWith(IPC.bootstrap, [{ repositoryId: 'repo-id' }]);
   });
 
   it('asks for the repository it last opened when the connection comes back, not for whatever another client chose', async () => {
@@ -121,6 +122,35 @@ describe('OpenTig server client', () => {
     await fixture.reconnect();
 
     expect(fixture.request).toHaveBeenLastCalledWith(IPC.bootstrap, [{ repositoryId: 'other-id' }]);
+  });
+
+  it('asks again for the repository of the open started last, whichever answer arrives last, as the server keeps it', async () => {
+    const fixture = transportFixture();
+    const repository = (id: string) => ({ id, name: id, repositoryName: id, path: `/${id}`, commonDir: `/${id}/.git` });
+    const answers = new Map<string, { resolve(value: unknown): void; reject(reason: unknown): void }>();
+    fixture.request.mockImplementation(async (command: string, args?: unknown[]) => {
+      if (command === IPC.bootstrap) return bootstrapData();
+      if (command !== IPC.repositoryOpenRecent) return [];
+      return new Promise((resolve, reject) => answers.set(String(args![0]), { resolve, reject })) as never;
+    });
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    await api.app.bootstrap();
+
+    const earlier = api.repository.openRecent('b');
+    const later = api.repository.openRecent('c');
+    answers.get('c')!.resolve(repository('c'));
+    await later;
+    answers.get('b')!.resolve(repository('b'));
+    await earlier;
+    await fixture.reconnect();
+    expect(fixture.request).toHaveBeenLastCalledWith(IPC.bootstrap, [{ repositoryId: 'c' }]);
+
+    // One started later that fails leaves the one before it.
+    const failing = api.repository.openRecent('d');
+    answers.get('d')!.reject(new Error('Not a repository.'));
+    await expect(failing).rejects.toThrow();
+    await fixture.reconnect();
+    expect(fixture.request).toHaveBeenLastCalledWith(IPC.bootstrap, [{ repositoryId: 'repo-id' }]);
   });
 
   it('tells a reconnect apart from an account change, so what GitHub said is refreshed rather than emptied', async () => {

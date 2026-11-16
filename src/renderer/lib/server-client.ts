@@ -52,13 +52,25 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   };
 
   /**
-   * The repository this client has open, as the server last answered: asked for again when the
-   * connection comes back, so a server where each client has its own reopens it for this one.
+   * The repository this client has open, asked for again when the connection comes back, so a
+   * server where each client has its own reopens it for this one. Like the server, it is the one
+   * of the open started last among those that succeeded, whichever answer arrives last.
    */
   let ownRepositoryId: string | null = null;
-  const opened = (repository: RepositoryInfo): RepositoryInfo => { ownRepositoryId = repository.id; return repository; };
+  let openStarted = 0;
+  let openTaken = 0;
+  const take = (started: number, repositoryId: string) => {
+    if (started < openTaken) return;
+    openTaken = started;
+    ownRepositoryId = repositoryId;
+  };
+  const opening = (request: Promise<RepositoryInfo>): Promise<RepositoryInfo> => {
+    const started = ++openStarted;
+    return request.then((repository) => { take(started, repository.id); return repository; });
+  };
 
   const bootstrap: OpenTigServerApi['app']['bootstrap'] = async (request) => {
+    const started = ++openStarted;
     const data = await transport.request(IPC.bootstrap, request?.repositoryId ? [{ repositoryId: request.repositoryId }] : []);
     if (!data.server || data.server.protocolVersion !== OPEN_TIG_PROTOCOL_VERSION) {
       transport.markIncompatible();
@@ -66,7 +78,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     }
     if (data.server.requestCancellation === true) transport.enableCancellation();
     if (data.server.keptReads === true) transport.enableKeptReads();
-    ownRepositoryId = data.activeRepository?.id ?? null;
+    if (data.activeRepository) take(started, data.activeRepository.id);
     return data;
   };
 
@@ -94,12 +106,12 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       cloneStatus: (id) => invoke(IPC.repositoryCloneStatus, id),
       cancelClone: (id) => invoke(IPC.repositoryCancelClone, id),
       preparePath: (path) => invoke(IPC.repositoryPreparePath, path),
-      completeSetup: (id, revision) => invoke(IPC.repositoryCompleteSetup, id, revision).then(opened),
-      openPath: (path) => invoke(IPC.repositoryOpenPath, path).then(opened),
+      completeSetup: (id, revision) => opening(invoke(IPC.repositoryCompleteSetup, id, revision)),
+      openPath: (path) => opening(invoke(IPC.repositoryOpenPath, path)),
       browseDirectories: (path) => path === undefined ? invoke(IPC.repositoryBrowseDirectories) : invoke(IPC.repositoryBrowseDirectories, path),
-      openRecent: (id) => invoke(IPC.repositoryOpenRecent, id).then(opened),
+      openRecent: (id) => opening(invoke(IPC.repositoryOpenRecent, id)),
       forget: (repositoryKey) => invoke(IPC.repositoryForget, repositoryKey),
-      relocateRecent: (id, path) => invoke(IPC.repositoryRelocateRecent, id, path).then(opened),
+      relocateRecent: (id, path) => opening(invoke(IPC.repositoryRelocateRecent, id, path)),
       unavailableRecent: () => invoke(IPC.repositoryUnavailableRecent),
       findRelocations: (previousPath, path) => invoke(IPC.repositoryFindRelocations, previousPath, path),
       relocateRecents: (entries) => invoke(IPC.repositoryRelocateRecents, entries),
@@ -159,7 +171,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       switchBranch: (repositoryId, branch, moveChanges, allowAgents = false) => invoke(IPC.branchSwitch, repositoryId, branch, moveChanges, allowAgents),
       listWorktrees: (repositoryId) => invoke(IPC.worktreesList, repositoryId),
       worktreeAgents: (repositoryId) => invoke(IPC.worktreeAgents, repositoryId),
-      selectWorktree: (repositoryId, path) => invoke(IPC.worktreeSelect, repositoryId, path).then(opened),
+      selectWorktree: (repositoryId, path) => opening(invoke(IPC.worktreeSelect, repositoryId, path)),
       pull: (repositoryId) => invoke(IPC.refsPull, repositoryId),
       pushContext: (repositoryId, remote) => invoke(IPC.refsPushContext, repositoryId, remote),
       push: (repositoryId, publish, expectedContext) => invoke(IPC.refsPush, repositoryId, publish, expectedContext),
@@ -239,7 +251,11 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     },
   };
 
-  transport.onEvent((event) => publishRuntimeEvent(event, repositoryChanged, activeRepositoryChanged, githubAccountsChanged, aiInstructionsChanged));
+  transport.onEvent((event) => {
+    // The server moved this client, as when its worktree was removed: later than any open started before.
+    if (event.type === 'repository.active-changed') take(++openStarted, event.repository.id);
+    publishRuntimeEvent(event, repositoryChanged, activeRepositoryChanged, githubAccountsChanged, aiInstructionsChanged);
+  });
   transport.onReconnect(async () => {
     // Where each client has its own repository, this one lands on its own, not on another's last choice.
     const data = await api.app.bootstrap(ownRepositoryId ? { repositoryId: ownRepositoryId } : undefined);
