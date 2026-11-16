@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
@@ -173,10 +174,21 @@ export class RepositoryWatchPool {
   /**
    * Stops every watch of the repositories in `folder`, as before it is deleted, and keeps any from
    * starting there until `endPause`, whoever opens one meanwhile; who holds them keeps them, and is
-   * told the watch stopped. Resolves once the system had a turn to close them.
+   * told the watch stopped. Resolves, with what to give `endPause`, once the system had a turn to
+   * close them.
+   *
+   * The folder is compared as the system names it, as Git does for a repository's own path: a name
+   * spelled another way, such as a short name on Windows or one through a symbolic link, still
+   * matches. One that can't be resolved is compared as given, and the server log says so.
    */
-  async pause(folder: string): Promise<void> {
-    const key = folderKey(folder);
+  async pause(folder: string): Promise<string> {
+    let named = folder;
+    try {
+      named = await realpath(folder);
+    } catch (error) {
+      this.options.logger?.('warn', `Could not resolve a folder whose watch is paused (${errorCode(error)}); it is compared as given.`);
+    }
+    const key = folderKey(named);
     this.pausedFolders.set(key, (this.pausedFolders.get(key) ?? 0) + 1);
     let stopped = false;
     for (const entry of this.entries.values()) {
@@ -189,11 +201,12 @@ export class RepositoryWatchPool {
       try { stopped = Boolean(entry.watcher) || stopped; this.stopWatcher(entry); } finally { this.pausing = false; }
     }
     if (stopped) await new Promise<void>((resolve) => setImmediate(resolve));
+    return key;
   }
 
-  /** The folder `pause` stopped may be watched again: whoever still holds a repository in it is. */
-  endPause(folder: string): void {
-    const key = folderKey(folder);
+  /** The folder `pause` stopped, by what it answered, may be watched again: whoever still holds a repository in it is. */
+  endPause(paused: string): void {
+    const key = folderKey(paused);
     const count = (this.pausedFolders.get(key) ?? 0) - 1;
     if (count > 0) {
       this.pausedFolders.set(key, count);
@@ -333,4 +346,8 @@ export class RepositoryWatchPool {
 function folderKey(folder: string): string {
   const resolved = path.resolve(folder).replace(/[\\/]+$/, '');
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function errorCode(error: unknown): string {
+  return typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : 'UNKNOWN';
 }

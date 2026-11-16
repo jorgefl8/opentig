@@ -240,8 +240,7 @@ describe('a repository per client', () => {
     services.repositories.openRecent = async (id: string) => {
       // The watch stops and starts again while the open is being answered.
       // The path the server has, which on Windows may differ from the test's own (an 8.3 short name).
-      await services.watcher.pause(alpha.path);
-      services.watcher.endPause(alpha.path);
+      services.watcher.endPause(await services.watcher.pause(alpha.path));
       return openRecent(id);
     };
     client.log.length = 0;
@@ -271,8 +270,7 @@ describe('a repository per client', () => {
     // A watch that starts after the client read, here gamma's after a pause, is told with a read.
     const gamma = await second.value<Repository>('repository:open-path', pathC);
     await second.watching(gamma.id);
-    await services.watcher.pause(gamma.path);
-    services.watcher.endPause(gamma.path);
+    services.watcher.endPause(await services.watcher.pause(gamma.path));
     await vi.waitFor(() => expect(second.log.at(-1)).toBe(`${gamma.id}:watching`), { timeout: 10_000 });
   });
 
