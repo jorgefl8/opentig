@@ -346,8 +346,8 @@ describe('a repository per client', () => {
     expect(services.clients.size).toBe(0);
   });
 
-  it('refuses to remove a worktree another connection has open', async () => {
-    const { connect, repository } = await startServer();
+  it('removes a worktree another connection has open, and takes that connection to the main worktree', async () => {
+    const { connect, repository, services } = await startServer();
     const work = await repository('main');
     await execFileAsync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'Start'], { cwd: work });
     const linked = path.join(path.dirname(work), 'linked');
@@ -356,10 +356,42 @@ describe('a repository per client', () => {
     const second = await connect();
     const main = await first.value<Repository>('repository:open-path', work);
     const other = await second.value<Repository>('repository:open-path', linked);
+    await second.watching(other.id);
     const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: linked })).stdout.trim();
 
-    const refused = await first.request('refs:remove-worktree', { repositoryId: main.id, path: other.path, expectedOid: head, force: false, deleteBranch: false });
-    expect(refused).toMatchObject({ ok: false, error: { message: expect.stringContaining('open in another window') } });
-    await expect(execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: linked })).resolves.toBeDefined();
+    // Not the caller's own worktree, which is still refused.
+    const own = await second.value<{ status: string }>('refs:remove-worktree', { repositoryId: other.id, path: other.path, expectedOid: head, force: false, deleteBranch: false });
+    expect(own.status).toBe('current');
+
+    second.log.length = 0;
+    const removed = await first.value<{ status: string }>('refs:remove-worktree', { repositoryId: main.id, path: other.path, expectedOid: head, force: false, deleteBranch: false });
+    expect(removed.status).toBe('removed');
+    await second.watching(main.id);
+    expect(second.otherEvents.at(-1)).toMatchObject({ type: 'repository.active-changed', repository: { id: main.id } });
+    // Told it is on the main worktree before anything about that worktree's watch.
+    expect(second.log.indexOf('repository.active-changed')).toBeLessThan(second.log.indexOf(`${main.id}:watching`));
+    expect(services.clients.connectionsOn(main.id).size).toBe(2);
+    expect(services.clients.connectionsOn(other.id).size).toBe(0);
+    expect(services.repositories.recents().map((item) => item.id)).toEqual([main.id]);
   });
+
+  it('takes every connection on a relocated repository to its new id', async () => {
+    const { connect, repository, services, directory } = await startServer();
+    const work = await repository('alpha');
+    await execFileAsync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'Start'], { cwd: work });
+    const first = await connect();
+    const second = await connect();
+    const alpha = await first.value<Repository>('repository:open-path', work);
+    await second.value('repository:open-recent', alpha.id);
+    // The folder found somewhere else, as after moving it.
+    const moved = path.join(directory, 'alpha-moved');
+    await execFileAsync('git', ['clone', '-q', work, moved]);
+
+    const relocated = await first.value<Repository>('repository:relocate-recent', alpha.id, moved);
+    expect(relocated.id).not.toBe(alpha.id);
+    await vi.waitFor(() => expect(second.otherEvents.at(-1)).toMatchObject({ type: 'repository.active-changed', repository: { id: relocated.id } }));
+    expect(services.clients.connectionsOn(relocated.id).size).toBe(2);
+    expect(services.clients.connectionsOn(alpha.id).size).toBe(0);
+  });
+
 });

@@ -286,6 +286,11 @@ export class SettingsStore {
    * assignments are untouched because they are keyed by `commonDir`, which
    * identifies the repository rather than any single worktree.
    */
+  /** The saved entry of the main worktree of the repository whose Git folder is `commonDir`, if saved. */
+  mainWorktree(commonDir: string): RecentRepository | null {
+    return mainWorktreeOf(this.data.recentRepositories, commonDir) ?? null;
+  }
+
   async forgetWorktreePath(worktreePath: string, fallbackId?: string): Promise<RecentRepository[]> {
     const target = normalizeWorktreePath(worktreePath);
     if (!target) return this.recentRepositories;
