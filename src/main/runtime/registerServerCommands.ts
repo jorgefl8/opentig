@@ -199,8 +199,9 @@ export function registerServerCommands(
     const recentRepositories = services.repositories.recents();
     const moved = services.clients.move([previousId], repository, { reason: 'relocated', recentRepositories, except });
     services.clients.forget([previousId]);
-    // Every other client may hold tabs or drafts under the old id, or a step back to it.
-    services.clients.relocated(previousId, repository, recentRepositories, moved);
+    // Every other client may hold tabs or drafts under the old id, or a step back to it. The one that
+    // relocated it learns from its answer, which the news would otherwise reach first.
+    services.clients.relocated(previousId, repository, recentRepositories, except ? new Set([...moved, except]) : moved);
   };
   handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
     const repositoryId = stringArg(id, 'relocate-recent', 64);

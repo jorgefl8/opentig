@@ -349,6 +349,9 @@ describe('a repository per client', () => {
     const relocated = await client.value<Repository>('repository:relocate-recent', alpha.id, moved);
 
     // A client on another repository hears of it, to rebind what it holds under the old id.
+    // The client that relocated it learns from its answer alone.
+    await client.settled();
+    expect(client.events.filter((event) => event.relocatedTo)).toEqual([]);
     // Other news, such as of its own repository's watch, may come after it.
     await vi.waitFor(() => expect(bystander.events).toContainEqual(expect.objectContaining({ repositoryId: alpha.id, relocatedTo: expect.objectContaining({ id: relocated.id }), recentRepositories: expect.arrayContaining([expect.objectContaining({ id: relocated.id })]) })));
     // Commands still naming the old id reach the repository where it is now.
