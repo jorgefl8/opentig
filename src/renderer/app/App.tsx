@@ -1437,8 +1437,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // A repository relocated from another window: whatever the page has open, what it holds under the old id follows it.
   useEffect(() => opentig.events.onRepositoryChanged((previousId, _scope, _watch, _watchId, details) => {
     if (!details?.relocatedTo) return;
-    if (details.recentRepositories) takeRecentRepositories(details.recentRepositories);
+    // Rebound while the page's list still has the old entry, which carries its project and saved tabs across.
     rebindRelocatedRepository(previousId, details.relocatedTo);
+    if (details.recentRepositories) takeRecentRepositories(details.recentRepositories);
   }), [rebindRelocatedRepository, takeRecentRepositories]);
 
   /**
@@ -1492,6 +1493,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => opentig.events.onActiveRepositoryChanged((selected, move) => {
     if (move) {
+      // A relocation is rebound while the page's list still has the old entry (see `rebindBootstrapRepository`).
+      if (move.reason === 'relocated') rebindRelocatedRepository(move.previousId, selected);
       if (move.recentRepositories) takeRecentRepositories(move.recentRepositories);
       // While a choice is on its way the page follows it; if it ends without landing, the page comes here.
       if (repositorySwitcher.idle()) applyMove(selected, move);
@@ -1499,7 +1502,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       return;
     }
     if (selected.id !== repositoryRef.current?.id && repositorySwitcher.accepts(selected.id)) recordOpenedRepository(selected);
-  }), [applyMove, recordOpenedRepository, repositorySwitcher, takeRecentRepositories]);
+  }), [applyMove, rebindRelocatedRepository, recordOpenedRepository, repositorySwitcher, takeRecentRepositories]);
 
   const reconcilingRef = useRef(false);
   const reopenAttemptsRef = useRef(new ReopenAttempts());
