@@ -132,7 +132,7 @@ async function createWindow(): Promise<void> {
       webSecurity: true,
       // Hidden Chromium windows throttle rAF, so the HTML boot splash would
       // not paint and ready-to-show would stall. Restore throttling after
-      // the first reveal, matching T3 Code's desktop boot.
+      // the first reveal.
       backgroundThrottling: false,
     },
   });

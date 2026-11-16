@@ -1,6 +1,6 @@
 export const REPOSITORY_FAVICON_MAX_BYTES = 256 * 1024;
 
-/** Well-known icon files, checked in order. Mirrors t3code's project discovery. */
+/** Well-known icon files, checked in order. */
 export const REPOSITORY_FAVICON_CANDIDATES = [
   'favicon.svg',
   'favicon.ico',
