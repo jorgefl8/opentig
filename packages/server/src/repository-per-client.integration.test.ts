@@ -354,6 +354,31 @@ describe('a repository per client', () => {
     await expect(readFile(path.join(pathA, 'notes.txt'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('keeps a cut through its client reconnecting, and another tab cutting meanwhile does not replace it', async () => {
+    const { connect, repository } = await startServer();
+    const work = await repository('alpha');
+    await mkdir(path.join(work, 'moved'));
+    await writeFile(path.join(work, 'notes.txt'), 'cut me\n');
+    await writeFile(path.join(work, 'other.txt'), 'cut too\n');
+    const first = await connect();
+    const alpha = await first.value<Repository>('repository:open-path', work);
+    const cut = await first.value<{ paths: string[]; transferId: string }>('repository:cut-entries', alpha.id, ['notes.txt']);
+    const gone = closed(first.socket);
+    first.socket.terminate();
+    await gone;
+    const other = await connect();
+    await other.value('repository:open-recent', alpha.id);
+    await other.value('repository:cut-entries', alpha.id, ['other.txt']);
+
+    const back = await connect();
+    await back.value('app:bootstrap', { repositoryId: alpha.id });
+    const pasted = await back.value<{ source: string }>('repository:paste-entries', alpha.id, 'moved', cut.paths, cut.transferId, null);
+
+    expect(pasted.source).toBe('cut');
+    await expect(readFile(path.join(work, 'moved', 'notes.txt'), 'utf8')).resolves.toBe('cut me\n');
+    await expect(readFile(path.join(work, 'notes.txt'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('never moves a cut into a repository other than the one it was made in', async () => {
     const { connect, repository } = await startServer();
     const [pathA, pathB] = await Promise.all([repository('alpha'), repository('beta')]);
