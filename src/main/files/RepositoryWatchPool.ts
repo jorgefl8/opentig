@@ -191,14 +191,20 @@ export class RepositoryWatchPool {
     const key = folderKey(named);
     this.pausedFolders.set(key, (this.pausedFolders.get(key) ?? 0) + 1);
     let stopped = false;
-    for (const entry of this.entries.values()) {
-      if (folderKey(entry.repository.path) !== key) continue;
-      if (entry.startTimer) clearTimeout(entry.startTimer);
-      entry.startTimer = null;
-      entry.waitingSince = 0;
-      entry.paused = true;
-      this.pausing = true;
-      try { stopped = Boolean(entry.watcher) || stopped; this.stopWatcher(entry); } finally { this.pausing = false; }
+    try {
+      for (const entry of this.entries.values()) {
+        if (folderKey(entry.repository.path) !== key) continue;
+        if (entry.startTimer) clearTimeout(entry.startTimer);
+        entry.startTimer = null;
+        entry.waitingSince = 0;
+        entry.paused = true;
+        this.pausing = true;
+        try { stopped = Boolean(entry.watcher) || stopped; this.stopWatcher(entry); } finally { this.pausing = false; }
+      }
+    } catch (error) {
+      // The caller gets nothing to end the pause with, so a pause that failed is not left in place.
+      this.endPause(key);
+      throw error;
     }
     if (stopped) await new Promise<void>((resolve) => setImmediate(resolve));
     return key;

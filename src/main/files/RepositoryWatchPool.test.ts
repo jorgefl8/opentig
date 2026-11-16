@@ -254,6 +254,26 @@ describe('RepositoryWatchPool', () => {
     expect(pool.status('a').state).toBe('watching');
   });
 
+  it('does not leave a folder paused when stopping its watch failed', async () => {
+    vi.useFakeTimers();
+    const { pool, started, watchers } = fixture();
+    pool.hold('tab', repository('a'));
+    const watch = watchers[0] as unknown as { stop(): void };
+    const stop = watch.stop;
+    watch.stop = () => { throw new Error('busy'); };
+    await expect(pool.pause('/repositories/a')).rejects.toThrow('busy');
+    watch.stop = stop;
+    // Nobody was given anything to end that pause with: its holder is watched again at once,
+    expect(started).toEqual(['a', 'a']);
+    // and so is whoever opens the folder later.
+    pool.release('tab');
+    vi.advanceTimersByTime(15_000);
+    pool.hold('later', repository('a'));
+    vi.advanceTimersByTime(300);
+    expect(started).toEqual(['a', 'a', 'a']);
+    expect(pool.status('a').state).toBe('watching');
+  });
+
   it('starts no watch in a folder being deleted, even for someone who opens it after everyone left it', async () => {
     const { pool, started } = fixture();
     pool.hold('tab', repository('a'));
