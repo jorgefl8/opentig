@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -237,6 +237,40 @@ describe('a repository per client', () => {
     await Promise.all([first.settled(), second.settled()]);
     expect(first.log.filter((entry) => entry.startsWith(alpha.id))).toEqual([]);
     expect(await first.value<{ watchId?: string }>('repository:read-file', alpha.id, 'README.md')).not.toHaveProperty('watchId');
+  });
+
+  it('keeps each tab’s cut its own: another tab of the same browser opening a repository does not turn it into a copy', async () => {
+    const { connect, repository } = await startServer();
+    const [pathA, pathB] = await Promise.all([repository('alpha'), repository('beta')]);
+    await mkdir(path.join(pathA, 'moved'));
+    await writeFile(path.join(pathA, 'notes.txt'), 'cut me\n');
+    // Both tabs share the session of one browser.
+    const first = await connect();
+    const second = await connect();
+    const alpha = await first.value<Repository>('repository:open-path', pathA);
+    const cut = await first.value<{ paths: string[]; transferId: string }>('repository:cut-entries', alpha.id, ['notes.txt']);
+
+    await second.value('repository:open-path', pathB);
+    const pasted = await first.value<{ source: string }>('repository:paste-entries', alpha.id, 'moved', cut.paths, cut.transferId, null);
+
+    expect(pasted.source).toBe('cut');
+    await expect(readFile(path.join(pathA, 'moved', 'notes.txt'), 'utf8')).resolves.toBe('cut me\n');
+    await expect(readFile(path.join(pathA, 'notes.txt'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('never moves a cut into a repository other than the one it was made in', async () => {
+    const { connect, repository } = await startServer();
+    const [pathA, pathB] = await Promise.all([repository('alpha'), repository('beta')]);
+    await writeFile(path.join(pathA, 'notes.txt'), 'stay\n');
+    const client = await connect();
+    const beta = await client.value<Repository>('repository:open-path', pathB);
+    const alpha = await client.value<Repository>('repository:open-path', pathA);
+    const cut = await client.value<{ paths: string[]; transferId: string }>('repository:cut-entries', alpha.id, ['notes.txt']);
+
+    const pasted = await client.value<{ source: string }>('repository:paste-entries', beta.id, '', cut.paths, cut.transferId, null);
+
+    expect(pasted.source).toBe('files');
+    await expect(readFile(path.join(pathA, 'notes.txt'), 'utf8')).resolves.toBe('stay\n');
   });
 
   it('opens the repository a client asks for at start for it alone, and the last one opened for a client that asks for none', async () => {

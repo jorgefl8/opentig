@@ -57,6 +57,10 @@ export class ClientRepositories {
     this.pool.release(connectionId);
   }
 
+  isConnected(connectionId: string): boolean {
+    return this.connections.has(connectionId);
+  }
+
   repositoryOf(connectionId: string): string | null {
     return this.connections.get(connectionId)?.repository?.id ?? null;
   }
