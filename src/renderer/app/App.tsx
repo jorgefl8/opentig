@@ -3544,9 +3544,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     onResolveConflict: resolveConflictFile,
   });
   // The sections, the commit box and the sidebar's parts are memoized too, and get their handlers the same way.
-  // Two callbacks are passed as they are because they belong to the repository they read from and save for:
-  // `loadDirectoryEntries` and `persistFilesTreeExpandedPaths` change with it, and Files reads its loaded
-  // folders again when that happens.
+  // Callbacks that are already the same function on every render are passed as they are. So are two that
+  // belong to the repository they read from and save for: `loadDirectoryEntries` and
+  // `persistFilesTreeExpandedPaths` change with it, and Files reads its loaded folders again when that happens.
   const changesHandlers = useStableHandlers({
     onPublish: () => void pushUpdates(),
     onSelect: (path: string, kind: 'staged' | 'unstaged') => { selectViewer({ type: 'diff', path, kind }); },
