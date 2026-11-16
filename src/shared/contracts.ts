@@ -920,6 +920,10 @@ export interface OpenTigCapabilities {
   aiProviders: AiHarnessStatus[];
 }
 
+export interface BootstrapRequest {
+  repositoryId?: string;
+}
+
 export interface BootstrapData {
   onboardingVersion?: number;
   recentRepositories: RecentRepository[];
@@ -935,7 +939,10 @@ export interface BootstrapData {
   unavailableActiveRepositoryId?: string | null;
   /** Present when bootstrap arrived through the authoritative server transport. */
   server?: OpenTigServerIdentity;
-  /** How the active repository is watched for changes, with the watch's id while it reports every change. */
+  /**
+   * How the active repository is watched for changes, with the watch's id while it reports every change.
+   * Absent while the watch is being set up: an announcement follows.
+   */
   activeRepositoryWatch?: { state: RepositoryWatchState; watchId?: string };
 }
 
@@ -974,7 +981,11 @@ export interface ServerDirectoryListing {
  */
 export interface OpenTigApi {
   app: {
-    bootstrap(): Promise<BootstrapData>;
+    /**
+     * `repositoryId`: the repository this client was on, which a server with `repositoryPerClient`
+     * opens for it alone. Older servers ignore it.
+     */
+    bootstrap(request?: BootstrapRequest): Promise<BootstrapData>;
     gitStatus(): Promise<GitToolStatus>;
     /** Sets user.name/email globally; refuses to replace an existing global identity. */
     setGlobalGitIdentity(input: GitIdentityInput): Promise<void>;

@@ -1,0 +1,199 @@
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
+import type { RepositoryInfo } from '../../shared/contracts';
+import type { RepositoryChangeScope } from '../../shared/repository-change';
+import type { OpenTigRuntimeEvent, RepositoryWatchState } from '../../shared/runtime-events';
+import type { RepositoryWatchPool } from '../files/RepositoryWatchPool';
+
+/** Connections with a repository at once. Above the transport's own limit, which keeps it far lower. */
+export const MAX_CLIENT_CONNECTIONS = 256;
+
+/** Sends an event to these connections only. */
+export type ClientEventSink = (event: OpenTigRuntimeEvent, connectionIds: ReadonlySet<string>) => void;
+
+interface ClientConnection {
+  repository: RepositoryInfo | null;
+  /** The watch of the pool this connection was last told about, and the state it was told. */
+  watchId: string | null;
+  told: RepositoryWatchState | null;
+  /**
+   * The id this connection knows that watch by. A new one each time the connection joins a watch,
+   * so a read it made before leaving the repository never counts as covered after it comes back:
+   * it heard nothing of the repository meanwhile.
+   */
+  clientWatchId: string | null;
+  /** The latest open the connection started, and the one whose repository it has. */
+  started: number;
+  attached: number;
+}
+
+/**
+ * The repository each connection has open. A connection is one browser tab or desktop window,
+ * created by the transport once its session is proven, so one client never sets or reads
+ * another's. Each repository a connection has open is held in the watch pool, and changes and
+ * watch announcements of a repository go only to the connections that have it open.
+ */
+export class ClientRepositories {
+  private readonly connections = new Map<string, ClientConnection>();
+
+  constructor(
+    private readonly pool: RepositoryWatchPool,
+    private readonly send: ClientEventSink,
+  ) {}
+
+  get size(): number { return this.connections.size; }
+
+  /** A signed-in connection arrived. False when there is no room for another. */
+  connect(connectionId: string): boolean {
+    if (this.connections.has(connectionId)) return true;
+    if (this.connections.size >= MAX_CLIENT_CONNECTIONS) return false;
+    this.connections.set(connectionId, { repository: null, watchId: null, told: null, clientWatchId: null, started: 0, attached: 0 });
+    return true;
+  }
+
+  /** The connection closed or died: its repository is released, after the pool's grace period. */
+  disconnect(connectionId: string): void {
+    if (!this.connections.delete(connectionId)) return;
+    this.pool.release(connectionId);
+  }
+
+  repositoryOf(connectionId: string): string | null {
+    return this.connections.get(connectionId)?.repository?.id ?? null;
+  }
+
+  /**
+   * Called as an open starts, before anything is awaited: of several opens on one connection, the
+   * one started last decides its repository, whichever finishes first. Zero for no connection.
+   */
+  beginOpen(connectionId: string | undefined): number {
+    const connection = connectionId === undefined ? undefined : this.connections.get(connectionId);
+    if (!connection) return 0;
+    connection.started += 1;
+    return connection.started;
+  }
+
+  /**
+   * The connection now has `repository` open. Unless `quiet`, it is told at once how the repository
+   * is watched, ahead of the answer to the open, so it trusts what it reads from the start.
+   * False when the connection is gone, or a later open on it already finished.
+   */
+  attach(connectionId: string | undefined, repository: RepositoryInfo, ticket: number, quiet = false): boolean {
+    const connection = connectionId === undefined ? undefined : this.connections.get(connectionId);
+    if (!connectionId || !connection || ticket < connection.attached) return false;
+    connection.attached = ticket;
+    if (connection.repository?.id !== repository.id) {
+      connection.watchId = null;
+      connection.clientWatchId = null;
+      connection.told = null;
+    }
+    connection.repository = repository;
+    this.pool.hold(connectionId, repository);
+    const watch = this.watchOf(connectionId, connection);
+    if (!quiet && watch && watch.state !== connection.told) {
+      connection.told = watch.state;
+      this.sendWatch(connectionId, repository.id, watch.state, watch.watchId);
+    } else if (watch) connection.told = watch.state;
+    return true;
+  }
+
+  /** How the connection's repository is watched, as the connection is to know it; undefined while it is being set up. */
+  watch(connectionId: string | undefined, repositoryId: string): { state: RepositoryWatchState; watchId?: string } | undefined {
+    const connection = connectionId === undefined ? undefined : this.connections.get(connectionId);
+    if (!connectionId || !connection || connection.repository?.id !== repositoryId) return undefined;
+    const watch = this.watchOf(connectionId, connection);
+    if (!watch) return undefined;
+    connection.told = watch.state;
+    return { state: watch.state, ...(watch.watchId ? { watchId: watch.watchId } : {}) };
+  }
+
+  /**
+   * The id the connection knows the watch reporting changes to this file by, or null when it cannot
+   * rely on hearing of a change to it: it does not have the repository open, has not been told of
+   * the watch, or the watch does not cover the file.
+   */
+  covers(connectionId: string | undefined, repositoryId: string, relativePath: string): string | null {
+    const connection = connectionId === undefined ? undefined : this.connections.get(connectionId);
+    if (!connection || connection.repository?.id !== repositoryId || !connection.clientWatchId || !connection.watchId) return null;
+    return this.pool.covers(repositoryId, relativePath) === connection.watchId ? connection.clientWatchId : null;
+  }
+
+  /** Connections that have the repository open. */
+  connectionsOn(repositoryId: string): Set<string> {
+    const ids = new Set<string>();
+    for (const [id, connection] of this.connections) if (connection.repository?.id === repositoryId) ids.add(id);
+    return ids;
+  }
+
+  /** Whether a connection other than `except` has the worktree at `worktreePath` open. */
+  openElsewhere(worktreePath: string, except: string | undefined): boolean {
+    const target = normalizePath(worktreePath);
+    for (const [id, connection] of this.connections) {
+      if (id !== except && connection.repository && normalizePath(connection.repository.path) === target) return true;
+    }
+    return false;
+  }
+
+  /** A change to the repository, for the connections that have it open. */
+  changed(repositoryId: string, scope: RepositoryChangeScope): void {
+    const recipients = this.connectionsOn(repositoryId);
+    if (recipients.size > 0) this.send({ type: 'repository.changed', repositoryId, scope }, recipients);
+  }
+
+  /** The pool's watch of the repository went from one state to another. */
+  watchChanged(repositoryId: string, state: RepositoryWatchState, watchId: string | null): void {
+    for (const [id, connection] of this.connections) {
+      if (connection.repository?.id !== repositoryId) continue;
+      if (state === 'watching' && watchId) {
+        connection.watchId = watchId;
+        connection.clientWatchId = randomUUID();
+      } else {
+        connection.watchId = null;
+        connection.clientWatchId = null;
+      }
+      connection.told = state;
+      this.sendWatch(id, repositoryId, state, connection.clientWatchId);
+    }
+  }
+
+  /** Repositories removed from OpenTig: their watches stop, and whoever has one open is told so. */
+  forget(repositoryIds: Iterable<string>): void {
+    for (const repositoryId of repositoryIds) {
+      this.pool.forget(repositoryId);
+      for (const [id, connection] of this.connections) {
+        if (connection.repository?.id !== repositoryId) continue;
+        const told = connection.told;
+        connection.watchId = null;
+        connection.clientWatchId = null;
+        connection.told = 'stopped';
+        if (told !== 'stopped') this.sendWatch(id, repositoryId, 'stopped', null);
+      }
+    }
+  }
+
+  private watchOf(connectionId: string, connection: ClientConnection): { state: RepositoryWatchState; watchId: string | null } | undefined {
+    const repositoryId = connection.repository!.id;
+    if (this.pool.heldBy(connectionId) !== repositoryId) return { state: 'stopped', watchId: null };
+    const status = this.pool.status(repositoryId);
+    if (status.state === 'starting') return undefined;
+    if (status.state === 'watching' && status.watchId) {
+      if (connection.watchId !== status.watchId || !connection.clientWatchId) {
+        connection.watchId = status.watchId;
+        connection.clientWatchId = randomUUID();
+        connection.told = null;
+      }
+      return { state: 'watching', watchId: connection.clientWatchId };
+    }
+    connection.watchId = null;
+    connection.clientWatchId = null;
+    return { state: status.state, watchId: null };
+  }
+
+  private sendWatch(connectionId: string, repositoryId: string, state: RepositoryWatchState, watchId: string | null): void {
+    this.send({ type: 'repository.changed', repositoryId, scope: 'unknown', watch: state, ...(watchId ? { watchId } : {}) }, new Set([connectionId]));
+  }
+}
+
+function normalizePath(value: string): string {
+  const resolved = path.resolve(value).replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? resolved.toLocaleLowerCase() : resolved;
+}

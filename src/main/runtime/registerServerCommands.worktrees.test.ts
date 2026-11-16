@@ -5,10 +5,12 @@ import { registerServerCommands } from './registerServerCommands';
 
 const request = { repositoryId: 'repo', path: '/sample/review', expectedOid: 'a'.repeat(40), force: false, deleteBranch: true };
 
-function fixture(removeWorktree: (...args: unknown[]) => Promise<unknown>) {
+function fixture(removeWorktree: (...args: unknown[]) => Promise<unknown>, openElsewhere = false) {
   const registry = new CommandRegistry();
   const repositoryChanged = vi.fn();
+  const clients = { openElsewhere: vi.fn(() => openElsewhere), forget: vi.fn() };
   registerServerCommands(registry, {
+    clients,
     repositories: {
       invalidateIfKnown: vi.fn(),
       get: () => ({ id: 'repo', commonDir: '/sample/.git' }),
@@ -17,7 +19,7 @@ function fixture(removeWorktree: (...args: unknown[]) => Promise<unknown>) {
     operations: { removeWorktree },
     events: { repositoryChanged },
   } as unknown as Parameters<typeof registerServerCommands>[1], {} as Parameters<typeof registerServerCommands>[2]);
-  return { registry, repositoryChanged };
+  return { registry, repositoryChanged, clients };
 }
 
 describe('worktree removal command', () => {
@@ -38,6 +40,16 @@ describe('worktree removal command', () => {
     await registry.execute('session', IPC.worktreeRemove, [{ ...request, force: false, deleteBranch: false, cleanupOnly: true }]);
 
     expect(removeWorktree).toHaveBeenCalledWith('repo', '/sample/review', 'a'.repeat(40), false, false, expect.objectContaining({ cleanupOnly: true }));
+  });
+
+  it('refuses to remove a worktree another tab, window or device has open, and leaves it alone', async () => {
+    const removeWorktree = vi.fn(async () => ({ status: 'removed' }));
+    const { registry, clients } = fixture(removeWorktree, true);
+
+    expect(await registry.execute('session', IPC.worktreeRemove, [request], { connectionId: 'tab' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('open in another window') } });
+
+    expect(clients.openElsewhere).toHaveBeenCalledWith('/sample/review', 'tab');
+    expect(removeWorktree).not.toHaveBeenCalled();
   });
 
   it('tells every client when the removal ends, whether or not it succeeded', async () => {

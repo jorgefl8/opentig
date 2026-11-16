@@ -15,6 +15,11 @@ import type {
 
 export interface CommandExecutionContext {
   readonly sessionId: string;
+  /**
+   * The connection the request came on, named by the transport once the connection's session was
+   * proven: one browser tab or desktop window. Absent for a caller that is not a client connection.
+   */
+  readonly connectionId?: string;
   readonly signal: AbortSignal;
   /** Present when the client can show an answer marked as old while it is read again (see `KeptAnswer`). */
   readonly kept?: KeptAnswerSink;
@@ -25,6 +30,13 @@ export interface CommandExecutionContext {
 export interface CommandExecutionOptions {
   signal?: AbortSignal;
   kept?: KeptAnswerSink;
+  connectionId?: string;
+}
+
+/** Told when a client connection opens and closes, for what a server keeps per connection. */
+export interface ConnectionLifecycle {
+  opened(connectionId: string): void;
+  closed(connectionId: string): void;
 }
 
 type CommandHandler = (
@@ -43,6 +55,19 @@ export class CommandRegistry {
   private readonly sessions = new Map<string, Map<string, unknown>>();
   private activeCommands = 0;
   private updating = false;
+  private lifecycle: ConnectionLifecycle | null = null;
+
+  setConnectionLifecycle(lifecycle: ConnectionLifecycle | null): void {
+    this.lifecycle = lifecycle;
+  }
+
+  connectionOpened(connectionId: string): void {
+    this.lifecycle?.opened(connectionId);
+  }
+
+  connectionClosed(connectionId: string): void {
+    this.lifecycle?.closed(connectionId);
+  }
 
   pauseForUpdate(): boolean {
     if (this.activeCommands > 0 || this.updating) return false;
@@ -103,7 +128,7 @@ export class CommandRegistry {
         throw invalidCommand(operation, 'Command request exceeded the safety limit.');
       }
       if (this.updating) throw invalidCommand(operation, 'The server is restarting to install an update. Try again after reconnecting.');
-      const context = this.context(sessionId, options.signal, options.kept);
+      const context = this.context(sessionId, options.signal, options.kept, options.connectionId);
       this.activeCommands += 1;
       try { return { ok: true, value: await registered.handler(context, args) }; }
       finally { this.activeCommands -= 1; }
@@ -171,7 +196,7 @@ export class CommandRegistry {
     this.sessions.clear();
   }
 
-  private context(sessionId: string, signal = NEVER_ABORTED_SIGNAL, kept?: KeptAnswerSink): CommandExecutionContext {
+  private context(sessionId: string, signal = NEVER_ABORTED_SIGNAL, kept?: KeptAnswerSink, connectionId?: string): CommandExecutionContext {
     let values = this.sessions.get(sessionId);
     if (!values) {
       values = new Map<string, unknown>();
@@ -181,6 +206,7 @@ export class CommandRegistry {
       sessionId,
       signal,
       ...(kept ? { kept } : {}),
+      ...(connectionId ? { connectionId } : {}),
       state: <Value>(key: string, initialize: () => Value): Value => {
         if (!values!.has(key)) values!.set(key, initialize());
         return values!.get(key) as Value;
