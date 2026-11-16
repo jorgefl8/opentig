@@ -56,6 +56,23 @@ export function registerServerCommands(
     return value;
   };
   /**
+   * What each connection cut, waiting to be pasted: one tab's cut is never another's, though the tabs
+   * of one browser share a session. Kept while the connection is open; a caller without one keeps it
+   * with its session.
+   */
+  const clipboards = new Map<string, FileClipboardSessionState>();
+  const fileClipboardState = (context: CommandExecutionContext): FileClipboardSessionState => {
+    const connectionId = context.connectionId;
+    if (!connectionId) return context.state(FILE_CLIPBOARD_SESSION_STATE, () => ({ pendingCut: null }));
+    let state = clipboards.get(connectionId);
+    if (!state) {
+      state = { pendingCut: null };
+      // A request that outlived its connection keeps nothing.
+      if (services.clients.isConnected(connectionId)) clipboards.set(connectionId, state);
+    }
+    return state;
+  };
+  /**
    * Runs an open for the client that asked: the repository becomes the one its connection has open,
    * and no other client's. Of two opens on one connection, the one asked for last wins.
    */
@@ -270,7 +287,7 @@ export function registerServerCommands(
     const absolutePaths = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
     await Promise.all(absolutePaths.map((filePath) => lstat(filePath)));
     const transferId = randomUUID();
-    fileClipboardState(context).pendingCut = { paths: absolutePaths, transferId };
+    fileClipboardState(context).pendingCut = { repositoryId, paths: absolutePaths, transferId };
     return { cut: absolutePaths.length, paths: absolutePaths, transferId };
   });
   handleWithContext(IPC.repositoryPasteEntries, 'paste-entries', async (context, id, targetDirectory, rawSourcePaths, rawCutTransferId, rawImagePng) => {
@@ -282,7 +299,9 @@ export function registerServerCommands(
     return services.fileHistory.serialize(repositoryId, async () => {
       if (filePaths.length > 0) {
         const clipboardState = fileClipboardState(context);
-        if (clipboardState.pendingCut?.transferId === cutTransferId && samePathSelection(filePaths, clipboardState.pendingCut.paths)) {
+        // A cut moves only within the repository it was made in; anywhere else it pastes a copy.
+        if (clipboardState.pendingCut?.transferId === cutTransferId && clipboardState.pendingCut.repositoryId === repositoryId
+          && samePathSelection(filePaths, clipboardState.pendingCut.paths)) {
           const sources = [...clipboardState.pendingCut.paths];
           const repository = services.repositories.get(repositoryId);
           const created = await services.files.movePaths(repositoryId, sources, destination);
@@ -623,7 +642,10 @@ export function registerServerCommands(
   // What the server keeps per connection lives as long as the connection.
   registry.setConnectionLifecycle({
     opened: (connectionId) => { services.clients.connect(connectionId); },
-    closed: (connectionId) => services.clients.disconnect(connectionId),
+    closed: (connectionId) => {
+      clipboards.delete(connectionId);
+      services.clients.disconnect(connectionId);
+    },
   });
 
   const registered = new Set(registry.registeredCommands());
@@ -638,11 +660,7 @@ export async function openRuntimeRepositoryPath(services: OpenTigRuntimeServices
 }
 
 export const FILE_CLIPBOARD_SESSION_STATE = 'file-clipboard';
-interface FileClipboardSessionState { pendingCut: { paths: string[]; transferId: string } | null }
-
-function fileClipboardState(context: CommandExecutionContext): FileClipboardSessionState {
-  return context.state(FILE_CLIPBOARD_SESSION_STATE, () => ({ pendingCut: null }));
-}
+interface FileClipboardSessionState { pendingCut: { repositoryId: string; paths: string[]; transferId: string } | null }
 
 function samePathSelection(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
