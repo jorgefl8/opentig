@@ -366,15 +366,38 @@ describe('SettingsStore worktree recents', () => {
     expect(store.recentRepositories.some((item) => item.id === 'main')).toBe(true);
   });
 
-  it('refuses to remove the active repository and ignores unknown paths', async () => {
+  it('ignores unknown paths', async () => {
     const file = await settingsFile({});
     const store = await repositoryWithWorktrees(file);
     const before = store.recentRepositories;
-    // `other` was opened last, so it is the active repository.
-    expect(await store.forgetWorktreePath('C:\\repos\\other')).toEqual(before);
     expect(await store.forgetWorktreePath('C:\\repos\\never-opened')).toEqual(before);
     expect(await store.forgetWorktreePath('   ')).toEqual(before);
     expect(JSON.parse(await readFile(file, 'utf8')).recentRepositories).toHaveLength(4);
+  });
+
+  it('forgets a removed worktree that was opened last, and leaves its main worktree as the one opened last', async () => {
+    // A client reloaded on the main worktree without saving anything, so the worktree is still the one opened last.
+    const file = await settingsFile({});
+    const store = await repositoryWithWorktrees(file);
+    await store.touchRepository(worktree('review', 'C:\\repos\\app-trees\\review'));
+    expect(store.activeRepositoryId).toBe('review');
+
+    const recents = await store.forgetWorktreePath('C:\\repos\\app-trees\\review', 'spike');
+
+    expect(recents.map((item) => item.id).sort()).toEqual(['main', 'other', 'spike']);
+    expect(store.activeRepositoryId).toBe('main');
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ activeRepositoryId: 'main' });
+  });
+
+  it('falls back to the worktree the removal was asked from when the main one is not saved', async () => {
+    const store = new SettingsStore(await settingsFile({}));
+    await store.load();
+    await store.touchRepository(worktree('spike', 'C:\\repos\\app-trees\\spike'));
+    await store.touchRepository(worktree('review', 'C:\\repos\\app-trees\\review'));
+
+    await store.forgetWorktreePath('C:\\repos\\app-trees\\review', 'spike');
+
+    expect(store.activeRepositoryId).toBe('spike');
   });
 });
 

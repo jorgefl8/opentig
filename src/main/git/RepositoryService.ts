@@ -220,7 +220,7 @@ export class RepositoryService {
    * entries and its recent-repository rows. Sibling worktrees and the
    * repository's project assignment, keyed by `commonDir`, are left intact.
    */
-  async forgetWorktree(worktreePath: string): Promise<RecentRepository[]> {
+  async forgetWorktree(worktreePath: string, fallbackId?: string): Promise<RecentRepository[]> {
     const target = normalizeWorktreePath(worktreePath);
     for (const [id, repository] of this.repositories) {
       if (normalizeWorktreePath(repository.path) === target) {
@@ -228,7 +228,7 @@ export class RepositoryService {
         this.repositories.delete(id);
       }
     }
-    return this.settings.forgetWorktreePath(worktreePath);
+    return this.settings.forgetWorktreePath(worktreePath, fallbackId);
   }
 
   /**
