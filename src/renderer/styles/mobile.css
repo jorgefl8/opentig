@@ -250,6 +250,14 @@
   html .commit-dot::before, html .status-dot { width: 8px; height: 8px; }
 
   html .pulls-section-head { --tab-height: 44px; height: 44px; padding: 0 6px 0 14px; }
+  html .pulls-kept { margin: 8px 14px 0; padding: 0; }
+  /* A kept answer that could not be updated: its age, what failed and Retry on the first line, and the
+     reason under them across the whole notice, cut after three lines, so a long one never pushes the list. */
+  html .kept-read-notice.kept-read-failed { display: grid; grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr) auto; align-items: baseline; gap: 0 4px; }
+  html .kept-read-failed .kept-read-age { white-space: nowrap; }
+  html .kept-read-failed .kept-read-outcome { display: contents; }
+  html .kept-read-failed .kept-read-message { display: -webkit-box; grid-row: 2; grid-column: 1 / -1; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+  html .kept-read-failed .kept-read-retry { grid-row: 1; grid-column: 4; justify-self: end; margin-block: -4px; }
   html .pulls-scroll { padding-top: 0; }
   html .pull-item { padding-right: 0; }
   html .pull-main { min-height: 60px; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 10px; padding: 11px 14px; }
@@ -321,6 +329,9 @@
   html .pr-viewer-overview .pr-viewer-top, html .pr-viewer-heading { display: contents; }
   html .pr-viewer-heading h2 { font-size: var(--text-title); line-height: 1.3; letter-spacing: -.01em; }
   html .pr-viewer-status { order: 1; margin-top: 8px; gap: 2px 6px; }
+  /* A kept answer that could not be updated takes a row of its own here, with no separator before it. */
+  html .pr-viewer-status > .kept-read-failed { flex-basis: 100%; }
+  html .pr-viewer-status > .kept-read-failed::before { content: none; }
   html .pr-viewer-status .pr-status { font-size: var(--text-body); }
   html .pr-viewer-overview > .pr-viewer-meta { order: 2; margin-top: 4px; }
   html .pr-action-bar { order: 3; max-width: 100%; justify-content: flex-start; }

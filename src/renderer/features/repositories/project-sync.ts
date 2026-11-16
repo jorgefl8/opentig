@@ -17,6 +17,30 @@ export interface RepositorySyncCounts {
   operation?: string | null;
 }
 
+/** What a repository's own status says of its sync state, with the counts as of its last fetch. */
+export function syncCountsOf(status: Required<RepositorySyncCounts>): Required<RepositorySyncCounts> {
+  return {
+    ahead: status.ahead, behind: status.behind, branch: status.branch, detached: status.detached,
+    upstream: status.upstream, unborn: status.unborn, readOnly: status.readOnly, operation: status.operation,
+  };
+}
+
+/**
+ * The counts after a repository's fetch failed. The open repository keeps what its
+ * status says, which needs no fetch, so its Pull and Push stay on offer; of any
+ * other repository nothing is known, and it offers neither.
+ */
+export function countsAfterFailedFetch(
+  counts: ReadonlyMap<string, RepositorySyncCounts>,
+  repositoryId: string,
+  open: { repositoryId: string; status: Required<RepositorySyncCounts> | null },
+): Map<string, RepositorySyncCounts> {
+  const next = new Map(counts);
+  if (open.repositoryId === repositoryId && open.status) next.set(repositoryId, syncCountsOf(open.status));
+  else next.delete(repositoryId);
+  return next;
+}
+
 let nextSyncToastId = 0;
 
 /** Isolate each operation from other notices and pending Sileo exit timers. */

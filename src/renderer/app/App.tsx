@@ -10,7 +10,7 @@ import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
 import { Activity, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { isModuleLoadError, lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { replaceEqualDeep, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconBrandGithub, IconFileArrowRight, IconFiles, IconGitBranch, IconGitCompare, IconHistory,
   IconRefresh, IconRestore, IconSearch, IconTrash,
@@ -30,7 +30,7 @@ import { publicationKey } from '@/features/refs/publication-context';
 import { normalizeOpenFilesStates, type OpenFilesState } from '../../shared/open-files-state';
 import { normalizeFilesTreeStates } from '../../shared/files-tree-state';
 import { serializedErrorFromReason, type SerializedAiError } from '../../shared/errors';
-import type { BranchInfo, CommitInfo, CommitPage, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
+import type { BranchInfo, CommitFile, CommitInfo, CommitPage, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS } from '../../shared/remote-fetch';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
@@ -41,7 +41,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SplashScreen } from '@/components/SplashScreen';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { ChangesView } from '@/features/changes/ChangesView';
+import { ChangesView, type ChangeSelection } from '@/features/changes/ChangesView';
 import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
 import { createSnapshotComparer, findEntry, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
 import { MobileFileBar } from '@/features/files/MobileFileBar';
@@ -55,6 +55,7 @@ import {
 import { StoredCommitComposer } from '@/features/commit/StoredCommitComposer';
 import { createCommitMessageStore } from '@/features/commit/commit-message-store';
 import { useCommitPlan } from '@/features/commit/useCommitPlan';
+import type { CommitPlanMode, PlannedCommit } from '@/features/commit/commit-plan';
 import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
 import { Welcome } from '@/features/repositories/Welcome';
 import { RepositoryUnavailable } from '@/features/repositories/RepositoryUnavailable';
@@ -179,6 +180,8 @@ const WelcomeSettings = lazyWithRetry(() => import('@/features/settings/Settings
 
 /** The same empty lists on every render, so memoized parts see no change. */
 const NO_COMMITS: CommitInfo[] = [];
+const NO_CHANGES: RepositoryStatus['changes'] = [];
+const NO_PATHS: readonly string[] = [];
 const NO_BRANCHES: BranchInfo[] = [];
 const NO_WORKTREES: WorktreeInfo[] = [];
 const NO_WORKTREE_AGENTS: Awaited<ReturnType<typeof opentig.refs.worktreeAgents>> = [];
@@ -1078,10 +1081,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (nextBranches && nextWorktrees) lastReadRef.current.refs = lastReadRef.current.snapshot;
       setSnapshotRepositoryId(repositoryId);
       setConfirmedRepositoryId(repositoryId);
-      setStatus(nextStatus);
+      // A read hands back new objects even when nothing changed. What is equal to what is shown is kept, so
+      // the parts that show it redraw only for what did change.
+      setStatus((current) => replaceEqualDeep(current, nextStatus));
       setShownHistoryHead((current) => current?.repositoryId === repositoryId && current.head === historyHead(nextStatus) ? current : { repositoryId, head: historyHead(nextStatus) });
-      if (nextBranches) setBranches(nextBranches);
-      if (nextWorktrees) setWorktrees(nextWorktrees);
+      if (nextBranches) setBranches((current) => replaceEqualDeep(current, nextBranches));
+      if (nextWorktrees) setWorktrees((current) => replaceEqualDeep(current, nextWorktrees));
       if (nextFiles) {
         treeGenerationRef.current = treeReadRef.current?.repositoryId === repositoryId ? treeReadRef.current : null;
         applyFilesSnapshot(nextFiles);
@@ -3538,6 +3543,138 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     onUpdateConflict: updateConflictFile,
     onResolveConflict: resolveConflictFile,
   });
+  // The sections, the commit box and the sidebar's parts are memoized too, and get their handlers the same way.
+  // Callbacks that are already the same function on every render are passed as they are. So are two that
+  // belong to the repository they read from and save for: `loadDirectoryEntries` and
+  // `persistFilesTreeExpandedPaths` change with it, and Files reads its loaded folders again when that happens.
+  const changesHandlers = useStableHandlers({
+    onPublish: () => void pushUpdates(),
+    onSelect: (path: string, kind: 'staged' | 'unstaged') => { selectViewer({ type: 'diff', path, kind }); },
+    onConflict: (path: string) => { selectViewer({ type: 'conflict', path }); },
+    onOpenFile: (path: string) => { openFile(path); },
+    onDiscard: (paths: string[]) => void discardChanges(paths),
+    onStage: (paths: string[]) => void runIndexOperation('stage', paths),
+    onUnstage: (paths: string[]) => void runIndexOperation('unstage', paths),
+    onStageAll: () => void runAll('stage'),
+    onUnstageAll: () => void runAll('unstage'),
+  });
+  const filesHandlers = useStableHandlers({
+    onQuickOpen: () => openPalette('files'),
+    onFileIntent: (path: string) => { if (repository) prefetchFile(repository.id, path, fileStamp(path)); },
+    onActivateFile: activateFileTab,
+    onCloseFile: (path: string) => void closeFileTab(path),
+    onPinFile: (path: string) => { openFile(path, 'pinned'); },
+    onUndo: () => performFileHistory('undo'),
+    onRedo: () => performFileHistory('redo'),
+    onOpenFile: (path: string, mode?: 'preview' | 'pinned') => { openFile(path, mode); },
+    onCopyPath: copyFilePaths,
+    onCopyEntries: copyFileEntries,
+    onCutEntries: cutFileEntries,
+    onCopyContents: copyFileContents,
+    onPaste: pasteFileEntries,
+    onMoveEntries: moveFileEntries,
+    onDeleteEntries: deleteFileEntries,
+    onReveal: revealFileEntry,
+    onRename: renameFileEntry,
+    onCreate: createFileEntry,
+  });
+  const historyHandlers = useStableHandlers({
+    onSelectCommit: (commit: CommitInfo) => {
+      const entry = fileHistoryFilter?.entries.get(commit.oid);
+      // In a file's history, a commit opens on the file's diff; All files is one click from there.
+      if (entry) selectViewer({ type: 'commit-file', oid: commit.oid, path: entry.path, oldPath: entry.oldPath ?? undefined });
+      else selectViewer({ type: 'commit', oid: commit.oid, subject: commit.subject });
+    },
+    onSelectFile: (oid: string, file: CommitFile) => { selectViewer({ type: 'commit-file', oid, path: file.path, oldPath: file.oldPath ?? undefined }); },
+    onUndo: setUndoCommit,
+    onMore: () => void loadMore(),
+  });
+  const searchHandlers = useStableHandlers({
+    onOpenFile: (path: string, line?: number) => { setFileLineTarget(line ? { path, line, reached: false } : null); openFile(path); },
+    onReplaced: () => { void refresh({ background: true }); },
+  });
+  const pullsHandlers = useStableHandlers({
+    onOpenGitHubSettings: () => { setSettingsSection('github'); setSettingsOpen(true); },
+    onRefresh: () => void loadPulls(pullRequestStates, true),
+    onStateChange: (state: PullRequestState, checked: boolean) => {
+      const order: PullRequestState[] = ['OPEN', 'CLOSED', 'MERGED'];
+      const nextStates = order.filter((candidate) => candidate === state ? checked : pullRequestStates.includes(candidate));
+      setPullRequestStates(nextStates);
+    },
+    onSelect: (number: number) => { selectViewer({ type: 'pull-request', number }); },
+    onSectionChange: setPullRequestsSection,
+    onSelectRelease: (tag: string) => { selectViewer({ type: 'release', tag }); },
+    onSelectRun: (runId: number) => { selectViewer({ type: 'workflow-run', runId }); },
+    onActionsWorkflowChange: setActionsWorkflowId,
+    onCreate: () => setCreatePrOpen(true),
+    onCopyCommand: (command: string) => {
+      void writeClipboardText(command)
+        .then(() => sileo.success({ title: 'Command copied', description: command }))
+        .catch(() => sileo.error({ title: 'Could not copy the command' }));
+    },
+  });
+  const composerHandlers = useStableHandlers({
+    onGenerate: () => void generateCommitMessage(),
+    onCancelGenerate: () => void cancelCommitMessageGeneration(),
+    onPlanMode: (mode: CommitPlanMode) => void runCommitPlanTask(() => commitPlan.chooseMode(mode)),
+    onActivateGroup: (index: number) => void runCommitPlanTask(() => commitPlan.activate(index)),
+    onDiscardPlan: () => void runCommitPlanTask(() => commitPlan.discard()),
+    onDismissOutcome: () => commitPlan.clear(),
+    onOpenPath: (path: string, kind: 'staged' | 'unstaged') => { selectViewer({ type: 'diff', path, kind }); },
+    onOpenCommit: (commit: PlannedCommit) => { selectViewer({ type: 'commit', oid: commit.oid, subject: commit.subject }); },
+    onCommit: (options: { push: boolean }) => void createCommit(options),
+  });
+  const sidebarHandlers = useStableHandlers({
+    onExpand: () => setSidebarLayout({ sidebarCollapsed: false }),
+    onCollapse: () => setSidebarLayout({ sidebarCollapsed: true }),
+    onResize: (width: number) => setSidebarLayout({ sidebarWidth: width }),
+    onDismissChecklist: dismissChecklist,
+    onSettings: openSettings,
+  });
+  // What the memoized parts show, worked out when it changes rather than built anew on every render.
+  // Changes marks the row of what the viewer shows; a file that is not among the changes marks none, so
+  // opening one in Files leaves the list as it is.
+  const changedPaths = useMemo(() => new Set(status?.changes.map((change) => change.path)), [status?.changes]);
+  const changesSelectionPath = (viewerSelection?.type === 'diff' || viewerSelection?.type === 'conflict' || viewerSelection?.type === 'file')
+    && changedPaths.has(viewerSelection.path) ? viewerSelection.path : null;
+  const changesSelectionKind = viewerSelection?.type === 'diff' ? viewerSelection.kind : null;
+  const changesSelection = useMemo<ChangeSelection | null>(
+    () => changesSelectionPath === null ? null : { path: changesSelectionPath, kind: changesSelectionKind },
+    [changesSelectionKind, changesSelectionPath],
+  );
+  const openFileSession = (repository ? fileSessions.get(repository.id) : undefined) ?? emptyFileSession;
+  // File tabs only show with files, so this is what still says something is unsaved elsewhere.
+  const hasUnsavedFiles = openFileSession.tabs.some((tab) => tab.dirty);
+  const stagedCount = status?.stagedCount ?? 0;
+  const changeCount = status?.changes.length ?? 0;
+  const pullCount = pulls?.length ?? 0;
+  const sidebarSections = useMemo(() => SIDEBAR_VIEWS.map((item): SidebarRailSection<SidebarView> => {
+    if (item === 'changes') {
+      return {
+        id: item, icon: <IconGitCompare />,
+        label: stagedCount > 0 ? `Changes · ${stagedCount} staged of ${changeCount}` : changeCount > 0 ? `Changes · ${changeCount}` : 'Changes',
+        badge: stagedCount > 0 ? { value: stagedCount, staged: true } : { value: changeCount, staged: false },
+      };
+    }
+    if (item === 'files') return { id: item, icon: <IconFiles />, label: hasUnsavedFiles ? 'Files · unsaved changes' : 'Files', unsaved: hasUnsavedFiles };
+    if (item === 'history') return { id: item, icon: <IconHistory />, label: 'History' };
+    if (item === 'prs') return { id: item, icon: <IconBrandGithub />, label: pullCount ? `GitHub · ${pullCount} pull ${pullCount === 1 ? 'request' : 'requests'}` : 'GitHub' };
+    return { id: item, icon: <IconSearch />, label: 'Search' };
+  }), [changeCount, hasUnsavedFiles, pullCount, stagedCount]);
+  const filesReadOnly = Boolean(status?.readOnly || busy) || unconfirmed || treeUnconfirmed;
+  const fileClipboardAvailable = capabilities?.fileClipboard === true;
+  const revealAvailable = capabilities?.revealInFileManager === true;
+  const mobileFileActions = useMemo(() => ({
+    readOnly: filesReadOnly, fileClipboardAvailable, revealAvailable,
+    onOpenFile: filesHandlers.onOpenFile, onCopyEntries: filesHandlers.onCopyEntries, onCutEntries: filesHandlers.onCutEntries,
+    onCopyPath: filesHandlers.onCopyPath, onCopyContents: filesHandlers.onCopyContents, onReveal: filesHandlers.onReveal,
+    onPaste: filesHandlers.onPaste, onDeleteEntries: filesHandlers.onDeleteEntries,
+  }), [fileClipboardAvailable, filesHandlers, filesReadOnly, revealAvailable]);
+  const shownFilePath = viewerSelection?.type === 'file' ? viewerSelection.path : null;
+  const fileHistoryButton = useMemo(
+    () => fileHistoryOpener && shownFilePath ? <FileHistoryButton path={shownFilePath} onOpen={fileHistoryOpener} /> : null,
+    [fileHistoryOpener, shownFilePath],
+  );
 
   if (!bootstrap) {
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
@@ -3606,31 +3743,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     unavailableRepositories: unavailableRepositoryIds,
     keys: { refresh: shortcuts.refresh, openRepository: shortcuts.openRepository },
   };
-  // File tabs only show with files, so this is what still says something is unsaved elsewhere.
-  const hasUnsavedFiles = (fileSessions.get(repository.id) ?? emptyFileSession).tabs.some((tab) => tab.dirty);
   const { conflicts, staged, changed } = changeLists;
-  const stagedCount = status?.stagedCount ?? 0;
-  const changeCount = status?.changes.length ?? 0;
-  const sidebarSections: SidebarRailSection<SidebarView>[] = SIDEBAR_VIEWS.map((item) => {
-    if (item === 'changes') {
-      return {
-        id: item, icon: <IconGitCompare />,
-        label: stagedCount > 0 ? `Changes · ${stagedCount} staged of ${changeCount}` : changeCount > 0 ? `Changes · ${changeCount}` : 'Changes',
-        badge: stagedCount > 0 ? { value: stagedCount, staged: true } : { value: changeCount, staged: false },
-      };
-    }
-    if (item === 'files') return { id: item, icon: <IconFiles />, label: hasUnsavedFiles ? 'Files · unsaved changes' : 'Files', unsaved: hasUnsavedFiles };
-    if (item === 'history') return { id: item, icon: <IconHistory />, label: 'History' };
-    if (item === 'prs') return { id: item, icon: <IconBrandGithub />, label: pulls?.length ? `GitHub · ${pulls.length} pull ${pulls.length === 1 ? 'request' : 'requests'}` : 'GitHub' };
-    return { id: item, icon: <IconSearch />, label: 'Search' };
-  });
   // Docked at the bottom of the sidebar on desktop and floating over the list on phones. Its text and plan live here and outlast it.
   const hasCommitPlan = commitPlan.plan !== null || commitPlan.outcome !== null;
   const commitComposer = (
     <StoredCommitComposer
       store={commitMessage}
       open={mobile ? mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan }) === 'commit' : view === 'changes' && Boolean(status?.stagedCount || hasCommitPlan)}
-      stagedCount={status?.stagedCount ?? 0}
+      stagedCount={stagedCount}
       generating={Boolean(generating)}
       harness={bootstrap.preferences.commitMessageHarness}
       harnessLabel={harnessLabel(bootstrap.preferences.commitMessageHarness)}
@@ -3644,18 +3764,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       canPush={Boolean(status?.branch && !status.detached && !status.readOnly)}
       plan={commitPlan.plan}
       outcome={commitPlan.outcome}
-      changes={status?.changes ?? []}
+      changes={status?.changes ?? NO_CHANGES}
       phone={mobile}
       textareaRef={commitTextareaRef}
-      onGenerate={() => void generateCommitMessage()}
-      onCancelGenerate={() => void cancelCommitMessageGeneration()}
-      onPlanMode={(mode) => void runCommitPlanTask(() => commitPlan.chooseMode(mode))}
-      onActivateGroup={(index) => void runCommitPlanTask(() => commitPlan.activate(index))}
-      onDiscardPlan={() => void runCommitPlanTask(() => commitPlan.discard())}
-      onDismissOutcome={commitPlan.clear}
-      onOpenPath={(path, kind) => { selectViewer({ type: 'diff', path, kind }); }}
-      onOpenCommit={(commit) => { selectViewer({ type: 'commit', oid: commit.oid, subject: commit.subject }); }}
-      onCommit={(options) => void createCommit(options)}
+      {...composerHandlers}
     />
   );
 
@@ -3850,7 +3962,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                 active={view}
                 toggleCombo={shortcuts.toggleSidebar}
                 onSelect={showSidebarView}
-                onExpand={() => setSidebarLayout({ sidebarCollapsed: false })}
+                onExpand={sidebarHandlers.onExpand}
               />
             )}
             <nav className="sidebar-tabs tab-list" aria-label="Repository views">
@@ -3869,7 +3981,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   <span className="sidebar-tab-shortcut" data-digit={index + 1} aria-hidden="true" />
                 </button>
               ))}
-              {!mobile && <SidebarCollapseButton toggleCombo={shortcuts.toggleSidebar} onCollapse={() => setSidebarLayout({ sidebarCollapsed: true })} />}
+              {!mobile && <SidebarCollapseButton toggleCombo={shortcuts.toggleSidebar} onCollapse={sidebarHandlers.onCollapse} />}
             </nav>
             <div className="sidebar-body">
               <div className="view-fade">
@@ -3885,25 +3997,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   displayMode={bootstrap.preferences.changesLayout}
                   readOnly={Boolean(status?.readOnly) || unconfirmed}
                   discardDisabled={Boolean(busy)}
-                  changeCount={status?.changes.length ?? 0}
+                  changeCount={changeCount}
                   insertions={status?.insertions ?? 0}
                   deletions={status?.deletions ?? 0}
-                  selection={viewerSelection?.type === 'diff' ? { path: viewerSelection.path, kind: viewerSelection.kind }
-                    : viewerSelection?.type === 'conflict' || viewerSelection?.type === 'file' ? { path: viewerSelection.path, kind: null }
-                    : null}
+                  selection={changesSelection}
                   unpublishedCommits={status?.ahead ?? 0}
                   branchNeedsPublication={needsBranchPublication(status)}
                   publishDisabled={Boolean(busy) || Boolean(status?.readOnly) || repositorySyncOperations.has(repository.id)}
-                  onPublish={() => void pushUpdates()}
                   upstreamMismatch={offersNewBranch ? upstreamMismatch : null}
-                  onSelect={(path, kind) => { selectViewer({ type: 'diff', path, kind }); }}
-                  onConflict={(path) => { selectViewer({ type: 'conflict', path }); }}
-                  onOpenFile={openFile}
-                  onDiscard={(paths) => void discardChanges(paths)}
-                  onStage={(paths) => void runIndexOperation('stage', paths)}
-                  onUnstage={(paths) => void runIndexOperation('unstage', paths)}
-                  onStageAll={() => void runAll('stage')}
-                  onUnstageAll={() => void runAll('unstage')}
+                  {...changesHandlers}
                 />
               )}
               </Activity>}
@@ -3912,35 +4014,35 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   <FilesView
                     key={repository.id}
                     active={view === 'files'}
-                    initialExpandedPaths={filesTreeStates.get(repository.id) ?? []}
+                    initialExpandedPaths={filesTreeStates.get(repository.id) ?? NO_PATHS}
                     files={files}
                     filesSnapshotRevision={filesSnapshotRevision}
                     showDotEnvFiles={bootstrap.preferences.showDotEnvFiles}
-                    activePath={viewerSelection?.type === 'file' ? viewerSelection.path : null}
-                    readOnly={Boolean(status?.readOnly || busy) || unconfirmed || treeUnconfirmed}
-                    fileClipboardAvailable={capabilities?.fileClipboard === true}
-                    revealAvailable={capabilities?.revealInFileManager === true}
-                    onQuickOpen={() => openPalette('files')}
-                    onFileIntent={(path) => prefetchFile(repository.id, path, fileStamp(path))}
+                    activePath={shownFilePath}
+                    readOnly={filesReadOnly}
+                    fileClipboardAvailable={fileClipboardAvailable}
+                    revealAvailable={revealAvailable}
+                    onQuickOpen={filesHandlers.onQuickOpen}
+                    onFileIntent={filesHandlers.onFileIntent}
                     historyState={fileHistoryState}
-                    openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
-                    onActivateFile={activateFileTab}
-                    onCloseFile={(path) => void closeFileTab(path)}
-                    onUndo={() => performFileHistory('undo')}
-                    onRedo={() => performFileHistory('redo')}
-                    onOpenFile={openFile}
+                    openFiles={openFileSession}
+                    onActivateFile={filesHandlers.onActivateFile}
+                    onCloseFile={filesHandlers.onCloseFile}
+                    onUndo={filesHandlers.onUndo}
+                    onRedo={filesHandlers.onRedo}
+                    onOpenFile={filesHandlers.onOpenFile}
                     onLoadDirectory={loadDirectoryEntries}
                     onPersistExpandedPaths={persistFilesTreeExpandedPaths}
-                    onCopyPath={copyFilePaths}
-                    onCopyEntries={copyFileEntries}
-                    onCutEntries={cutFileEntries}
-                    onCopyContents={copyFileContents}
-                    onPaste={pasteFileEntries}
-                    onMoveEntries={moveFileEntries}
-                    onDeleteEntries={deleteFileEntries}
-                    onReveal={revealFileEntry}
-                    onRename={renameFileEntry}
-                    onCreate={createFileEntry}
+                    onCopyPath={filesHandlers.onCopyPath}
+                    onCopyEntries={filesHandlers.onCopyEntries}
+                    onCutEntries={filesHandlers.onCutEntries}
+                    onCopyContents={filesHandlers.onCopyContents}
+                    onPaste={filesHandlers.onPaste}
+                    onMoveEntries={filesHandlers.onMoveEntries}
+                    onDeleteEntries={filesHandlers.onDeleteEntries}
+                    onReveal={filesHandlers.onReveal}
+                    onRename={filesHandlers.onRename}
+                    onCreate={filesHandlers.onCreate}
                   />
                 </Suspense>
               </Activity>}
@@ -3958,16 +4060,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   nextCursor={fileHistoryFilter ? fileHistoryNextCursor : nextCursor}
                   fileFilter={fileHistoryFilter}
                   loading={busy === 'history'}
-                  onSelectCommit={(commit) => {
-                    const entry = fileHistoryFilter?.entries.get(commit.oid);
-                    // In a file's history, a commit opens on the file's diff; All files is one click from there.
-                    if (entry) selectViewer({ type: 'commit-file', oid: commit.oid, path: entry.path, oldPath: entry.oldPath ?? undefined });
-                    else selectViewer({ type: 'commit', oid: commit.oid, subject: commit.subject });
-                  }}
-                  onSelectFile={(oid, file) => { selectViewer({ type: 'commit-file', oid, path: file.path, oldPath: file.oldPath ?? undefined }); }}
-                  onUndo={setUndoCommit}
                   undoing={undoingCommit}
-                  onMore={() => void loadMore()}
+                  {...historyHandlers}
                 />
                 </Suspense>
               </Activity>}
@@ -3977,9 +4071,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   repositoryId={repository.id}
                   active={view === 'search'}
                   revision={searchRevision}
-                  onOpenFile={(path, line) => { setFileLineTarget(line ? { path, line, reached: false } : null); openFile(path); }}
                   unsavedPathsAmong={unsavedTabsUnder}
-                  onReplaced={() => { void refresh({ background: true }); }}
+                  {...searchHandlers}
                   seed={searchSeed?.repositoryId === repository.id ? searchSeed : null}
                   onSeedTaken={takeSearchSeed}
                 />
@@ -3992,7 +4085,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   info={githubInfo}
                   ghStatus={ghStatus}
                   account={githubAccount}
-                  onOpenGitHubSettings={() => { setSettingsSection('github'); setSettingsOpen(true); }}
                   pulls={pulls}
                   loading={pullsLoading}
                   error={pullsError}
@@ -4003,54 +4095,38 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     : status.detached || status.unborn || !status.branch
                       ? 'Check out a branch first'
                       : null)}
-                  onRefresh={() => void loadPulls(pullRequestStates, true)}
-                  onStateChange={(state, checked) => {
-                    const order: PullRequestState[] = ['OPEN', 'CLOSED', 'MERGED'];
-                    const nextStates = order.filter((candidate) => candidate === state ? checked : pullRequestStates.includes(candidate));
-                    setPullRequestStates(nextStates);
-                  }}
-                  onSelect={(number) => { selectViewer({ type: 'pull-request', number }); }}
                   section={pullRequestsSection}
-                  onSectionChange={setPullRequestsSection}
                   activeRelease={viewerSelection?.type === 'release' ? viewerSelection.tag : null}
-                  onSelectRelease={(tag) => { selectViewer({ type: 'release', tag }); }}
                   activeRun={viewerSelection?.type === 'workflow-run' ? viewerSelection.runId : null}
-                  onSelectRun={(runId) => { selectViewer({ type: 'workflow-run', runId }); }}
                   actionsWorkflowId={actionsWorkflowId}
-                  onActionsWorkflowChange={setActionsWorkflowId}
-                  onCreate={() => setCreatePrOpen(true)}
-                  onCopyCommand={(command) => {
-                    void writeClipboardText(command)
-                      .then(() => sileo.success({ title: 'Command copied', description: command }))
-                      .catch(() => sileo.error({ title: 'Could not copy the command' }));
-                  }}
+                  {...pullsHandlers}
                 />
                 </Suspense>
               </Activity>}
               </div>
             </div>
             {!mobile && commitComposer}
-            {!welcomeReplay && (bootstrap.onboardingVersion === 0 || checklistReplay) && <GettingStartedChecklist key={repository.id} repository={repository} onDismiss={dismissChecklist} onSettings={openSettings} />}
+            {!welcomeReplay && (bootstrap.onboardingVersion === 0 || checklistReplay) && <GettingStartedChecklist key={repository.id} repository={repository} onDismiss={sidebarHandlers.onDismissChecklist} onSettings={sidebarHandlers.onSettings} />}
           </aside>
           {!mobile && !sidebarCollapsed && (
             <SidebarResizeHandle
               width={bootstrap.preferences.sidebarWidth}
               railWidth={SIDEBAR_RAIL_WIDTH}
               onPreview={previewSidebarWidth}
-              onResize={(width) => setSidebarLayout({ sidebarWidth: width })}
-              onCollapse={() => setSidebarLayout({ sidebarCollapsed: true })}
+              onResize={sidebarHandlers.onResize}
+              onCollapse={sidebarHandlers.onCollapse}
             />
           )}
           <section className="viewer-pane">
             {!mobile && (view === 'files' || viewerSelection?.type === 'file') && (
               <OpenFilesStrip
-                session={fileSessions.get(repository.id) ?? emptyFileSession}
-                onActivate={activateFileTab}
-                onPin={(path) => openFile(path, 'pinned')}
-                onClose={(path) => void closeFileTab(path)}
+                session={openFileSession}
+                onActivate={filesHandlers.onActivateFile}
+                onPin={filesHandlers.onPinFile}
+                onClose={filesHandlers.onCloseFile}
                 onReorder={reorderFileTab}
                 toolsRef={setFileViewerToolbarHost}
-                trailing={fileHistoryOpener && viewerSelection?.type === 'file' ? <FileHistoryButton path={viewerSelection.path} onOpen={fileHistoryOpener} /> : null}
+                trailing={fileHistoryButton}
               />
             )}
             {/* Focusable, so the keys of the viewer reach it after a list's Enter (see `useKeyboardMap`). */}
@@ -4095,15 +4171,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       <MobileFileBar
                         path={viewerSelection.path}
                         files={files}
-                        session={fileSessions.get(repository.id) ?? emptyFileSession}
+                        session={openFileSession}
                         revision={filesSnapshotRevision}
-                        actions={{ readOnly: Boolean(status?.readOnly || busy) || unconfirmed || treeUnconfirmed, fileClipboardAvailable: capabilities?.fileClipboard === true, revealAvailable: capabilities?.revealInFileManager === true, onOpenFile: openFile, onCopyEntries: copyFileEntries, onCutEntries: cutFileEntries, onCopyPath: copyFilePaths, onCopyContents: copyFileContents, onReveal: revealFileEntry, onPaste: pasteFileEntries, onDeleteEntries: deleteFileEntries }}
-                        onActivateFile={activateFileTab}
-                        onCloseFile={(path) => void closeFileTab(path)}
+                        actions={mobileFileActions}
+                        onActivateFile={filesHandlers.onActivateFile}
+                        onCloseFile={filesHandlers.onCloseFile}
                         onLoadDirectory={loadDirectoryEntries}
-                        onMove={moveFileEntries}
-                        onRename={renameFileEntry}
-                        onCreate={createFileEntry}
+                        onMove={filesHandlers.onMoveEntries}
+                        onRename={filesHandlers.onRename}
+                        onCreate={filesHandlers.onCreate}
                       />
                     )}
                   </FileViewerToolbarHostContext.Provider>

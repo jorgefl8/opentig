@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { IconDots } from '@tabler/icons-react';
 import type { FileTreeEntry } from '@shared/git-types';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import type { FilesViewProps } from './FilesView';
 import type { FileSession } from './open-files-model';
 
 /** An open file's top bar on a phone: its name opens the open-files sheet, and `⋯` offers what its row in the list does. */
-export function MobileFileBar({ path, files, session, revision, actions, onActivateFile, onCloseFile, onLoadDirectory, onMove, onRename, onCreate }: {
+export const MobileFileBar = memo(function MobileFileBar({ path, files, session, revision, actions, onActivateFile, onCloseFile, onLoadDirectory, onMove, onRename, onCreate }: {
   path: string;
   files: FileTreeEntry[] | null;
   session: FileSession;
@@ -46,4 +46,4 @@ export function MobileFileBar({ path, files, session, revision, actions, onActiv
     <NameDialog state={nameDialog} onClose={() => setNameDialog(null)} onRename={onRename} onCreate={onCreate} />
     {moveEntries && <MoveFilesDialog entries={moveEntries} initialDirectory={parentDirectory(path)} revision={revision} readOnly={actions.readOnly} onLoadDirectory={onLoadDirectory} onMove={onMove} onClose={() => setMoveEntries(null)} />}
   </>;
-}
+});

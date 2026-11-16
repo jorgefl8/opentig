@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
 import { Kbd } from '@/components/ui/kbd';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -18,7 +18,9 @@ function badgeText(value: number): string {
 }
 
 /** The collapsed desktop sidebar: one icon per section, each opening the sidebar on it. */
-export function SidebarRail<V extends string>({ sections, active, toggleCombo, onSelect, onExpand }: {
+export const SidebarRail = memo(SidebarRailSections) as typeof SidebarRailSections;
+
+function SidebarRailSections<V extends string>({ sections, active, toggleCombo, onSelect, onExpand }: {
   sections: readonly SidebarRailSection<V>[];
   active: V;
   toggleCombo: string;
@@ -63,7 +65,7 @@ export function SidebarRail<V extends string>({ sections, active, toggleCombo, o
 }
 
 /** Sits at the end of the expanded sidebar's tab bar. */
-export function SidebarCollapseButton({ toggleCombo, onCollapse }: { toggleCombo: string; onCollapse: () => void }) {
+export const SidebarCollapseButton = memo(function SidebarCollapseButton({ toggleCombo, onCollapse }: { toggleCombo: string; onCollapse: () => void }) {
   return (
     <>
       <span className="sidebar-tabs-separator" aria-hidden="true" />
@@ -75,4 +77,4 @@ export function SidebarCollapseButton({ toggleCombo, onCollapse }: { toggleCombo
       </Tooltip>
     </>
   );
-}
+});

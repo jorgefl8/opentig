@@ -1,8 +1,8 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { KeptReadNotice } from '@/components/KeptReadNotice';
-import { formatTimeAgo } from '@shared/date-format';
+import { TimeAgo } from '@/components/TimeAgo';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { Suspense, useEffect, useRef } from 'react';
+import { memo, Suspense, useEffect, useRef } from 'react';
 import { lazyWithPreload } from '@/lib/lazy-with-retry';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -61,7 +61,7 @@ interface PullRequestsViewProps {
   onActionsWorkflowChange(workflowId: number | null): void;
 }
 
-export function PullRequestsView(props: PullRequestsViewProps) {
+export const PullRequestsView = memo(function PullRequestsView(props: PullRequestsViewProps) {
   // So opening a PR or the Releases tab doesn't wait for its code.
   useEffect(() => { LazyPullRequestViewer.preload(); ReleasesView.preload(); ReleasesTools.preload(); ActionsView.preload(); ActionsTools.preload(); }, []);
   if (props.info === null) {
@@ -131,7 +131,7 @@ export function PullRequestsView(props: PullRequestsViewProps) {
       </ViewerTabsPanel>
     </ViewerTabs>
   );
-}
+});
 
 function PullsTools(props: PullRequestsViewProps & { nameWithOwner: string | null }) {
   return (
@@ -237,7 +237,7 @@ function PullRow({ repositoryId, pr, active, live, phone, onSelect }: { reposito
         </span>
         <span className="pull-line">
           <span className="pull-title">{pr.title || '(no title)'}</span>
-          <time className="pull-age" dateTime={pr.updatedAt}>{formatTimeAgo(pr.updatedAt)}</time>
+          <time className="pull-age" dateTime={pr.updatedAt}><TimeAgo value={pr.updatedAt} /></time>
         </span>
         <span className="pull-line">
           <span className="pull-meta">#{pr.number} · {status.label}{phone && pr.stack && ` · Layer ${pr.stack.position} of ${pr.stack.size}`}</span>

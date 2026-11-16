@@ -1,7 +1,7 @@
 import { formatDate, formatDateTime } from '@shared/date-format';
 import { useIntentPrefetch } from '@/lib/use-intent-prefetch';
 import { commitFiles, prefetchCommitFiles } from '@/features/viewer/viewer-prefetch';
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconArrowDown, IconArrowLeft, IconChevronRight, IconFilter, IconRestore, IconSearch, IconX } from '@tabler/icons-react';
 import type { CommitFile, CommitInfo, FileHistoryEntry } from '../../../shared/git-types';
@@ -49,7 +49,7 @@ interface HistoryViewProps {
 const LOAD_MORE_HEIGHT = 36;
 const MOBILE_LOAD_MORE_HEIGHT = 48;
 
-export function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, baseRef, activeOid, fileFilter = null, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
+export const HistoryView = memo(function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, baseRef, activeOid, fileFilter = null, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
   const mobile = useMobileLayout();
   const scrollRef = useRef<HTMLDivElement>(null);
   // A commit the pointer rests on is read then, so clicking it shows it.
@@ -161,7 +161,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
       </div>
     </div>
   );
-}
+});
 
 function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, showGraph, branchRefs, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, fileEntry, filterPath, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
   /** The whole row is the target there: what's on the row elsewhere is in the commit viewer. */
