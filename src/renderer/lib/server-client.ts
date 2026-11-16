@@ -339,7 +339,10 @@ function publishRuntimeEvent(
   githubAccountsChanged: ReadonlySet<(repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void>,
   aiInstructionsChanged: ReadonlySet<(repositoryIds: string[]) => void>,
 ): void {
-  if (event.type === 'repository.changed') {
+  if (event.type === 'repository.changed' && event.relocatedTo) {
+    const details = { relocatedTo: event.relocatedTo, ...(event.recentRepositories ? { recentRepositories: event.recentRepositories } : {}) };
+    for (const listener of repositoryChanged) listener(event.repositoryId, event.scope, undefined, undefined, details);
+  } else if (event.type === 'repository.changed') {
     for (const listener of repositoryChanged) {
       if (event.watch && event.refresh === false) listener(event.repositoryId, event.scope, event.watch, event.watchId, { refresh: false });
       else if (event.watch) listener(event.repositoryId, event.scope, event.watch, ...(event.watchId ? [event.watchId] : []));

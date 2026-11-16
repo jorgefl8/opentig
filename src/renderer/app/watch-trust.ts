@@ -22,13 +22,33 @@ export interface WatchTrust {
   readonly suspended: boolean;
   /** The last announcement, and the arrival it was received in. A null id: told it is not watched. */
   readonly announced: { repositoryId: string; watchId: string | null; arrival: number } | null;
+  /** The watch id the page last held for the repository it shows, kept when it opens that one again. */
+  readonly held: string | null;
+  /** It arrived from another repository and has not been told of this one's watch yet: all its reads follow the answer. */
+  readonly fresh: boolean;
 }
 
-export const NO_WATCH_TRUST: WatchTrust = { perClient: false, repositoryId: null, arrival: 0, suspended: false, announced: null };
+export const NO_WATCH_TRUST: WatchTrust = { perClient: false, repositoryId: null, arrival: 0, suspended: false, announced: null, held: null, fresh: true };
 
 /** The page is now on `repositoryId`: nothing announced before counts for it where each page has its own. */
 export function arrive(state: WatchTrust, repositoryId: string | null, perClient = state.perClient): WatchTrust {
-  return { perClient, repositoryId, arrival: state.arrival + 1, suspended: false, announced: perClient ? null : state.announced };
+  const same = repositoryId !== null && repositoryId === state.repositoryId;
+  const held = same ? (state.announced?.repositoryId === repositoryId ? state.announced.watchId : state.held) : null;
+  return { perClient, repositoryId, arrival: state.arrival + 1, suspended: false, announced: perClient ? null : state.announced, held, fresh: !same };
+}
+
+/**
+ * Whether news of a repository's watch means the page must read it again, asked before the news is
+ * taken (see `announce`). Without the server's `refresh: false` it does, as it always did. With it,
+ * only an arrival from another repository is spared, since all its reads follow the answer: for the
+ * repository the page already shows, a watch id other than the one it last held means the server
+ * had it elsewhere meanwhile, or the watch restarted, and changes may have gone unread.
+ */
+export function needsRead(state: WatchTrust, repositoryId: string, watch: RepositoryWatchState, watchId: string | undefined, refresh: false | undefined): boolean {
+  if (!state.perClient || refresh !== false) return true;
+  // A watch that is not running is relied on for nothing: the repository is read on a timer meanwhile.
+  if (repositoryId !== state.repositoryId || state.fresh || watch !== 'watching') return false;
+  return (watchId ?? null) !== state.held;
 }
 
 /** A choice of another repository is on its way (`true`), or ended without the server moving the page (`false`). */
@@ -42,7 +62,7 @@ export function announce(state: WatchTrust, repositoryId: string, watch: Reposit
   if (state.perClient) {
     // About a repository this page is not on: news from before it left, or of one it has not arrived on yet.
     if (repositoryId !== state.repositoryId) return state;
-    return { ...state, announced: { repositoryId, watchId: watching, arrival: state.arrival } };
+    return { ...state, announced: { repositoryId, watchId: watching, arrival: state.arrival }, held: watching, fresh: false };
   }
   if (watching) return { ...state, announced: { repositoryId, watchId: watching, arrival: state.arrival } };
   return state.announced?.repositoryId === repositoryId ? { ...state, announced: { repositoryId, watchId: null, arrival: state.arrival } } : state;
@@ -55,7 +75,8 @@ export function announce(state: WatchTrust, repositoryId: string, watch: Reposit
 export function startedUp(state: WatchTrust, repositoryId: string, arrival: number, watch: { state: RepositoryWatchState; watchId?: string } | undefined): WatchTrust {
   if (state.arrival !== arrival) return state;
   if (state.announced?.repositoryId === repositoryId && state.announced.arrival === arrival) return state;
-  return { ...state, announced: { repositoryId, watchId: watch?.state === 'watching' && watch.watchId ? watch.watchId : null, arrival } };
+  const watchId = watch?.state === 'watching' && watch.watchId ? watch.watchId : null;
+  return { ...state, announced: { repositoryId, watchId, arrival }, held: watchId, fresh: false };
 }
 
 /** The connection came back: what was announced on the old one counts for nothing. */

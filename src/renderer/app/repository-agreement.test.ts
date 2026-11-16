@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { relocatedId, repositoryAgreement } from './repository-agreement';
+import { forgetReusedIds, MAX_REOPENS, relocatedId, ReopenAttempts, repositoryAgreement } from './repository-agreement';
 
 const saved = (...ids: string[]) => (id: string) => ids.includes(id);
 
@@ -23,8 +23,24 @@ describe('which repository a page and the server agree on', () => {
   });
 
   it('follows a repository through each relocation, and stops on a loop', () => {
-    expect(relocatedId(new Map([['a', 'b'], ['b', 'c']]), 'a')).toBe('c');
-    expect(relocatedId(new Map(), 'a')).toBe('a');
-    expect(['a', 'b']).toContain(relocatedId(new Map([['a', 'b'], ['b', 'a']]), 'a'));
+    expect(relocatedId(new Map([['a', 'b'], ['b', 'c']]), 'a', saved('c'))).toBe('c');
+    expect(relocatedId(new Map(), 'a', saved())).toBe('a');
+    expect(['a', 'b']).toContain(relocatedId(new Map([['a', 'b'], ['b', 'a']]), 'a', saved()));
+  });
+
+  it('never sends an id that names a saved repository elsewhere, as one added again at a relocated repository’s old folder', () => {
+    const relocations = new Map([['a', 'a-moved']]);
+    expect(relocatedId(relocations, 'a', saved('a', 'a-moved'))).toBe('a');
+    forgetReusedIds(relocations, saved('a', 'a-moved'));
+    expect(relocations.has('a')).toBe(false);
+  });
+
+  it('opens again what the page shows a bounded number of times, gives up once, then stops; agreeing starts over', () => {
+    const attempts = new ReopenAttempts();
+    const outcomes = Array.from({ length: MAX_REOPENS + 3 }, () => attempts.next('shown', 'server'));
+    expect(outcomes).toEqual([...Array<string>(MAX_REOPENS).fill('try'), 'give-up', 'stop', 'stop']);
+    attempts.reset();
+    expect(attempts.next('shown', 'server')).toBe('try');
+    expect(new ReopenAttempts().next('other', 'server')).toBe('try');
   });
 });
