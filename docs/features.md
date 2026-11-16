@@ -16,7 +16,7 @@ Use OpenTig to review changes, edit files, and prepare commits in an existing Gi
 
 - **Organize your work:** [repositories and projects](#repositories-and-projects), [branches and worktrees](#branches-and-worktrees).
 - **Prepare and share changes:** [diffs and commits](#changes-diffs-and-commits), [pull and push](#safe-pull-and-push), [GitHub pull requests](#github-pull-requests).
-- **Explore the repository:** [files and editing](#files-and-editing), [search](#quick-open-and-repository-search), [history](#history), including the [history of one file](#history).
+- **Explore the repository:** [files and editing](#files-and-editing), [the command palette and search](#command-palette-and-repository-search), [history](#history), including the [history of one file](#history).
 - **Set up your workflow:** [AI assistance](#optional-ai-assistance), [preferences](#preferences), [keyboard shortcuts](#keyboard-shortcuts).
 
 ### Repositories and projects
@@ -275,7 +275,7 @@ Hovering a link shows a styled tooltip with its destination, truncated when long
 
 **Manage files and folders**
 
-Select one or more entries to copy, cut, paste, rename, create, or delete from the context menu, which also opens from the **…** button that appears when you hover over or focus a row. Dragging moves selected entries to a folder or repository root, with a lifted preview, count badge, and destination feedback. Copy paths or contents, and reveal entries in Windows File Explorer on desktop. Git-ignored files are shown by default; turn off **Show ignored files** in Settings to hide them from Files and Quick Open.
+Select one or more entries to copy, cut, paste, rename, create, or delete from the context menu, which also opens from the **…** button that appears when you hover over or focus a row. Dragging moves selected entries to a folder or repository root, with a lifted preview, count badge, and destination feedback. Copy paths or contents, and reveal entries in Windows File Explorer on desktop. Git-ignored files are shown by default; turn off **Show ignored files** in Settings to hide them from Files and the command palette.
 
 Desktop Paste imports file paths copied in a native file manager or saves a clipboard image as PNG, only when you press `Ctrl+V` or choose **Paste**. Runtimes without native file-clipboard support hide that action.
 
@@ -303,11 +303,18 @@ Code, diffs, and conflicts share language detection for nested Dockerfiles and M
 
 </details>
 
-### Quick open and repository search
+### Command palette and repository search
 
-**Find a file by path**
+**Find a file, a command or a place**
 
-Press `Ctrl+P`, type part of a path, use the arrow keys to navigate the accessible result list, and press `Enter` to open the highlighted file.
+Press `Ctrl+P` to open the command palette on **Files**, or `Ctrl+K` to open it on **Commands**. Type part of a name, move through the results with the arrow keys, and press `Enter` to open or run the highlighted one. Add `:40` after a file's name to open it at line 40. With nothing typed, it lists the places you visited recently in this repository.
+
+The palette searches one kind of thing at a time, shown as tabs: **Files**, **Commands** `>`, **Branches** `@`, **Commits** `~`, **Pull requests** `#`, **Runs** `!` and **Repositories** `*`. Press `Tab` or `Shift+Tab`, click a tab, or type its sign first in the empty field to change kind; `Backspace` in an empty field goes back to Files. What you type is only ever text to search for.
+
+- Rows that open something (a file, a section, a commit, a pull request, a run, a repository) are places like any other: **Back** returns from them.
+- Rows marked with a bolt change the repository (pull, push, refresh, switching branch, discarding). They run the same action as the app's own buttons, with the same confirmations, and **Back** does not undo them. A command that can't run now is shown greyed out, with the reason.
+- **Commits** searches the history OpenTig has loaded; **Pull requests** and **Runs** search the lists the GitHub section reads, without asking GitHub again for each letter typed.
+- When no file name matches, the palette offers to search for the text inside files.
 
 **Find or replace text across the repository**
 
@@ -318,9 +325,9 @@ Press `Ctrl+P`, type part of a path, use the arrow keys to navigate the accessib
 Git-ignored files are excluded unless **Include ignored files** is on in that menu. Their results remain separately identified and folded. Broad searches list tracked files first; very large result sets show their count with a **+**, and **Replace all** stays disabled until results are complete.
 
 <details>
-<summary>Quick Open in large repositories</summary>
+<summary>The palette in large repositories</summary>
 
-Search data is prepared when Quick Open opens and reused until the file list changes. Initial preparation can briefly pause very large repositories. While results are calculated, large repositories show **Searching files…**. Only results for the current query can be selected.
+Search data is prepared when the palette first searches files and reused until the file list changes. Initial preparation can briefly pause very large repositories. While results are calculated, large repositories show **Searching files…**. Only results for the current query can be selected.
 
 </details>
 
@@ -455,9 +462,19 @@ These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Sho
 | --- | --- |
 | `Ctrl` `Ctrl` (double-tap, fixed, desktop app) | Bring OpenTig to the front from any application; turn it off in **Settings → Shortcuts** |
 | `Ctrl+O` | Open a repository |
-| `Ctrl+P` | Quick-open a file |
+| `Ctrl+P` | Open the [command palette](#command-palette-and-repository-search) on files |
+| `Ctrl+K` | Open the command palette on commands |
 | `Ctrl+R` | Refresh repository state |
-| `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, GitHub, or Search |
+| `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, GitHub, or Search. A browser tab often keeps these keys for its own tabs |
+| `G`, then `C`, `F`, `H`, `P` or `S` (fixed) | Open Changes, Files, History, GitHub, or Search, in any browser; press the letter within about a second |
+| `?` (fixed) | Open **Settings → Shortcuts** |
+| `↑` `↓` or `J` `K` (fixed) | Move to the previous or next row of a list. With the viewer open, it follows the row, as a click would |
+| `Home`, `End` (fixed) | Move to the first or last row of a list |
+| `Enter` (fixed) | Open the row in the viewer and move the keyboard there |
+| `←`, `→` (fixed) | Fold or unfold a folder in Files, Changes, or Search |
+| `J`, `K` in the viewer (fixed) | Open the next or previous row of the list without leaving the viewer |
+| `N`, `P` in the viewer (fixed) | Move to the next or previous file of a diff; in Changes, the next or previous change |
+| `Esc` (fixed) | Close the viewer and return to its row; on a phone, the same as the back arrow. A file stays open |
 | `Alt+←`, `Alt+→` (fixed, desktop app) | Go [back or forward](interface.md#back-and-forward) through the places you visited; the mouse's back and forward buttons do the same. In a browser, its own keys do it: `Cmd+[` and `Cmd+]` on a Mac |
 | `Ctrl+B` | Collapse or expand the desktop sidebar |
 | `Ctrl+S` | Save the open editable file |

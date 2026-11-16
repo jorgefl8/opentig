@@ -21,7 +21,7 @@ export function ViewerEditor({ titleId, title, edited, busy, canSave, note, onTi
   useEffect(() => { titleInput.current?.focus(); }, []);
   return (
     // Escape only leaves an untouched editor, so a stray key can't throw text away.
-    <div className="pr-viewer" onKeyDown={(event) => { if (event.key === 'Escape' && !edited && !busy) onClose(); }}>
+    <div className="pr-viewer" data-escape-owner="" onKeyDown={(event) => { if (event.key === 'Escape' && !edited && !busy) onClose(); }}>
       <header className="pr-viewer-header no-tabs">
         <div className="pr-viewer-top">
           <input ref={titleInput} id={titleId} className="field-input pr-editor-title" aria-label="Title" value={title} maxLength={300} disabled={busy} onChange={(event) => onTitleChange(event.target.value)} />

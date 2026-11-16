@@ -117,7 +117,7 @@ export function ActionsView({ repositoryId, workflowId, activeRunId, onSelect }:
     <div className="pulls-view">
       {error && <div className="pulls-error" role="alert"><span>{error}</span><Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
       <KeptReadNotice className="pulls-kept" prefixes={[queryKeys.actionRuns(repositoryId, workflowId)]} onRetry={() => void query.refetch()} />
-      <div className="pulls-scroll" role="list" aria-label="Workflow runs">
+      <div className="pulls-scroll" role="list" data-list-root="" aria-label="Workflow runs">
         {runs === null && !error && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading workflow runs…" /></div>}
         {runs?.length === 0 && <p className="empty-list">{workflowId === null ? 'No workflow runs yet.' : 'This workflow has no runs yet.'}</p>}
         {/* The first page just shows; runs that appear later, and pages loaded with Load more, fade in. */}
@@ -126,6 +126,8 @@ export function ActionsView({ repositoryId, workflowId, activeRunId, onSelect }:
             <motion.div
               key={run.id}
               role="listitem"
+              data-list-item=""
+              data-list-current={run.id === activeRunId ? '' : undefined}
               className={`pull-item action-run-item ${run.id === activeRunId ? 'active' : ''}`}
               layout={reduceMotion ? false : 'position'}
               initial={reduceMotion ? false : { opacity: 0, y: -6 }}
@@ -182,6 +184,7 @@ function RunRow({ run, phone, now, onSelect }: { run: ActionRunSummary; phone: b
       <button
         type="button"
         className="action-run-open"
+        data-list-primary=""
         onClick={() => onSelect(run.id)}
         aria-label={`${run.title || `Run ${run.number}`}, ${run.workflowName} #${run.number}, ${status}${by ? `, started by ${by}` : ''}`}
       />

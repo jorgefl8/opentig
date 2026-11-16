@@ -1,0 +1,39 @@
+/* The command palette: the quick open's field, list and footer, with a row of tabs and rows that say what they do. */
+.command-palette { max-height: min(70vh, 560px); }
+.palette-tabs { display: flex; flex: none; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--border); padding: 6px 8px; scrollbar-width: none; }
+.palette-tab { display: inline-flex; height: 26px; flex: none; align-items: center; gap: 5px; border-radius: var(--radius-md); padding: 0 9px; color: var(--muted-foreground); font-size: var(--text-ui); white-space: nowrap; cursor: pointer; transition: background-color .1s ease, color .1s ease; }
+.palette-tab:hover { background: var(--row-hover); color: var(--foreground); }
+.palette-tab[aria-selected="true"] { background: var(--accent); color: var(--foreground); font-weight: var(--weight-strong); }
+.palette-tab-sign { color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-regular); opacity: .85; }
+.palette-results { padding: 4px 6px 6px; }
+.palette-group + .palette-group, .palette-help + .palette-group { margin-top: 4px; }
+.palette-group-label { padding: 8px 9px 4px; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-strong); letter-spacing: .04em; text-transform: uppercase; }
+.palette-row { min-height: 40px; gap: 10px; }
+.palette-icon { display: grid; width: 26px; height: 26px; flex: none; place-items: center; border-radius: var(--radius-md); background: var(--muted); color: var(--muted-foreground); }
+.palette-icon svg { width: 15px; height: 15px; }
+.palette-icon img { width: 16px; height: 16px; object-fit: contain; }
+.palette-row[data-verb="run"] .palette-icon, .palette-row[data-verb="ask"] .palette-icon { background: color-mix(in oklch, var(--warning) 16%, transparent); color: var(--warning); }
+.palette-text { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
+.palette-title { overflow: hidden; color: var(--foreground); font-size: var(--text-body); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.palette-title mark { background: none; color: var(--primary-ink); font-weight: var(--weight-strong); }
+.palette-detail { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); text-overflow: ellipsis; white-space: nowrap; }
+.palette-verb { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
+.palette-verb b { color: var(--foreground); font-weight: var(--weight-medium); }
+.palette-row[data-verb="run"] .palette-verb b, .palette-row[data-verb="ask"] .palette-verb b { color: var(--warning); font-weight: var(--weight-strong); }
+.palette-verb svg { width: 12px; height: 12px; }
+.palette-verb kbd, .palette-help kbd, .palette-keys kbd { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: 4px; background: var(--muted); padding: 0 4px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta); }
+.palette-keys { display: inline-flex; gap: 3px; margin-right: 4px; }
+.palette-enter { visibility: hidden; }
+.palette-row[data-highlighted] .palette-enter { visibility: visible; }
+.palette-row[data-disabled] { cursor: default; }
+.palette-row[data-disabled] .palette-title, .palette-row[data-disabled] .palette-icon { opacity: .55; }
+.palette-row[data-disabled] .palette-detail { color: var(--muted-foreground); font-style: italic; }
+.palette-row[data-disabled] .palette-verb b { color: var(--muted-foreground); font-weight: var(--weight-medium); }
+.palette-help { display: block; margin: 6px 8px 4px; border: 1px dashed var(--border); border-radius: var(--radius-md); padding: 9px 10px; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.6; }
+.palette-help b { color: var(--foreground); font-family: var(--font-mono); font-weight: var(--weight-medium); }
+.palette-empty { min-height: 0; padding: 18px 12px 10px; }
+@media (max-width: 640px) {
+  .palette-tabs { flex-wrap: wrap; }
+  .palette-verb b, .palette-keys { display: none; }
+  .palette-hint-tab { display: none !important; }
+}

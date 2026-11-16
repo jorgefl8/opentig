@@ -142,6 +142,8 @@ function targetDirectoryFor(entry: FileTreeEntry): string {
 }
 
 const MOUSE_DRAG_OPTIONS = { activationConstraint: { distance: 5 } };
+/** Space lifts a row for a keyboard move; Enter opens it, as in every other list. */
+const KEYBOARD_DRAG_OPTIONS = { keyboardCodes: { start: ['Space'], cancel: ['Escape'], end: ['Space', 'Enter'] } };
 
 function DesktopFilesView({
   active,
@@ -205,7 +207,7 @@ function DesktopFilesView({
   // Options kept the same object: new ones would give every row a new drag context on every render.
   const sensors = useSensors(
     useSensor(MouseDragSensor, MOUSE_DRAG_OPTIONS),
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, KEYBOARD_DRAG_OPTIONS),
   );
   const loadedDirectoriesRef = useRef(loadedDirectories);
   const loadingDirectoriesRef = useRef<Set<string>>(new Set());
@@ -723,6 +725,7 @@ function DesktopFilesView({
         <ContextMenuTrigger render={<FileTreeDropSurface
           role="tree"
           aria-label="Files"
+          data-list-root=""
           className={`files-tree ${dropTargetPath === '' && draggedPaths.length > 0 ? 'root-drop-target' : ''}`}
           data-dragging={draggedPaths.length > 0 || undefined}
           style={{ height: virtualizer.getTotalSize() }}
@@ -902,6 +905,11 @@ const FileRow = memo(function FileRow({ entry, depth, expanded, pendingChildren,
         {...attributes}
         role="treeitem"
         data-path={entry.path}
+        data-list-item=""
+        data-list-primary=""
+        data-list-current={active ? '' : undefined}
+        data-list-folder={entry.type === 'directory' ? '' : undefined}
+        data-list-depth={depth}
         aria-selected={selected}
         aria-current={active ? 'true' : undefined}
         aria-expanded={entry.type === 'directory' ? expanded : undefined}

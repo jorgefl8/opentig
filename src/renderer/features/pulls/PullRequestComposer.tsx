@@ -127,7 +127,7 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
     </>;
   }
   return (
-    <div ref={root} className={`pr-composer${collapsed ? ' collapsed' : ''}`} onFocus={() => setExpanded(true)} onClick={() => setExpanded(true)} onKeyDown={onKeyDown}>
+    <div ref={root} className={`pr-composer${collapsed ? ' collapsed' : ''}`} data-escape-owner={collapsed ? undefined : ''} onFocus={() => setExpanded(true)} onClick={() => setExpanded(true)} onKeyDown={onKeyDown}>
       <MarkdownField id={`pr-comment-${number}`} label="Add a comment" value={draft} rows={4} placeholder={collapsed ? 'Write a comment' : 'Write a comment (GitHub Markdown)'} emptyPreview="_Nothing to preview._" disabled={busy} collapsed={collapsed} onChange={(value) => { setExpanded(true); onDraftChange(value); }} />
       {!collapsed && <div className="pr-composer-actions">
         {accountNote}

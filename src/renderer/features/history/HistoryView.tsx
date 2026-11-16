@@ -131,7 +131,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
           </DropdownMenuContent>
         </DropdownMenu>}
       </div>
-      <div ref={scrollRef} className="history-scroll" role="list" aria-label={fileFilter ? `Commits that changed ${fileFilter.path}` : 'Commit history'}>
+      <div ref={scrollRef} className="history-scroll" role="list" data-list-root="" aria-label={fileFilter ? `Commits that changed ${fileFilter.path}` : 'Commit history'}>
         {rows.length === 0 ? <p className="empty-list">{fileFilter
           ? 'Git has no commits for this file: it hasn’t been committed yet, or it is in a folder Git ignores.'
           : 'This repository has no commits yet.'}</p> : (
@@ -205,7 +205,7 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
   const className = ['commit-item', active && 'active', open && 'expanded', match && 'commit-search-match', currentMatch && 'commit-current-match'].filter(Boolean).join(' ');
 
   return (
-    <div className={className} role="listitem">
+    <div className={className} role="listitem" data-list-item="" data-list-current={active ? '' : undefined}>
       {/* The whole row selects the commit for the pointer; the subject is what the keyboard reaches. */}
       <div className="commit-header" onClick={(event) => { if (!(event.target as Element).closest('button, a')) onSelectCommit(commit); }}>
         <span className="commit-lane" style={{ width: graphWidth }}>
@@ -216,7 +216,7 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
           </Tooltip>
         </span>
         <div className="commit-main">
-          <button className="commit-subject" aria-pressed={active} onClick={() => onSelectCommit(commit)}>{commit.subject || '(no subject)'}</button>
+          <button className="commit-subject" data-list-primary="" aria-pressed={active} onClick={() => onSelectCommit(commit)}>{commit.subject || '(no subject)'}</button>
           {phone ? <span className="commit-meta">
             <time dateTime={commit.date}>{formatDate(commit.date)}</time>
             {!fileNote && <><MetaSeparator /><span className="commit-author">{commit.author}</span></>}
