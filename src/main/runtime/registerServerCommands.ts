@@ -452,7 +452,7 @@ export function registerServerCommands(
     context.signal,
   ));
   handleWithContext(IPC.commitsFiles, 'commit-files', (context, id, oid) => services.operations.commitFiles(stringArg(id, 'commit-files', 64), stringArg(oid, 'commit-files', 128), context.signal));
-  handle(IPC.commitsRecognize, 'commit-recognize', (id, oid) => services.operations.recognizeCommit(stringArg(id, 'commit-recognize', 64), stringArg(oid, 'commit-recognize', 128)));
+  handle(IPC.commitsRecognize, 'commit-recognize', (id, oid, localOnly) => services.operations.recognizeCommit(stringArg(id, 'commit-recognize', 64), stringArg(oid, 'commit-recognize', 128), { localOnly: localOnly === true }));
   handle(IPC.commitsCountAfter, 'commits-after', (id, oid) => services.operations.commitsAfter(stringArg(id, 'commits-after', 64), oidArg(oid, 'commits-after')));
   handle(IPC.branchesList, 'branches', (id) => remember(stringArg(id, 'branches', 64), 'branches', services.operations.branches(stringArg(id, 'branches', 64))));
   handle(IPC.branchSwitch, 'switch-branch', (id, branch, moveChanges, allowAgents) => services.operations.switchBranch(
