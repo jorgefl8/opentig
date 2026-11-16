@@ -62,7 +62,7 @@ export function ChangesView(props: ChangesViewProps) {
       {props.changeCount === 0
         ? <NoChanges unpublishedCommits={props.unpublishedCommits} branchNeedsPublication={props.branchNeedsPublication} upstreamMismatch={props.upstreamMismatch ?? null} publishDisabled={props.publishDisabled} onPublish={props.onPublish} />
         : <ChangesStrip count={props.changeCount} insertions={props.insertions} deletions={props.deletions} staged={props.staged.length} changed={props.changed.length} disabled={props.readOnly} onStageAll={props.onStageAll} onUnstageAll={props.onUnstageAll} />}
-      <div ref={scrollRef} className="changes-scroll">
+      <div ref={scrollRef} className="changes-scroll" data-list-root="">
         <ConflictSection scrollRef={scrollRef} changes={props.conflicts} selection={props.selection} onSelect={props.onConflict} onOpenFile={props.onOpenFile} onMenu={openMenu && ((change) => openMenu({ change, kind: 'conflict' }))} />
         <ChangeSection scrollRef={scrollRef} displayMode={displayMode} label="Staged" showCount changes={props.staged} selection={props.selection} onSelect={(path) => props.onSelect(path, 'staged')} onOpenFile={props.onOpenFile} action="unstage" disabled={props.readOnly} onAction={props.onUnstage} onDiscard={props.onDiscard} discardDisabled={props.discardDisabled} onUnstageGroup={bothGroups ? props.onUnstageAll : undefined} onMenu={openMenu && ((change) => openMenu({ change, kind: 'staged' }))} />
         <ChangeSection scrollRef={scrollRef} displayMode={displayMode} label={notStagedLabel} changes={props.changed} selection={props.selection} onSelect={(path) => props.onSelect(path, 'unstaged')} onOpenFile={props.onOpenFile} action="stage" disabled={props.readOnly} onAction={props.onStage} onDiscard={props.onDiscard} discardDisabled={props.discardDisabled} onMenu={openMenu && ((change) => openMenu({ change, kind: 'unstaged' }))} />
@@ -197,11 +197,11 @@ function ConflictRow({ change, current, onSelect, onOpenFile, onMenu }: { change
   const { normalized, name, directory } = changePathParts(change.path);
   const longPress = useLongPress(() => onMenu?.(change), { disabled: !onMenu });
   return (
-    <div ref={rowRef} role="listitem" className="change-row" aria-current={current ? 'true' : undefined} {...longPress} onClick={(event) => {
+    <div ref={rowRef} role="listitem" className="change-row" aria-current={current ? 'true' : undefined} data-list-item="" data-list-current={current ? '' : undefined} {...longPress} onClick={(event) => {
       if (shouldActivateChangeRow(event.target)) onSelect(change.path);
     }}>
       <Tooltip disabled={!truncated}>
-        <TooltipTrigger render={<button className="file-label" data-long-press-target="" onClick={() => onSelect(change.path)} aria-label={`Resolve conflict in ${change.path}`} />}>
+        <TooltipTrigger render={<button className="file-label" data-list-primary="" data-long-press-target="" onClick={() => onSelect(change.path)} aria-label={`Resolve conflict in ${change.path}`} />}>
           <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(normalized)} alt="" aria-hidden="true" draggable={false} />
           <span ref={textRef} className="change-file-text"><span>{name}</span>{directory && <small>{directory}</small>}</span>
         </TooltipTrigger>
@@ -337,12 +337,12 @@ function ChangeTreeFolderRow({ node, depth, expanded, disabled, discardDisabled,
 }) {
   const paths = collectChangePaths(node);
   return (
-    <div role="treeitem" aria-expanded={expanded} className="tree-folder" style={{ paddingLeft: 12 + depth * 14 }} onClick={(event) => {
+    <div role="treeitem" aria-expanded={expanded} className="tree-folder" data-list-item="" data-list-folder="" data-list-depth={depth} style={{ paddingLeft: 12 + depth * 14 }} onClick={(event) => {
       if (shouldActivateChangeRow(event.target)) onToggle();
     }}>
       <button className="folder-toggle" onClick={onToggle} aria-label={expanded ? 'Collapse folder' : 'Expand folder'}><IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''}`} /></button>
       <FolderIcon path={node.path} expanded={expanded} />
-      <button className="folder-name" onClick={onToggle}>{node.name}</button>
+      <button className="folder-name" data-list-primary="" onClick={onToggle}>{node.name}</button>
       <span className="change-row-actions">
         <ChangeActions paths={paths} action={action} disabled={disabled} discardDisabled={discardDisabled} onDiscard={onDiscard} onAction={onAction} />
       </span>
@@ -360,14 +360,14 @@ function ChangeFileRow({ change, current, disabled, discardDisabled, action, dep
   const previewable = shouldOpenChangePreview(change.path, change.kind);
   const longPress = useLongPress(() => onMenu?.(change), { disabled: !onMenu });
   return (
-    <div ref={rowRef} role={showDirectory ? 'listitem' : 'treeitem'} className="change-row" aria-current={current ? 'true' : undefined} style={onMenu ? undefined : { paddingLeft: 12 + depth * 14 }} {...longPress} onClick={(event) => {
+    <div ref={rowRef} role={showDirectory ? 'listitem' : 'treeitem'} className="change-row" aria-current={current ? 'true' : undefined} data-list-item="" data-list-current={current ? '' : undefined} data-list-depth={depth} style={onMenu ? undefined : { paddingLeft: 12 + depth * 14 }} {...longPress} onClick={(event) => {
       if (!shouldActivateChangeRow(event.target)) return;
       if (previewable) onOpenFile(change.path);
       else onSelect(change.path);
     }}>
       {!showDirectory && <span className="tree-spacer" />}
       <Tooltip disabled={!truncated}>
-        <TooltipTrigger render={<button className="file-label" data-long-press-target="" onClick={() => previewable ? onOpenFile(change.path) : onSelect(change.path)} aria-label={`${previewable ? 'Preview' : 'View changes for'} ${change.path}`} />}>
+        <TooltipTrigger render={<button className="file-label" data-list-primary="" data-long-press-target="" onClick={() => previewable ? onOpenFile(change.path) : onSelect(change.path)} aria-label={`${previewable ? 'Preview' : 'View changes for'} ${change.path}`} />}>
           {directorySummary ? <FolderIcon path={normalizedPath} /> : <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(normalizedPath)} alt="" aria-hidden="true" draggable={false} />}
           <span ref={textRef} className="change-file-text"><span>{name}</span>{showDirectory && directory && <small>{directory}</small>}</span>
         </TooltipTrigger>

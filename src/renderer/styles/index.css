@@ -579,6 +579,9 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     background: var(--diff-editor-background);
   }
   .viewer-pane-body { position: relative; min-height: 0; flex: 1; }
+  /* Reached with Enter from a list: the keys go on to the viewer, and the edge says it has them. */
+  .viewer-pane-body:focus { outline: none; }
+  .viewer-pane-body:focus-visible { outline: 2px solid color-mix(in oklch, var(--ring) 55%, transparent); outline-offset: -2px; }
   .viewer-reloading { position: absolute; top: 10px; right: 14px; z-index: 5; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: color-mix(in oklch, var(--diff-editor-background) 82%, var(--muted)); opacity: 0; animation: viewer-reloading-show 0.2s ease-out 0.5s forwards; }
   @keyframes viewer-reloading-show { to { opacity: 1; } }
   .viewer-reloading .view-spinner { margin-right: 0; }
@@ -986,6 +989,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .tone-progress, .tone-neutral { color: var(--muted-foreground); }
   .pull-item { position: relative; display: flex; align-items: center; gap: 3px; padding-right: 6px; transition: background-color .12s ease; }
   .pull-item:focus-within { background: var(--row-hover); }
+  .pull-main:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--radius-md); }
   .pull-main { display: grid; min-width: 0; flex: 1; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 1px 9px; padding: 8px 6px 8px 12px; line-height: 1.4; text-align: left; }
   .pull-main.release-row { grid-template-columns: 7px minmax(0, 1fr); padding-right: 12px; }
   .pull-avatar-status { position: relative; display: block; width: 26px; height: 26px; grid-row: span 2; }
@@ -2019,6 +2023,8 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   /* The rule after a file's code closes it before the next header. A collapsed
      file has no code, so its header's own rule is the only one it needs. */
   .diff-file-section { min-width: 100%; border-bottom: 1px solid var(--border); }
+  /* The file n and p moved to. */
+  .diff-file-section[data-keyboard-file] > .diff-file-header { background: color-mix(in oklch, var(--primary) 9%, var(--background)); box-shadow: inset 3px 0 0 var(--primary); }
   /* A commit's file whose diff is still on its way, or could not be read. */
   .diff-file-loading { display: flex; align-items: center; gap: 8px; padding: 10px 16px; color: var(--muted-foreground); font-size: var(--text-ui); }
   .diff-file-section:last-child, .diff-file-section:has(> .diff-file-header > .diff-file-toggle[aria-expanded="false"]) { border-bottom: 0; }

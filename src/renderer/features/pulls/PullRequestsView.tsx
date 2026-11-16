@@ -196,7 +196,7 @@ function PullsList(props: PullRequestsViewProps) {
         </div>
       )}
       <KeptReadNotice className="pulls-kept" prefixes={[['repository', props.repositoryId, 'pulls'], ['repository', props.repositoryId, 'pull-stacks'], ['repository', props.repositoryId, 'pull-line-counts']]} onRetry={props.onRefresh} />
-      <div ref={scrollRef} className="pulls-scroll" role="list" aria-label={`${props.states.map(stateLabel).join(', ') || 'No'} pull requests`}>
+      <div ref={scrollRef} className="pulls-scroll" role="list" data-list-root="" aria-label={`${props.states.map(stateLabel).join(', ') || 'No'} pull requests`}>
         {pulls === null && !props.error ? (
           <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading pull requests…" /></div>
         ) : pulls !== null && pulls.length === 0 ? (
@@ -229,8 +229,8 @@ function PullRow({ repositoryId, pr, active, live, phone, onSelect }: { reposito
   // The selected row agrees with the viewer beside it; the others say what the list knows.
   const status = live ? pullRequestStatusLine(live) ?? pullRequestStateLine(live) : pullRequestSummaryStatus(pr);
   return (
-    <div className={`pull-item ${active ? 'active' : ''}`} role="listitem">
-      <button className="pull-main" onClick={() => onSelect(pr.number)}>
+    <div className={`pull-item ${active ? 'active' : ''}`} role="listitem" data-list-item="" data-list-current={active ? '' : undefined}>
+      <button className="pull-main" data-list-primary="" onClick={() => onSelect(pr.number)}>
         <span className="pull-avatar-status">
           <GitHubAvatar key={pr.authorAvatarUrl} src={pr.authorAvatarUrl} className="pull-avatar" />
           <span className={`status-dot tone-${status.tone}`} aria-hidden="true" />
