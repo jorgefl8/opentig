@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mobileSyncPill, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, visibleRepositorySyncActions } from './project-sync';
+import { countsAfterFailedFetch, mobileSyncPill, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, visibleRepositorySyncActions } from './project-sync';
 
 describe('the sync pill in a phone top bar', () => {
   const status = { branch: 'feature', upstream: 'origin/feature', ahead: 0, behind: 0 };
@@ -174,3 +174,20 @@ describe('pulling and then pushing as one notice', () => {
   });
 });
 
+
+describe('the counts of a repository whose fetch failed', () => {
+  const status = { branch: 'main', upstream: 'origin/main', ahead: 2, behind: 0, detached: false, unborn: false, readOnly: false, operation: null };
+  const counts = new Map([['open', { ahead: 2, behind: 1 }], ['other', { ahead: 3, behind: 0 }]]);
+
+  it('keeps the open repository on offer with what its status says', () => {
+    const next = countsAfterFailedFetch(counts, 'open', { repositoryId: 'open', status });
+    expect(next.get('open')).toEqual(status);
+    expect(visibleRepositorySyncActions(next.get('open'))).toEqual(['push']);
+    expect(next.get('other')).toEqual({ ahead: 3, behind: 0 });
+  });
+
+  it('offers nothing for another repository, or for the open one before its status is read', () => {
+    expect(countsAfterFailedFetch(counts, 'other', { repositoryId: 'open', status }).has('other')).toBe(false);
+    expect(countsAfterFailedFetch(counts, 'open', { repositoryId: 'open', status: null }).has('open')).toBe(false);
+  });
+});
