@@ -1150,7 +1150,14 @@ export class GitRepositoryOperations {
    * leave a half-deleted folder, so once started it runs to its end unless the
    * server itself stops.
    */
-  async removeWorktree(repositoryId: string, targetPath: string, expectedOid: string, force = false, deleteBranch = false, options: { signal?: AbortSignal; cleanupOnly?: boolean } = {}): Promise<WorktreeRemovalResult> {
+  async removeWorktree(repositoryId: string, targetPath: string, expectedOid: string, force = false, deleteBranch = false, options: {
+    signal?: AbortSignal;
+    cleanupOnly?: boolean;
+    /** The worktree the client that asked has open, which is never removed, whatever `repositoryId` names. */
+    currentPath?: string;
+    /** Runs once the removal is decided, before anything is deleted, such as stopping a watch of the folder. */
+    beforeDelete?: (worktreePath: string) => Promise<void>;
+  } = {}): Promise<WorktreeRemovalResult> {
     const repository = this.repositories.get(repositoryId);
     const key = await normalizePath(targetPath);
     return this.worktreeRemovals.track(key, await normalizePath(repository.commonDir), targetPath, async () => {
@@ -1162,6 +1169,7 @@ export class GitRepositoryOperations {
         if (worktree.oid !== expectedOid) return { status: 'stale' };
         if (worktree.main) return { status: 'main' };
         if (await samePath(worktree.path, repository.path)) return { status: 'current' };
+        if (options.currentPath && await samePath(worktree.path, options.currentPath)) return { status: 'current' };
         if (worktree.bare) return { status: 'bare' };
         if (worktree.locked) return { status: 'locked', reason: worktree.locked };
         let linked = false;
@@ -1185,6 +1193,7 @@ export class GitRepositoryOperations {
       }, repository.commonDir);
       if ('status' in decision) return decision;
       const { worktree, linked } = decision;
+      await options.beforeDelete?.(worktree.path);
 
       let deletion: WorktreeFolderDeletion | null = null;
       let failure: unknown = null;

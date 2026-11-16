@@ -67,7 +67,7 @@ describe('OpenTigRuntime', () => {
     const state = fixture();
     const runtime = new OpenTigRuntime(state.services, vi.fn());
     runtime.publishRepositoryWatch('repo-a', 'watching', 'watch-1');
-    expect(state.clients.watchChanged).toHaveBeenCalledExactlyOnceWith('repo-a', 'watching', 'watch-1');
+    expect(state.clients.watchChanged).toHaveBeenCalledExactlyOnceWith('repo-a', 'watching', 'watch-1', undefined);
     expect(state.services.repositories.invalidateIfKnown).toHaveBeenCalledWith('repo-a');
   });
 
