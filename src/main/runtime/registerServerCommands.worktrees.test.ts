@@ -9,7 +9,7 @@ function fixture(removeWorktree: (...args: unknown[]) => Promise<unknown>) {
   const registry = new CommandRegistry();
   const repositoryChanged = vi.fn();
   const clients = { move: vi.fn(), forget: vi.fn(), repositoryOf: vi.fn((): string | null => null) };
-  const watcher = { pause: vi.fn(async () => undefined), endPause: vi.fn() };
+  const watcher = { pause: vi.fn(async (folder: string) => folder), endPause: vi.fn() };
   registerServerCommands(registry, {
     clients,
     watcher,
