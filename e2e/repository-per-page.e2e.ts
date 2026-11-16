@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
@@ -96,5 +97,37 @@ test('two pages on the same repository both see a commit made in one of them', a
   await expect.poll(() => repository.git('log', '-1', '--format=%s')).toBe('Commit from the first page');
 
   await expect(other.getByRole('list', { name: 'Commit history' }).getByText('Commit from the first page')).toBeVisible();
+  await other.close();
+});
+
+test('removing a worktree another page shows takes that page to the main worktree', async ({ pairedPage: page, repository }) => {
+  const worktreePath = `${repository.path}-spike`;
+  await repository.git('worktree', 'add', '-q', '-b', 'spike', worktreePath);
+  await openRepository(page, repository);
+  const branchPicker = (target: Page) => target.getByRole('combobox', { name: 'Select branch' });
+  const openBranch = async (target: Page, name: string) => {
+    await branchPicker(target).click();
+    await target.getByRole('listbox', { name: 'Select branch' }).getByRole('option', { name: new RegExp(`^${name}(?: |$)`) }).click();
+    await expect(branchPicker(target)).toContainText(name);
+  };
+  // The second page opens the worktree from its address; the first goes back to the main one.
+  await openBranch(page, 'spike');
+  const other = await page.context().newPage();
+  await other.goto(page.url());
+  await expect(branchPicker(other)).toContainText('spike');
+  await openBranch(page, 'main');
+
+  await branchPicker(page).click();
+  await page.getByRole('button', { name: 'Manage branches…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Branches and worktrees' });
+  await dialog.getByRole('tab', { name: /^Worktrees/ }).click();
+  await dialog.getByRole('listbox', { name: 'Worktrees' }).getByRole('option', { name: /sample-project-spike/ }).click();
+  await dialog.getByRole('button', { name: 'Remove worktree' }).click();
+  await dialog.getByRole('button', { name: 'Remove worktree' }).click();
+  await expect(dialog.getByRole('listbox', { name: 'Worktrees' }).getByRole('option', { name: /sample-project-spike/ })).toBeHidden({ timeout: 20_000 });
+  expect(existsSync(worktreePath)).toBe(false);
+
+  await expect(branchPicker(other)).toContainText('main');
+  await expect(other.getByRole('button', { name: 'Locate folder…' })).toHaveCount(0);
   await other.close();
 });
