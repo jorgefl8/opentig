@@ -17,8 +17,8 @@ export const opentig: OpenTigApi = {
   ...server,
   app: {
     ...server.app,
-    bootstrap: async () => {
-      const data = await server.app.bootstrap();
+    bootstrap: async (request) => {
+      const data = await server.app.bootstrap(request);
       await desktop?.app.preferencesChanged(data.preferences);
       return data;
     },

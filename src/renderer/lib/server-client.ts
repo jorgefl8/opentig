@@ -1,4 +1,4 @@
-import type { ImageFileResult } from '@shared/contracts';
+import type { ImageFileResult, RepositoryInfo } from '@shared/contracts';
 import { IPC } from '@shared/contracts';
 import { AI_CLIENT_TIMEOUT_MS } from '@shared/ai-timeouts';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
@@ -51,14 +51,22 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       .then((value) => { if (!wasKept) kept.confirm(target); return value; }) as ReturnType<OpenTigServerApiMethod<Command>>;
   };
 
-  const bootstrap: OpenTigServerApi['app']['bootstrap'] = async () => {
-    const data = await transport.request(IPC.bootstrap, []);
+  /**
+   * The repository this client has open, as the server last answered: asked for again when the
+   * connection comes back, so a server where each client has its own reopens it for this one.
+   */
+  let ownRepositoryId: string | null = null;
+  const opened = (repository: RepositoryInfo): RepositoryInfo => { ownRepositoryId = repository.id; return repository; };
+
+  const bootstrap: OpenTigServerApi['app']['bootstrap'] = async (request) => {
+    const data = await transport.request(IPC.bootstrap, request?.repositoryId ? [{ repositoryId: request.repositoryId }] : []);
     if (!data.server || data.server.protocolVersion !== OPEN_TIG_PROTOCOL_VERSION) {
       transport.markIncompatible();
       throw new Error('This OpenTig client is incompatible with the server.');
     }
     if (data.server.requestCancellation === true) transport.enableCancellation();
     if (data.server.keptReads === true) transport.enableKeptReads();
+    ownRepositoryId = data.activeRepository?.id ?? null;
     return data;
   };
 
@@ -86,12 +94,12 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       cloneStatus: (id) => invoke(IPC.repositoryCloneStatus, id),
       cancelClone: (id) => invoke(IPC.repositoryCancelClone, id),
       preparePath: (path) => invoke(IPC.repositoryPreparePath, path),
-      completeSetup: (id, revision) => invoke(IPC.repositoryCompleteSetup, id, revision),
-      openPath: (path) => invoke(IPC.repositoryOpenPath, path),
+      completeSetup: (id, revision) => invoke(IPC.repositoryCompleteSetup, id, revision).then(opened),
+      openPath: (path) => invoke(IPC.repositoryOpenPath, path).then(opened),
       browseDirectories: (path) => path === undefined ? invoke(IPC.repositoryBrowseDirectories) : invoke(IPC.repositoryBrowseDirectories, path),
-      openRecent: (id) => invoke(IPC.repositoryOpenRecent, id),
+      openRecent: (id) => invoke(IPC.repositoryOpenRecent, id).then(opened),
       forget: (repositoryKey) => invoke(IPC.repositoryForget, repositoryKey),
-      relocateRecent: (id, path) => invoke(IPC.repositoryRelocateRecent, id, path),
+      relocateRecent: (id, path) => invoke(IPC.repositoryRelocateRecent, id, path).then(opened),
       unavailableRecent: () => invoke(IPC.repositoryUnavailableRecent),
       findRelocations: (previousPath, path) => invoke(IPC.repositoryFindRelocations, previousPath, path),
       relocateRecents: (entries) => invoke(IPC.repositoryRelocateRecents, entries),
@@ -151,7 +159,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       switchBranch: (repositoryId, branch, moveChanges, allowAgents = false) => invoke(IPC.branchSwitch, repositoryId, branch, moveChanges, allowAgents),
       listWorktrees: (repositoryId) => invoke(IPC.worktreesList, repositoryId),
       worktreeAgents: (repositoryId) => invoke(IPC.worktreeAgents, repositoryId),
-      selectWorktree: (repositoryId, path) => invoke(IPC.worktreeSelect, repositoryId, path),
+      selectWorktree: (repositoryId, path) => invoke(IPC.worktreeSelect, repositoryId, path).then(opened),
       pull: (repositoryId) => invoke(IPC.refsPull, repositoryId),
       pushContext: (repositoryId, remote) => invoke(IPC.refsPushContext, repositoryId, remote),
       push: (repositoryId, publish, expectedContext) => invoke(IPC.refsPush, repositoryId, publish, expectedContext),
@@ -233,11 +241,13 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
 
   transport.onEvent((event) => publishRuntimeEvent(event, repositoryChanged, activeRepositoryChanged, githubAccountsChanged, aiInstructionsChanged));
   transport.onReconnect(async () => {
-    const data = await api.app.bootstrap();
+    // Where each client has its own repository, this one lands on its own, not on another's last choice.
+    const data = await api.app.bootstrap(ownRepositoryId ? { repositoryId: ownRepositoryId } : undefined);
     for (const listener of aiInstructionsChanged) listener([]);
     // Not an account change, which empties what was read with the old account: what GitHub said is read again while it stays on screen.
     for (const listener of reconnected) listener();
     if (!data.activeRepository) return;
+    // Its own repository, unless that could not be opened again; on an older server, the one every client shares.
     for (const listener of activeRepositoryChanged) listener(data.activeRepository);
     // Changes may have gone unreported while disconnected; the server says how its repository is watched now.
     const watch = data.activeRepositoryWatch;

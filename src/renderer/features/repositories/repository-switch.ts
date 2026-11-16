@@ -4,6 +4,8 @@ export interface RepositorySwitchHandlers {
   /** Opens a recent repository; null means the user cancelled (for example, a relocation prompt). */
   open(id: string): Promise<RepositoryInfo | null>;
   apply(repository: RepositoryInfo, id: string): void;
+  /** A choice given up while it was on its way opened anyway, and no later choice followed it. */
+  abandoned?(repository: RepositoryInfo): void;
   fail(reason: unknown): void;
   pending(id: string | null): void;
 }
@@ -79,7 +81,7 @@ export function createRepositorySwitcher(): RepositorySwitcher {
             if (target === next) {
               if (repository) handlers().apply(repository, next);
               settle(repository ? 'opened' : 'cancelled');
-            }
+            } else if (target === null && abandoned === next && repository) handlers().abandoned?.(repository);
           } catch (reason) {
             if (target === next) {
               handlers().fail(reason);
