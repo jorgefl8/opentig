@@ -22,8 +22,11 @@ export const WATCH_GRACE_MS = 15_000;
 export const WATCH_START_DELAY_MS = 300;
 
 export interface RepositoryWatchPoolOptions extends Omit<RepositoryWatcherOptions, 'onState'> {
-  /** A repository's watch went from one state to another, with the new watch's id once it is watching. */
-  onState?: (repositoryId: string, state: RepositoryWatchState, watchId: string | null) => void;
+  /**
+   * A repository's watch went from one state to another, with the new watch's id once it is watching.
+   * `paused`: stopped on purpose for a while (see `RepositoryWatchPool.pause`).
+   */
+  onState?: (repositoryId: string, state: RepositoryWatchState, watchId: string | null, paused?: boolean) => void;
   maxWatched?: number;
   graceMs?: number;
   startDelayMs?: number;
@@ -72,6 +75,8 @@ export class RepositoryWatchPool {
   private stopped = false;
   /** Set while the pool itself stops a watch, whose end is not a place freed for others yet. */
   private removing = false;
+  /** Set while it stops one for a while (see `pause`). */
+  private pausing = false;
   /** When each holder last opened a repository, to tell going through several quickly from opening one. */
   private readonly lastHold = new Map<string, number>();
 
@@ -172,7 +177,8 @@ export class RepositoryWatchPool {
       entry.startTimer = null;
       entry.waitingSince = 0;
       entry.paused = true;
-      this.stopWatcher(entry);
+      this.pausing = true;
+      try { this.stopWatcher(entry); } finally { this.pausing = false; }
       paused.push(repositoryId);
     }
     if (paused.length > 0) await new Promise<void>((resolve) => setImmediate(resolve));
@@ -266,7 +272,7 @@ export class RepositoryWatchPool {
     const repositoryId = entry.repository.id;
     const onState: NonNullable<RepositoryWatcherOptions['onState']> = (id, state, watchId) => {
       if (this.entries.get(repositoryId)?.watcher !== watcher) return;
-      this.options.onState?.(id, state, watchId);
+      this.options.onState?.(id, state, watchId, this.pausing || undefined);
       // A watch that stopped by itself no longer takes a place: a repository waiting gets it.
       if (state === 'stopped' && !this.removing) this.startWaiting();
     };

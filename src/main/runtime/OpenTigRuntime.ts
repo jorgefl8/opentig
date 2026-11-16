@@ -138,10 +138,10 @@ export class OpenTigRuntime {
    * begins: a branch made or checked out while there was none went unreported too.
    * Each client that has the repository open is told, by an id of the watch of its own.
    */
-  publishRepositoryWatch(repositoryId: string, state: RepositoryWatchState, watchId: string | null): void {
+  publishRepositoryWatch(repositoryId: string, state: RepositoryWatchState, watchId: string | null, paused?: boolean): void {
     if (this.closePromise) return;
     this.services.repositories.invalidateIfKnown(repositoryId);
-    this.services.clients.watchChanged(repositoryId, state, watchId);
+    this.services.clients.watchChanged(repositoryId, state, watchId, paused);
   }
 
   close(): Promise<void> {

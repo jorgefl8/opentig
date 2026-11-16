@@ -457,9 +457,11 @@ describe('a repository per client', () => {
     await second.watching(other.id);
     const head = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: linked })).stdout.trim();
 
-    // Not the caller's own worktree, which is still refused.
+    // Not the caller's own worktree, which is still refused, also when the request names another one.
     const own = await second.value<{ status: string }>('refs:remove-worktree', { repositoryId: other.id, path: other.path, expectedOid: head, force: false, deleteBranch: false });
     expect(own.status).toBe('current');
+    const named = await second.value<{ status: string }>('refs:remove-worktree', { repositoryId: main.id, path: other.path, expectedOid: head, force: false, deleteBranch: false });
+    expect(named.status).toBe('current');
 
     second.log.length = 0;
     const removed = await first.value<{ status: string }>('refs:remove-worktree', { repositoryId: main.id, path: other.path, expectedOid: head, force: false, deleteBranch: false });

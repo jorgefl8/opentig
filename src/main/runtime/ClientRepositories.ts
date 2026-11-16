@@ -185,8 +185,11 @@ export class ClientRepositories {
     if (recipients.size > 0) this.send({ type: 'repository.changed', repositoryId, scope }, recipients);
   }
 
-  /** The pool's watch of the repository went from one state to another. */
-  watchChanged(repositoryId: string, state: RepositoryWatchState, watchId: string | null): void {
+  /**
+   * The pool's watch of the repository went from one state to another. One stopped on purpose for a
+   * while (`paused`), as before its folder is deleted, needs no read: one that starts again is told with one.
+   */
+  watchChanged(repositoryId: string, state: RepositoryWatchState, watchId: string | null, paused?: boolean): void {
     for (const [id, connection] of this.connections) {
       // Only a connection the pool counts on the repository is told it is watched; one waiting for an
       // answer is told once that has gone.
@@ -199,7 +202,7 @@ export class ClientRepositories {
         connection.clientWatchId = null;
       }
       connection.told = state;
-      this.sendWatch(id, repositoryId, state, connection.clientWatchId);
+      this.sendWatch(id, repositoryId, state, connection.clientWatchId, paused ? false : undefined);
     }
   }
 
