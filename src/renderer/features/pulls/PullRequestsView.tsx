@@ -1,6 +1,6 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { KeptReadNotice } from '@/components/KeptReadNotice';
-import { formatTimeAgo } from '@shared/date-format';
+import { TimeAgo } from '@/components/TimeAgo';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { memo, Suspense, useEffect, useRef } from 'react';
 import { lazyWithPreload } from '@/lib/lazy-with-retry';
@@ -237,7 +237,7 @@ function PullRow({ repositoryId, pr, active, live, phone, onSelect }: { reposito
         </span>
         <span className="pull-line">
           <span className="pull-title">{pr.title || '(no title)'}</span>
-          <time className="pull-age" dateTime={pr.updatedAt}>{formatTimeAgo(pr.updatedAt)}</time>
+          <time className="pull-age" dateTime={pr.updatedAt}><TimeAgo value={pr.updatedAt} /></time>
         </span>
         <span className="pull-line">
           <span className="pull-meta">#{pr.number} · {status.label}{phone && pr.stack && ` · Layer ${pr.stack.position} of ${pr.stack.size}`}</span>
