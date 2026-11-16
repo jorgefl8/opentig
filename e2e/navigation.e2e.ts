@@ -246,3 +246,34 @@ test('going Back and Forward to what was already seen asks the server for nothin
   });
   expect(requestTotal(wentForward), JSON.stringify(wentForward)).toBe(0);
 });
+
+test('searching in the command palette asks the server nothing per letter typed', async ({ pairedPage: page, repository }) => {
+  await repository.commit('src/app.js', 'const total = 1;\n', 'Add app');
+  await openRepository(page, repository);
+  await page.keyboard.press('Control+p');
+  const dialog = page.getByRole('dialog', { name: 'Command palette' });
+  const field = dialog.getByRole('combobox');
+  await expect(dialog.getByRole('option', { name: /^app\.js/ })).toBeVisible();
+
+  const typedFiles = await requestsDuring(page, async () => {
+    await field.pressSequentially('src/app');
+    await expect(dialog.getByRole('option')).toHaveCount(1);
+  });
+  expect(requestTotal(typedFiles), JSON.stringify(typedFiles)).toBe(0);
+
+  // The commits tab reads History's first page once, as opening History would.
+  await field.fill('');
+  const commitsTab = await requestsDuring(page, async () => {
+    await field.pressSequentially('~');
+    await expect(dialog.getByRole('option', { name: /^Add app/ })).toBeVisible();
+  });
+  expect(commitsTab['commits:list'] ?? 0, JSON.stringify(commitsTab)).toBeLessThanOrEqual(1);
+  const typedCommits = await requestsDuring(page, async () => {
+    await field.pressSequentially('initial com');
+    await expect(dialog.getByRole('option')).toHaveCount(1);
+    await field.fill('');
+    await field.pressSequentially('@mai');
+    await expect(dialog.getByRole('option', { name: /^main/ })).toBeVisible();
+  });
+  expect(requestTotal(typedCommits), JSON.stringify(typedCommits)).toBe(0);
+});

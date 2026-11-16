@@ -2,6 +2,7 @@ export type ShortcutId =
   | 'openRepository'
   | 'refresh'
   | 'quickOpen'
+  | 'commandPalette'
   | 'repoSwitcher'
   | 'toggleSidebar'
   | 'commit'
@@ -31,7 +32,8 @@ export interface ShortcutDefinition {
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: 'openRepository', label: 'Open repository', category: 'General', defaultCombo: 'Ctrl+O', allowBare: false },
   { id: 'refresh', label: 'Refresh', category: 'General', defaultCombo: 'Ctrl+R', allowBare: false },
-  { id: 'quickOpen', label: 'Quick open', category: 'General', defaultCombo: 'Ctrl+P', allowBare: false },
+  { id: 'quickOpen', label: 'Quick open', description: 'The command palette, searching files. Add :40 to a name to open it at line 40.', category: 'General', defaultCombo: 'Ctrl+P', allowBare: false },
+  { id: 'commandPalette', label: 'Command palette', description: 'The same palette, searching commands.', category: 'General', defaultCombo: 'Ctrl+K', allowBare: false },
   { id: 'repoSwitcher', label: 'Repository switcher', description: 'Type a number to switch, or press again to close.', category: 'General', defaultCombo: 'Q', allowBare: true },
   { id: 'toggleSidebar', label: 'Collapse or expand the sidebar', category: 'General', defaultCombo: 'Ctrl+B', allowBare: false },
   { id: 'commit', label: 'Commit', category: 'Commit', defaultCombo: 'Ctrl+Enter', allowBare: false },
@@ -109,6 +111,8 @@ export const FIXED_SHORTCUTS: readonly FixedShortcutReference[] = [
   { combo: 'J / K', label: 'Next or previous row of the list, without leaving the viewer', category: 'Viewer' },
   { combo: 'N / P', label: 'Next or previous file of a diff', category: 'Viewer' },
   { combo: 'Esc', label: 'Close the viewer and go back to its row in the list', category: 'Viewer' },
+  { combo: 'Tab / Shift + Tab', label: 'Next or previous kind of search', category: 'Command palette' },
+  { combo: '> @ ~ # ! *', label: 'Typed first: commands, branches, commits, pull requests, runs or repositories', category: 'Command palette', sequence: true },
   { combo: 'Ctrl + A', label: 'Select all files', category: 'Files' },
   { combo: 'Ctrl + C', label: 'Copy selected files', category: 'Files' },
   { combo: 'Ctrl + X', label: 'Cut selected files', category: 'Files' },
@@ -176,12 +180,23 @@ export function isValidCombo(combo: string, allowBare: boolean): boolean {
   return true;
 }
 
-/** Resolves the effective combo for every shortcut, falling back to the default for a missing or invalid override. */
+/**
+ * Resolves the effective combo for every shortcut, falling back to the default for a missing or invalid override.
+ * A key someone chose for a command wins over another command's default: a shortcut added later never takes a
+ * key already in use, and is left unassigned (`''`, which no key matches) until it is given one.
+ */
 export function resolveShortcuts(overrides: ShortcutOverrides | undefined): ShortcutMap {
   const result = {} as ShortcutMap;
+  const chosen = new Set<string>();
   for (const def of SHORTCUT_DEFINITIONS) {
     const override = overrides?.[def.id];
-    result[def.id] = override && isValidCombo(override, def.allowBare) ? override : def.defaultCombo;
+    if (override && isValidCombo(override, def.allowBare)) {
+      result[def.id] = override;
+      chosen.add(override);
+    }
+  }
+  for (const def of SHORTCUT_DEFINITIONS) {
+    if (result[def.id] === undefined) result[def.id] = chosen.has(def.defaultCombo) ? '' : def.defaultCombo;
   }
   return result;
 }

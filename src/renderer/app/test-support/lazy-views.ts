@@ -10,7 +10,7 @@ export function preloadLazyViews(): Promise<unknown> {
     import('@/features/history/HistoryView'),
     import('@/features/search/SearchView'),
     import('@/features/pulls/PullRequestsView'),
-    import('@/features/files/QuickOpenDialog'),
+    import('@/features/palette/CommandPalette'),
     import('@/features/pulls/CreatePullRequestDialog'),
     import('@/features/settings/SettingsDialog'),
     import('@/features/refs/LocalRefsDialog'),

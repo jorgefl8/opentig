@@ -175,7 +175,7 @@ function ShortcutRecorder({ combo, allowBare, isCustom, error, onCapture, onRese
         onClick={() => setListening(true)}
         onBlur={() => setListening(false)}
       >
-        {listening ? 'Press a key…' : <KbdGroup>{combo.split('+').map((token) => <Kbd key={token}>{token}</Kbd>)}</KbdGroup>}
+        {listening ? 'Press a key…' : combo ? <KbdGroup>{combo.split('+').map((token) => <Kbd key={token}>{token}</Kbd>)}</KbdGroup> : 'Not set'}
       </button>
       {isCustom && (
         <Tooltip>
