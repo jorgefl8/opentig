@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEventHandler, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEventHandler, type ReactNode, type Ref } from 'react';
 import { IconAlertCircle, IconArrowRight, IconArrowUp, IconBook2, IconCheck, IconChevronRight, IconClock, IconDeviceDesktop, IconDownload, IconFileText, IconFolder, IconGitBranch, IconHome, IconInbox, IconPencil, IconSearch, IconServer, IconX } from '@tabler/icons-react';
 import type { RecentRepository, ServerDirectoryListing } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,7 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
   const [editingPath, setEditingPath] = useState(false);
   /** Read when a listing arrives: a path being typed meanwhile is the user's, not the listing's. */
   const editingPathRef = useRef(false);
-  editingPathRef.current = editingPath;
+  useLayoutEffect(() => { editingPathRef.current = editingPath; }, [editingPath]);
   const [selected, setSelected] = useState<Folder | null>(null);
   const [filter, setFilter] = useState('');
   const [showHidden, setShowHidden] = useState(false);
