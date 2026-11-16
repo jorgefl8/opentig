@@ -37,7 +37,7 @@ export interface KeyContext {
 /** When `g` was pressed, while it waits for a letter. */
 export interface ChordState { since: number | null }
 
-type KeyInput = { code?: string } & Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'isComposing' | 'keyCode' | 'defaultPrevented' | 'timeStamp'>;
+type KeyInput = { code?: string; getModifierState?: (key: string) => boolean } & Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'isComposing' | 'keyCode' | 'defaultPrevented' | 'timeStamp'>;
 
 /**
  * What a key does, or null to leave it to the browser and whatever else listens.
@@ -50,7 +50,8 @@ export function readKey(event: KeyInput, context: KeyContext, chord: ChordState)
   // During IME composition the key belongs to the text being composed.
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return null;
   if (context.typing || context.overlay) return null;
-  if (event.ctrlKey || event.metaKey || event.altKey) return null;
+  // AltGr types a character of its own; some browsers report it with no other modifier.
+  if (event.ctrlKey || event.metaKey || event.altKey || event.getModifierState?.('AltGraph')) return null;
   const key = plainKey(event);
   // `?` is a shifted key on most layouts; every other key here is read without Shift.
   if (key === '?') return { kind: 'help' };
@@ -86,14 +87,15 @@ export function readKey(event: KeyInput, context: KeyContext, chord: ChordState)
 
 /**
  * The key as its letter: lower case with Caps Lock on, and on a layout whose keys are
- * not Latin letters, the letter printed on the same key of a Latin one.
+ * not Latin letters, the letter printed on the same key of a Latin one. A Latin layout
+ * is read by what it types: its ü or ń is that letter, wherever its key sits.
  */
 function plainKey(event: KeyInput): string {
   const { key } = event;
   if (key.length !== 1) return key;
   if (key >= 'A' && key <= 'Z' && !event.shiftKey) return key.toLowerCase();
   const letter = /^Key([A-Z])$/.exec(event.code ?? '');
-  if (letter && key.charCodeAt(0) > 127) return letter[1]!.toLowerCase();
+  if (letter && key.charCodeAt(0) > 127 && !/\p{Script=Latin}/u.test(key)) return letter[1]!.toLowerCase();
   return key;
 }
 

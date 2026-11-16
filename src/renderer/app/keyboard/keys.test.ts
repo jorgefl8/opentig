@@ -121,6 +121,14 @@ describe('letters on other keyboards', () => {
     expect(readKey(press('j', { code: 'KeyC' }), list, fresh())).toEqual({ kind: 'move', to: 'next' });
     expect(readKey(press('ж', { code: 'Semicolon' }), list, fresh())).toBeNull();
   });
+
+  it('reads a Latin layout’s own letters as themselves, and nothing typed with AltGr', () => {
+    // Turkish F has ü where QWERTY has g, and Polish types ń with AltGr and n.
+    expect(readKey(press('ü', { code: 'KeyG' }), elsewhere, fresh())).toBeNull();
+    expect(readKey(press('ń', { code: 'KeyN' }), viewer, fresh())).toBeNull();
+    const altGr = { ...press('о', { code: 'KeyJ' }), getModifierState: (name: string) => name === 'AltGraph' };
+    expect(readKey(altGr, list, fresh())).toBeNull();
+  });
 });
 
 describe('where typing happens', () => {

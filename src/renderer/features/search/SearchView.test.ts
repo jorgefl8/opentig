@@ -13,10 +13,11 @@ let root: Root;
 let container: HTMLDivElement;
 let mobile = false;
 const onOpenFile = vi.fn();
+const seedTaken = vi.fn();
 
 let queryClient = new QueryClient();
 function mount(extra: { seed?: { text: string } | null; shown?: boolean } = {}) {
-  const view = createElement(SearchView, { repositoryId: 'sample', active: extra.shown !== false, revision: 0, onOpenFile, unsavedPathsAmong: () => [], onReplaced: () => {}, seed: extra.seed ?? null });
+  const view = createElement(SearchView, { repositoryId: 'sample', active: extra.shown !== false, revision: 0, onOpenFile, unsavedPathsAmong: () => [], onReplaced: () => {}, seed: extra.seed ?? null, onSeedTaken: seedTaken });
   act(() => root.render(createElement(QueryClientProvider, { client: queryClient },
     createElement(TooltipProvider, null,
       // As the app keeps a section it is not showing.
@@ -26,6 +27,7 @@ function mount(extra: { seed?: { text: string } | null; shown?: boolean } = {}) 
 beforeEach(() => {
   mobile = false;
   onOpenFile.mockReset();
+  seedTaken.mockReset();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('matchMedia', () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }));
@@ -151,4 +153,5 @@ it('takes the text the palette sent once, as plain text, and keeps what is typed
   mount({ seed, shown: false });
   mount({ seed });
   expect(field().value).toBe('other');
+  expect(seedTaken).toHaveBeenCalledTimes(1);
 });
