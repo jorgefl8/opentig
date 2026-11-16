@@ -161,8 +161,9 @@ export class ClientRepositories {
    * removed, or it moved and has a new id. Each is told as older servers told every client of a new
    * active repository, which clients of any version follow, and then how `repository` is watched.
    */
-  move(fromIds: Iterable<string>, repository: RepositoryInfo, details: { reason: 'removed' | 'relocated'; recentRepositories: RecentRepository[]; except?: string | undefined }): void {
+  move(fromIds: Iterable<string>, repository: RepositoryInfo, details: { reason: 'removed' | 'relocated'; recentRepositories: RecentRepository[]; except?: string | undefined }): Set<string> {
     const from = new Set(fromIds);
+    const moved = new Set<string>();
     for (const [id, connection] of this.connections) {
       if (id === details.except || !connection.repository || !from.has(connection.repository.id)) continue;
       const previousId = connection.repository.id;
@@ -172,7 +173,18 @@ export class ClientRepositories {
       const ticket = this.beginOpen(id);
       this.send({ type: 'repository.active-changed', repository, previousId, reason: details.reason, recentRepositories: details.recentRepositories, ticket }, new Set([id]));
       this.attach(id, repository, ticket);
+      moved.add(id);
     }
+    return moved;
+  }
+
+  /**
+   * A repository was relocated: every client but those moved with it (`except`) is told, whatever
+   * it has open, so it rebinds what it holds under the old id: tabs, drafts, folders, steps.
+   */
+  relocated(previousId: string, repository: RepositoryInfo, recentRepositories: RecentRepository[], except: ReadonlySet<string>): void {
+    const recipients = new Set([...this.connections.keys()].filter((id) => !except.has(id)));
+    if (recipients.size > 0) this.send({ type: 'repository.changed', repositoryId: previousId, scope: 'unknown', relocatedTo: repository, recentRepositories }, recipients);
   }
 
   /** A change to the repository, for the connections that have it open. */

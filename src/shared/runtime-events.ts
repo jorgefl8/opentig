@@ -26,6 +26,13 @@ export type OpenTigRuntimeEvent =
        * and for one that ended because the client left the repository. Older clients read anyway.
        */
       refresh?: false;
+      /**
+       * The repository moved to another folder and has a new id, sent to every client a server with
+       * `repositoryPerClient` did not move with it: what a client holds under `repositoryId` is now
+       * under this one's, with the saved repositories after the change. Older clients ignore it.
+       */
+      relocatedTo?: RepositoryInfo;
+      recentRepositories?: RecentRepository[];
     }
   /**
    * Servers without `repositoryPerClient` send it to every client when any opens a repository, which

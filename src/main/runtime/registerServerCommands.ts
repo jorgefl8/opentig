@@ -196,8 +196,11 @@ export function registerServerCommands(
   /** A repository moved and has a new id: every client on the old one follows it there. */
   const followRelocation = (previousId: string, repository: RepositoryInfo, except?: string) => {
     if (previousId === repository.id) return;
-    services.clients.move([previousId], repository, { reason: 'relocated', recentRepositories: services.repositories.recents(), except });
+    const recentRepositories = services.repositories.recents();
+    const moved = services.clients.move([previousId], repository, { reason: 'relocated', recentRepositories, except });
     services.clients.forget([previousId]);
+    // Every other client may hold tabs or drafts under the old id, or a step back to it.
+    services.clients.relocated(previousId, repository, recentRepositories, moved);
   };
   handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
     const repositoryId = stringArg(id, 'relocate-recent', 64);
