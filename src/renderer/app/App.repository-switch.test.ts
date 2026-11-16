@@ -291,6 +291,22 @@ it('reads the repository on a timer while the server watches another one, until 
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
   await settle();
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  // The page's intervals from here on, with how often each fired and whether it was cleared: the timed read
+  // is the one set when the watch stops, which says so whatever other reads land meanwhile.
+  const intervals: { id: number; ms: number; fired: number; cleared: boolean }[] = [];
+  const setFake = window.setInterval.bind(window);
+  const clearFake = window.clearInterval.bind(window);
+  const setSpy = vi.spyOn(window, 'setInterval').mockImplementation(((callback: () => void, ms?: number) => {
+    const interval = { id: 0, ms: ms ?? 0, fired: 0, cleared: false };
+    interval.id = setFake(() => { interval.fired += 1; callback(); }, ms) as unknown as number;
+    intervals.push(interval);
+    return interval.id;
+  }) as typeof window.setInterval);
+  const clearSpy = vi.spyOn(window, 'clearInterval').mockImplementation(((id?: number) => {
+    const interval = intervals.find((item) => item.id === id);
+    if (interval) interval.cleared = true;
+    clearFake(id);
+  }) as typeof window.clearInterval);
   try {
     const reads = () => calls.getStatus.mock.calls.length;
     // An announcement starts a read of its own, which a slow machine may still be making after one
@@ -301,14 +317,22 @@ it('reads the repository on a timer while the server watches another one, until 
     // Watched: the server reports every change, so nothing is read on a timer.
     expect(reads()).toBe(before);
     // Another client opened another repository: this one's changes now go unreported.
+    const known = intervals.length;
     await act(async () => calls.repositoryChanged!('repo', 'unknown', 'stopped'));
     await quiet();
-    const told = reads();
-    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
-    await quiet();
-    expect(reads()).toBe(told + 2);
+    const timed = intervals.slice(known).filter((item) => item.ms === 10_000 && !item.cleared);
+    expect(timed).toHaveLength(1);
+    // Every ten seconds it reads the repository, however the reads it starts interleave with others.
+    for (const tick of [1, 2]) {
+      const ahead = reads();
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(timed[0]!.fired).toBe(tick);
+      await vi.waitFor(() => expect(reads()).toBeGreaterThan(ahead));
+    }
     await act(async () => calls.repositoryChanged!('repo', 'worktree', 'watching', 'second'));
     await quiet();
+    // Watched again: the timed read is gone.
+    expect(timed[0]!.cleared).toBe(true);
     const watched = reads();
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     await settle();
@@ -326,14 +350,22 @@ it('reads the repository on a timer while the server watches another one, until 
     await settle();
     expect(kept('after the reconnect')).toBe('after the reconnect');
     // The connection dropped, and the server's bootstrap afterwards named another repository as watched.
+    const beforeDrop = intervals.length;
     await act(async () => { for (const reconnected of calls.reconnected) reconnected(); });
     await act(async () => calls.repositoryChanged!('repo-b', 'unknown', 'watching', 'elsewhere'));
     await quiet();
+    // This one is read on a timer again.
+    const timedAgain = intervals.slice(beforeDrop).filter((item) => item.ms === 10_000 && !item.cleared);
+    expect(timedAgain).toHaveLength(1);
     const reconnected = reads();
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-    await quiet();
-    expect(reads()).toBe(reconnected + 1);
-  } finally { vi.useRealTimers(); }
+    expect(timedAgain[0]!.fired).toBe(1);
+    await vi.waitFor(() => expect(reads()).toBeGreaterThan(reconnected));
+  } finally {
+    setSpy.mockRestore();
+    clearSpy.mockRestore();
+    vi.useRealTimers();
+  }
 });
 
 it('ends on the latest choice when an earlier open and its activation event arrive late', async () => {
