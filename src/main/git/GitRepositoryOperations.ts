@@ -1153,8 +1153,11 @@ export class GitRepositoryOperations {
   async removeWorktree(repositoryId: string, targetPath: string, expectedOid: string, force = false, deleteBranch = false, options: {
     signal?: AbortSignal;
     cleanupOnly?: boolean;
-    /** The worktree the client that asked has open, which is never removed, whatever `repositoryId` names. */
-    currentPath?: string;
+    /**
+     * The worktree the client that asked has open, which is never removed, whatever `repositoryId`
+     * names. Asked under the removal's lock, so a client that opens another meanwhile is asked about that.
+     */
+    currentPath?: () => string | undefined;
     /** Runs once the removal is decided, before anything is deleted, such as stopping a watch of the folder. */
     beforeDelete?: (worktreePath: string) => Promise<void>;
   } = {}): Promise<WorktreeRemovalResult> {
@@ -1169,7 +1172,8 @@ export class GitRepositoryOperations {
         if (worktree.oid !== expectedOid) return { status: 'stale' };
         if (worktree.main) return { status: 'main' };
         if (await samePath(worktree.path, repository.path)) return { status: 'current' };
-        if (options.currentPath && await samePath(worktree.path, options.currentPath)) return { status: 'current' };
+        const currentPath = options.currentPath?.();
+        if (currentPath && await samePath(worktree.path, currentPath)) return { status: 'current' };
         if (worktree.bare) return { status: 'bare' };
         if (worktree.locked) return { status: 'locked', reason: worktree.locked };
         let linked = false;

@@ -4,7 +4,6 @@ import { setGlobalGitIdentity } from '../git/GitGlobalIdentity';
 import { githubAccountSelectionSchema } from '../../shared/github-accounts';
 import { commitAuthorshipInputSchema } from '../../shared/commit-authorship';
 import { lstat } from 'node:fs/promises';
-import nodePath from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ClientAttachment, DiffRequest, Preferences, RepositoryInfo } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
@@ -515,16 +514,22 @@ export function registerServerCommands(
     const { commonDir } = services.repositories.get(repositoryId);
     const siblingIds = new Set([repositoryId, ...services.repositories.recents().filter((item) => item.commonDir === commonDir).map((item) => item.id)]);
     // The worktree the asking client has open, which may not be the one the request names.
-    const ownId = services.clients.repositoryOf(context.connectionId ?? '');
-    const currentPath = ownId && services.repositories.isKnown(ownId) ? services.repositories.get(ownId).path : undefined;
-    // A watch of the folder is stopped before it is deleted: on Windows a watched folder can't be, or only later.
-    let paused: string[] = [];
+    const currentPath = () => {
+      const ownId = services.clients.repositoryOf(context.connectionId ?? '');
+      return ownId && services.repositories.isKnown(ownId) ? services.repositories.get(ownId).path : undefined;
+    };
+    // The folder is not watched from before it is deleted until the removal is over, whoever opens it
+    // meanwhile: on Windows a watched folder can't be deleted, or only later.
+    let pausedFolder: string | null = null;
     try {
       return await services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch, {
         signal: context.signal,
         ...(cleanupOnly === undefined ? {} : { cleanupOnly }),
-        ...(currentPath ? { currentPath } : {}),
-        beforeDelete: async (worktreePath) => { paused = await services.watcher.pause((repository) => sameFolderPath(repository.path, worktreePath)); },
+        currentPath,
+        beforeDelete: async (worktreePath) => {
+          pausedFolder = worktreePath;
+          await services.watcher.pause(worktreePath);
+        },
       });
     } finally {
       // The caller's own worktree is never removed. Another tab, window or device on the removed one moves to
@@ -538,8 +543,8 @@ export function registerServerCommands(
         if (target) services.clients.move(removed, target, { reason: 'removed', recentRepositories: services.repositories.recents(), except: context.connectionId });
         services.clients.forget(removed);
       }
-      // Not removed after all: whoever is still on it is watched again.
-      services.watcher.resume(paused.filter((pausedId) => !removed.includes(pausedId)));
+      // Not removed after all, or partly: whoever is still on it is watched again.
+      if (pausedFolder !== null) services.watcher.endPause(pausedFolder);
       // Whoever asked may have stopped waiting long ago, and siblings list the same worktrees.
       for (const siblingId of siblingIds) services.events.repositoryChanged(siblingId, 'worktrees');
     }
@@ -670,14 +675,6 @@ export async function openRuntimeRepositoryPath(services: OpenTigRuntimeServices
   return services.repositories.openPath(selectedPath);
 }
 
-
-function sameFolderPath(left: string, right: string): boolean {
-  const normalize = (value: string) => {
-    const resolved = nodePath.resolve(value).replace(/[\\/]+$/, '');
-    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-  };
-  return normalize(left) === normalize(right);
-}
 
 function samePathSelection(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;

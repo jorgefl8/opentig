@@ -8,14 +8,15 @@ const request = { repositoryId: 'repo', path: '/sample/review', expectedOid: 'a'
 function fixture(removeWorktree: (...args: unknown[]) => Promise<unknown>) {
   const registry = new CommandRegistry();
   const repositoryChanged = vi.fn();
-  const clients = { move: vi.fn(), forget: vi.fn(), repositoryOf: vi.fn(() => null) };
-  const watcher = { pause: vi.fn(async () => ['review-id']), resume: vi.fn() };
+  const clients = { move: vi.fn(), forget: vi.fn(), repositoryOf: vi.fn((): string | null => null) };
+  const watcher = { pause: vi.fn(async () => undefined), endPause: vi.fn() };
   registerServerCommands(registry, {
     clients,
     watcher,
     repositories: {
       invalidateIfKnown: vi.fn(),
-      get: () => ({ id: 'repo', commonDir: '/sample/.git' }),
+      get: (id: string) => ({ id, commonDir: '/sample/.git', path: id === 'review' ? '/sample/review' : '/sample' }),
+      isKnown: () => true,
       recents: () => [{ id: 'repo', commonDir: '/sample/.git' }, { id: 'sibling', commonDir: '/sample/.git' }, { id: 'other', commonDir: '/other/.git' }],
     },
     operations: { removeWorktree },
@@ -52,11 +53,22 @@ describe('worktree removal command', () => {
 
     expect(await registry.execute('session', IPC.worktreeRemove, [request])).toMatchObject({ ok: false });
 
-    expect(watcher.pause).toHaveBeenCalledOnce();
-    const matches = (watcher.pause.mock.calls[0] as unknown as [(repository: { path: string }) => boolean])[0];
-    expect(matches({ path: '/sample/review/' })).toBe(true);
-    expect(matches({ path: '/sample/other' })).toBe(false);
-    expect(watcher.resume).toHaveBeenCalledWith(['review-id']);
+    expect(watcher.pause).toHaveBeenCalledExactlyOnceWith('/sample/review');
+    expect(watcher.endPause).toHaveBeenCalledExactlyOnceWith('/sample/review');
+  });
+
+  it('asks which worktree the client is in only when the removal is decided, under its lock', async () => {
+    let asked: string | undefined;
+    const { registry, clients } = fixture(async (...args: unknown[]) => {
+      // The client opened the worktree while the request waited for the lock.
+      clients.repositoryOf.mockReturnValue('review');
+      asked = (args[5] as { currentPath(): string | undefined }).currentPath();
+      return { status: 'current' };
+    });
+
+    await registry.execute('session', IPC.worktreeRemove, [request], { connectionId: 'tab' });
+
+    expect(asked).toBe('/sample/review');
   });
 
   it('tells every client when the removal ends, whether or not it succeeded', async () => {

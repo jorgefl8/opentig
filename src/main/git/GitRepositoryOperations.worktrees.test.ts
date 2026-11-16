@@ -65,7 +65,7 @@ describe('GitRepositoryOperations worktree removal outcome', () => {
     const oid = await git(review, ['rev-parse', 'HEAD']);
 
     // The request names the main worktree, but the client that sent it is in review.
-    const own = await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, false, false, { currentPath: review });
+    const own = await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, false, false, { currentPath: () => review });
     expect(own).toEqual({ status: 'current' });
     expect(await exists(review)).toBe(true);
 

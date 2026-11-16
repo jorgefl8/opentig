@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import type { RepositoryWatchState } from '../../shared/runtime-events';
@@ -77,6 +78,8 @@ export class RepositoryWatchPool {
   private removing = false;
   /** Set while it stops one for a while (see `pause`). */
   private pausing = false;
+  /** Folders whose repositories are not watched for now (see `pause`), how many times each. */
+  private readonly pausedFolders = new Map<string, number>();
   /** When each holder last opened a repository, to tell going through several quickly from opening one. */
   private readonly lastHold = new Map<string, number>();
 
@@ -128,6 +131,8 @@ export class RepositoryWatchPool {
     entry.holders.add(holder);
     if (entry.releaseTimer) clearTimeout(entry.releaseTimer);
     entry.releaseTimer = null;
+    // Its folder is being deleted: it is not watched until that is over, whoever opens it.
+    if (this.pausedFolders.has(folderKey(repository.path))) entry.paused = true;
     const moved = entry.repository.path !== repository.path || entry.repository.commonDir !== repository.commonDir;
     entry.repository = repository;
     if (entry.watcher && !this.running(entry)) {
@@ -166,30 +171,37 @@ export class RepositoryWatchPool {
   }
 
   /**
-   * Stops the watches of the repositories `match` picks, as before their folder is deleted, keeping
-   * who holds them, who are told the watch stopped. Resolves once the system had a turn to close them.
+   * Stops every watch of the repositories in `folder`, as before it is deleted, and keeps any from
+   * starting there until `endPause`, whoever opens one meanwhile; who holds them keeps them, and is
+   * told the watch stopped. Resolves once the system had a turn to close them.
    */
-  async pause(match: (repository: RepositoryInfo) => boolean): Promise<string[]> {
-    const paused: string[] = [];
-    for (const [repositoryId, entry] of this.entries) {
-      if (!match(entry.repository)) continue;
+  async pause(folder: string): Promise<void> {
+    const key = folderKey(folder);
+    this.pausedFolders.set(key, (this.pausedFolders.get(key) ?? 0) + 1);
+    let stopped = false;
+    for (const entry of this.entries.values()) {
+      if (folderKey(entry.repository.path) !== key) continue;
       if (entry.startTimer) clearTimeout(entry.startTimer);
       entry.startTimer = null;
       entry.waitingSince = 0;
       entry.paused = true;
       this.pausing = true;
-      try { this.stopWatcher(entry); } finally { this.pausing = false; }
-      paused.push(repositoryId);
+      try { stopped = Boolean(entry.watcher) || stopped; this.stopWatcher(entry); } finally { this.pausing = false; }
     }
-    if (paused.length > 0) await new Promise<void>((resolve) => setImmediate(resolve));
-    return paused;
+    if (stopped) await new Promise<void>((resolve) => setImmediate(resolve));
   }
 
-  /** Watches again the repositories `pause` stopped, for whoever still holds them. */
-  resume(repositoryIds: Iterable<string>): void {
-    for (const repositoryId of repositoryIds) {
-      const entry = this.entries.get(repositoryId);
-      if (!entry?.paused) continue;
+  /** The folder `pause` stopped may be watched again: whoever still holds a repository in it is. */
+  endPause(folder: string): void {
+    const key = folderKey(folder);
+    const count = (this.pausedFolders.get(key) ?? 0) - 1;
+    if (count > 0) {
+      this.pausedFolders.set(key, count);
+      return;
+    }
+    this.pausedFolders.delete(key);
+    for (const [repositoryId, entry] of [...this.entries]) {
+      if (!entry.paused || folderKey(entry.repository.path) !== key) continue;
       entry.paused = false;
       if (entry.holders.size > 0) this.request(entry);
       else this.remove(repositoryId, entry);
@@ -315,4 +327,10 @@ export class RepositoryWatchPool {
     try { watcher.stop(); } finally { this.removing = false; }
     entry.watcher = null;
   }
+}
+
+/** A folder as the pool compares them: resolved, without a trailing separator, and case-blind on Windows. */
+function folderKey(folder: string): string {
+  const resolved = path.resolve(folder).replace(/[\\/]+$/, '');
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
