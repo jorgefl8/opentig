@@ -16,6 +16,16 @@ To give the viewer more room, collapse the sidebar with the button at the end of
 
 The expanded tabs count the changed files and the listed pull requests and mark unsaved files. Holding `Ctrl` shows each section's number on the tabs and the rail.
 
+## Back and Forward
+
+OpenTig keeps a trail of the places you visit. Go back and forward along it with the **Back** and **Forward** arrows at the right of the top bar, the back and forward buttons of a mouse, or the keys: `Alt+←` and `Alt+→` in the desktop app, and the browser's own in a browser, which are `Cmd+[` and `Cmd+]` on a Mac. The arrows' tooltips and **Settings → Shortcuts** show the keys that apply where OpenTig is running.
+
+**A step is a place you open:** a repository or worktree, a section, a change, a file, a commit or one of its files, a pull request, a release, a workflow run, or a file's history. Everything else updates the step you are on instead of adding one: a pull request's tab, the files you unfold, a job's log in a run, the scroll position of the list and the viewer, a search you type. So Back brings a place back as you left it, with the same tab, the same files unfolded, and the line you were reading back on screen. Going somewhere new from the middle of the trail drops the steps that were ahead.
+
+**Back only navigates.** It never stages, saves, discards, or switches a branch, and what is still in memory shows without being read again. Unsaved edits stay in their tabs. A file whose tab you closed opens again. A step in another repository opens that repository, as choosing it in the picker would; if you go somewhere else before it opens, it doesn't open. When what a step showed is gone, such as a change you committed or discarded, a deleted file, or a repository removed from OpenTig, a notice says so and you land on the section without it.
+
+The desktop app keeps the last 100 steps of the session. In a browser, the trail is the browser's own history: each step has an [address](web-access.md#addresses), and the browser's Back and Forward walk it too.
+
 ## Appearance and settings
 
 General settings start with **Getting started**, whose **Repeat onboarding** shows the [start screen and checklist](getting-started.md#first-launch) again, then group controls under **Appearance**, **Files & viewer**, and **Repository sync**. Changes apply immediately and preserve your existing selections.
@@ -138,7 +148,7 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 
 **On a list, the top bar says where you are.** Beside the logo, its two lines name the repository and the branch, with the branch's pull request number in the same colors when it has one. Tap them for the repository sheet: **Repository**, **Branch**, **Worktree** when there are several, then whichever of **Publish this branch** or **Push** and **Pull** applies, **Refresh**, the branch's pull request, **Open on GitHub**, and **Open another repository**. To the right, a pill shows the sync action that applies: **Publish**, **Push** with its count, or **Pull** with its count. When both apply it shows **Pull**, because that has to happen first, and **Push** stays in the sheet. The gear opens Settings. Warnings about the remote and available updates appear here too.
 
-**Inside a viewer, the top bar is about what you opened:** a back arrow, a title, and that thing's actions. Focus moves to the arrow when a viewer opens.
+**Inside a viewer, the top bar is about what you opened:** a back arrow, a title, and that thing's actions. Focus moves to the arrow when a viewer opens. The arrow walks the same trail as [Back](#back-and-forward), so from a file opened in a commit it returns to that commit; at the start of the trail it returns to the list.
 
 | Viewer | Title | Actions |
 | --- | --- | --- |

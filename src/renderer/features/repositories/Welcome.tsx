@@ -12,6 +12,7 @@ import { RepositoryFaviconImage } from './RepositoryFavicon';
 import { useRepositoryFavicons } from './useRepositoryFavicons';
 import { groupRecentRepositories } from './repository-select-model';
 import '@/features/onboarding/onboarding.css';
+import { publicAsset } from '@/lib/public-asset';
 
 /** The start screen doubles as onboarding: one step to a repository, tools at a glance. */
 export function Welcome({ recent, unavailableRepositoryIds, preferences, onPreference, onOpen, onClone, onFind, onRecent, onSettings, onBack }: {
@@ -37,7 +38,7 @@ export function Welcome({ recent, unavailableRepositoryIds, preferences, onPrefe
     <div className="welcome">
       {window.opentigDesktop && <div className="welcome-titlebar" aria-hidden="true" />}
       {onBack && <div className="welcome-corner"><Button variant="ghost" size="sm" onClick={onBack}><IconArrowLeft />Back to workspace</Button></div>}
-      <img className="welcome-logo" src="./opentig.svg" alt="" />
+      <img className="welcome-logo" src={publicAsset('opentig.svg')} alt="" />
       <h1><AppName /></h1>
       <p>{repositories.length ? 'Pick up where you left off, or bring in another repository.' : 'Start with a repository. Everything else can wait.'}</p>
       {gitBlocked ? <GitMissingPanel status={checks.git!} checking={checks.checking} onRecheck={checks.recheck} /> : <div className="welcome-actions">

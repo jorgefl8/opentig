@@ -1076,7 +1076,8 @@ export interface OpenTigApi {
      */
     fileHistory(repositoryId: string, path: string, cursor?: string): Promise<FileHistoryPage>;
     /** Whether a full hash names a commit in the local repository, so a link to it can open the commit viewer. */
-    recognize(repositoryId: string, oid: string): Promise<boolean>;
+    /** `localOnly` looks in the clone alone, never fetching a missing object from a partial clone's remote. */
+    recognize(repositoryId: string, oid: string, localOnly?: boolean): Promise<boolean>;
     /** Commits on HEAD that `oid` does not reach, such as those made after a merged pull request's head. Null when `oid` is not a commit in the local repository. */
     countAfter(repositoryId: string, oid: string): Promise<number | null>;
   };
