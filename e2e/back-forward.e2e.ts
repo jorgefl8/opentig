@@ -34,8 +34,14 @@ test('Back from a file opened in a commit returns to the commit, its unfolded fi
   await diffScroller(page).hover();
   for (let turn = 0; turn < 12; turn++) await page.mouse.wheel(0, 400);
   await expect.poll(() => diffScroller(page).evaluate((element) => element.scrollTop)).toBeGreaterThan(3000);
-  await page.waitForTimeout(300);
-  const readAt = await diffScroller(page).evaluate((element) => element.scrollTop);
+  // The wheel's scroll goes on for a moment: the place being read is where it stops.
+  let readAt = -1;
+  await expect.poll(async () => {
+    const at = await diffScroller(page).evaluate((element) => element.scrollTop);
+    const stopped = at === readAt;
+    readAt = at;
+    return stopped;
+  }, { intervals: [200] }).toBe(true);
   const lineHeld = viewer.getByText('line 200 of the long file', { exact: true });
   const lineInView = await lineHeld.isVisible() && await lineHeld.evaluate((element) => {
     const box = element.getBoundingClientRect();
