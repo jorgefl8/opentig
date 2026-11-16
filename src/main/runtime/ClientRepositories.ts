@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import type { OpenTigRuntimeEvent, RepositoryWatchState } from '../../shared/runtime-events';
@@ -145,13 +144,21 @@ export class ClientRepositories {
     return ids;
   }
 
-  /** Whether a connection other than `except` has the worktree at `worktreePath` open. */
-  openElsewhere(worktreePath: string, except: string | undefined): boolean {
-    const target = normalizePath(worktreePath);
+  /**
+   * Takes every connection on one of `fromIds`, but `except`, to `repository`: its worktree was
+   * removed, or it moved and has a new id. Each is told as older servers told every client of a new
+   * active repository, which clients of any version follow, and then how `repository` is watched.
+   */
+  move(fromIds: Iterable<string>, repository: RepositoryInfo, except?: string): void {
+    const from = new Set(fromIds);
     for (const [id, connection] of this.connections) {
-      if (id !== except && connection.repository && normalizePath(connection.repository.path) === target) return true;
+      if (id === except || !connection.repository || !from.has(connection.repository.id)) continue;
+      const ticket = this.beginOpen(id);
+      this.send({ type: 'repository.active-changed', repository }, new Set([id]));
+      // What it was told of the repository it leaves is not repeated: that repository is gone.
+      connection.told = null;
+      this.attach(id, repository, ticket);
     }
-    return false;
   }
 
   /** A change to the repository, for the connections that have it open. */
@@ -217,9 +224,4 @@ export class ClientRepositories {
   private sendWatch(connectionId: string, repositoryId: string, state: RepositoryWatchState, watchId: string | null): void {
     this.send({ type: 'repository.changed', repositoryId, scope: 'unknown', watch: state, ...(watchId ? { watchId } : {}) }, new Set([connectionId]));
   }
-}
-
-function normalizePath(value: string): string {
-  const resolved = path.resolve(value).replace(/[\\/]+$/, '');
-  return process.platform === 'win32' ? resolved.toLocaleLowerCase() : resolved;
 }

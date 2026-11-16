@@ -202,22 +202,32 @@ export function registerServerCommands(
     services.snapshots?.forgetUnknown();
     return organization;
   });
-  handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', (context, id, selectedPath) => {
+  /** A repository moved and has a new id: every client on the old one follows it there. */
+  const followRelocation = (previousId: string, repository: RepositoryInfo, except?: string) => {
+    if (previousId === repository.id) return;
+    services.clients.move([previousId], repository, except);
+    services.clients.forget([previousId]);
+  };
+  handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
     const repositoryId = stringArg(id, 'relocate-recent', 64);
     const selected = stringArg(selectedPath, 'relocate-recent', 32_768);
-    return openForClient(context, () => services.repositories.relocateRecent(repositoryId, selected));
+    const repository = await openForClient(context, () => services.repositories.relocateRecent(repositoryId, selected));
+    followRelocation(repositoryId, repository, context.connectionId);
+    return repository;
   });
   handle(IPC.repositoryUnavailableRecent, 'unavailable-recent', () => services.repositories.unavailableIds());
   handle(IPC.repositoryFindRelocations, 'find-relocations', (previousPath, selectedPath) => services.repositories.findRelocations(
     stringArg(previousPath, 'find-relocations', 32_768),
     stringArg(selectedPath, 'find-relocations', 32_768),
   ));
-  handle(IPC.repositoryRelocateRecents, 'relocate-recents', (raw) => {
+  handle(IPC.repositoryRelocateRecents, 'relocate-recents', async (raw) => {
     if (!Array.isArray(raw) || raw.length > 500) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-recents', message: 'Invalid relocation list.' });
-    return services.repositories.relocateMany(raw.map((entry: unknown) => {
+    const result = await services.repositories.relocateMany(raw.map((entry: unknown) => {
       const value = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
       return { id: stringArg(value.id, 'relocate-recents', 64), path: stringArg(value.path, 'relocate-recents', 32_768) };
     }));
+    for (const { previousId, repository } of result.relocated) followRelocation(previousId, repository);
+    return result;
   });
   handle(IPC.repositoryStatus, 'status', (id, includeStats) => remember(stringArg(id, 'status', 64), 'status', services.repositories.status(
     stringArg(id, 'status', 64),
@@ -517,15 +527,20 @@ export function registerServerCommands(
     const { repositoryId, path, expectedOid, force, deleteBranch, cleanupOnly } = removeWorktreeArg(request, 'remove-worktree');
     const { commonDir } = services.repositories.get(repositoryId);
     const siblingIds = new Set([repositoryId, ...services.repositories.recents().filter((item) => item.commonDir === commonDir).map((item) => item.id)]);
-    // Another tab, window or device showing it would be left on a folder that is gone.
-    if (!cleanupOnly && services.clients.openElsewhere(path, context.connectionId)) {
-      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'remove-worktree', message: 'This worktree is open in another window or on another device. Open another worktree there first.' });
-    }
     try {
       return await services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch, { signal: context.signal, ...(cleanupOnly === undefined ? {} : { cleanupOnly }) });
     } finally {
+      // The caller's own worktree is never removed. Another tab, window or device on the removed one moves to
+      // the main worktree, or to the caller's when that is not saved, once the removal is over, so one that
+      // opened it meanwhile is moved too, and no longer finds it among the saved repositories.
       const remaining = new Set(services.repositories.recents().map((item) => item.id));
-      services.clients.forget([...siblingIds].filter((siblingId) => !remaining.has(siblingId)));
+      const removed = [...siblingIds].filter((siblingId) => !remaining.has(siblingId));
+      if (removed.length > 0) {
+        const main = services.settings.mainWorktree(commonDir);
+        const target = main && remaining.has(main.id) ? services.repositories.get(main.id) : remaining.has(repositoryId) ? services.repositories.get(repositoryId) : null;
+        if (target) services.clients.move(removed, target, context.connectionId);
+        services.clients.forget(removed);
+      }
       // Whoever asked may have stopped waiting long ago, and siblings list the same worktrees.
       for (const siblingId of siblingIds) services.events.repositoryChanged(siblingId, 'worktrees');
     }
