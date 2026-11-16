@@ -29,6 +29,18 @@ export function stringArg(value: unknown, operation: string, maxLength = 32_768)
   return parsed.data;
 }
 
+/** What a client asks of the bootstrap: the repository it was on, by the id this server gave it. */
+export function bootstrapRequestArg(value: unknown): { repositoryId: string | null } {
+  // Older clients send no argument.
+  if (value === undefined || value === null) return { repositoryId: null };
+  if (typeof value !== 'object' || Array.isArray(value)) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'bootstrap', message: 'Invalid bootstrap request.' });
+  const { repositoryId, ...rest } = value as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'bootstrap', message: 'Invalid bootstrap request.' });
+  if (repositoryId === undefined || repositoryId === null) return { repositoryId: null };
+  if (typeof repositoryId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(repositoryId)) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'bootstrap', message: 'Invalid repository.' });
+  return { repositoryId };
+}
+
 export function searchOptionsArg(value: unknown, operation: string): SearchOptions {
   const parsed = searchOptionsSchema.safeParse(value);
   if (!parsed.success) {

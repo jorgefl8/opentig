@@ -27,6 +27,18 @@ export class RepositoryService {
     return this.openPath(recent.path);
   }
 
+  /**
+   * Opens a saved repository without saving anything: not its place among the recent ones, nor
+   * as the repository opened last. For a client going back to the repository it was on.
+   */
+  async openKnown(id: string): Promise<RepositoryInfo> {
+    const recent = this.settings.recentRepositories.find((item) => item.id === id);
+    if (!recent) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-recent', message: 'The recent repository no longer exists.' });
+    const repository = await this.preparePath(recent.path);
+    if (repository.id !== id) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-recent', message: 'The repository location changed.' });
+    return repository;
+  }
+
   async openPath(selectedPath: string): Promise<RepositoryInfo> {
     const repository = await this.preparePath(selectedPath);
     await this.settings.touchRepository(repository);

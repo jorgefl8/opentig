@@ -186,6 +186,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const addingRepository = useRef(false);
+  /** A repository just added, which is fetched at the next turn of the periodic fetch rather than as it opens. */
+  const fetchHeldRef = useRef<string | null>(null);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer'>('list');
   // Where the user has been, for Back and Forward (see `navigation/`).
   const [trail] = useState<NavigationTrail | BrowserTrail>(() => addresses ? createBrowserTrail(currentAddressOf) : createMemoryTrail());
@@ -1122,8 +1124,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const repositoryId = repository.id;
     let cancelled = false;
     let inFlight = false;
+    if (fetchHeldRef.current !== repositoryId) fetchHeldRef.current = null;
 
-    const run = async () => {
+    const run = async (opening = false) => {
+      if (opening && fetchHeldRef.current === repositoryId) return;
+      fetchHeldRef.current = null;
       // Nobody is looking, or nobody has touched the window for a while: the next turn fetches again.
       if (cancelled || inFlight || addingRepository.current || document.visibilityState === 'hidden' || isUserIdle()) return;
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
@@ -1140,7 +1145,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       }
     };
 
-    void run();
+    void run(true);
     const timer = window.setInterval(() => { void run(); }, remoteFetchIntervalSeconds * 1000);
     const onVisible = () => { if (document.visibilityState === 'visible') void run(); };
     document.addEventListener('visibilitychange', onVisible);
@@ -3164,7 +3169,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     addingRepository.current = true;
     try {
       const { revision } = await opentig.github.repositoryAccount(prepared.id, false);
-      recordOpenedRepository(await opentig.repository.completeSetup(prepared.id, revision));
+      const added = await opentig.repository.completeSetup(prepared.id, revision);
+      fetchHeldRef.current = added.id;
+      recordOpenedRepository(added);
       setWelcomeReplay(false);
     } finally { addingRepository.current = false; }
   }

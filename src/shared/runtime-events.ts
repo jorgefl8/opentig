@@ -20,6 +20,7 @@ export type OpenTigRuntimeEvent =
       /** With `watch: 'watching'`: the new watch, which read results name when it covers them. */
       watchId?: string;
     }
+  /** Sent by servers without `repositoryPerClient`, where every client follows one shared repository. */
   | {
       type: 'repository.active-changed';
       repository: RepositoryInfo;
