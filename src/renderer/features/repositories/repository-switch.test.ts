@@ -103,4 +103,32 @@ describe('repository switching', () => {
     expect(handlers.apply).not.toHaveBeenCalled();
     expect(handlers.fail).not.toHaveBeenCalled();
   });
+
+  it('tells a choice made during a switch how it ended, not as soon as it is queued', async () => {
+    const { switcher, opens, settle } = setup();
+    const first = switcher.select('todor', 'launchpad');
+    const later = switcher.select('monorepo', 'launchpad');
+    let ended: string | null = null;
+    void later.then((outcome) => { ended = outcome; });
+    await settle();
+    expect(ended).toBeNull();
+    opens.get('todor')![0]!.resolve(repository('todor'));
+    await settle();
+    expect(ended).toBeNull();
+    opens.get('monorepo')![0]!.resolve(repository('monorepo'));
+    expect(await later).toBe('opened');
+    expect(await first).toBe('superseded');
+  });
+
+  it('never shows a repository whose switch was given up, nor takes its announcement', async () => {
+    const { switcher, handlers, opens } = setup();
+    const done = switcher.select('todor', 'launchpad');
+    switcher.cancel();
+    expect(handlers.pending).toHaveBeenLastCalledWith(null);
+    expect(switcher.accepts('todor')).toBe(false);
+    opens.get('todor')![0]!.resolve(repository('todor'));
+    expect(await done).toBe('cancelled');
+    expect(handlers.apply).not.toHaveBeenCalled();
+    expect(switcher.accepts('todor')).toBe(true);
+  });
 });
