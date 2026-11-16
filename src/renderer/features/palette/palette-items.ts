@@ -47,6 +47,8 @@ export function sectionLabel(view: SidebarView): string {
   return SECTIONS.find((section) => section.view === view)!.label;
 }
 
+/** A shortcut as key caps; none for one the user left unassigned. */
+const keyCaps = (combo: string): { keys?: string[] } => combo ? { keys: combo.split('+') } : {};
 const done = (action: () => void) => () => { action(); return true; };
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
@@ -109,7 +111,7 @@ export function commandItems(state: PaletteState, actions: PaletteActions): Pale
     detail: 'Check the remote and read the repository again',
     verb: 'run',
     verbLabel: 'Run',
-    keys: state.keys.refresh.split('+'),
+    ...keyCaps(state.keys.refresh),
     disabled: state.busy || state.syncBusy ? 'Wait for the current operation to finish' : null,
     run: done(actions.refresh),
   });
@@ -137,7 +139,7 @@ export function commandItems(state: PaletteState, actions: PaletteActions): Pale
     });
   }
   items.push(
-    { key: 'add-repository', icon: 'folder', title: 'Open repository…', detail: 'Choose a folder', verb: 'open', verbLabel: 'Open', keys: state.keys.openRepository.split('+'), disabled: null, run: done(actions.addRepository) },
+    { key: 'add-repository', icon: 'folder', title: 'Open repository…', detail: 'Choose a folder', verb: 'open', verbLabel: 'Open', ...keyCaps(state.keys.openRepository), disabled: null, run: done(actions.addRepository) },
     { key: 'settings', icon: 'settings', title: 'Settings', detail: '', verb: 'open', verbLabel: 'Open', disabled: null, run: done(() => actions.openSettings('general')) },
   );
   // Phones have no Shortcuts settings.
