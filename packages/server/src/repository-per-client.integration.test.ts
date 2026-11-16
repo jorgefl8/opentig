@@ -239,8 +239,9 @@ describe('a repository per client', () => {
     const openRecent = services.repositories.openRecent.bind(services.repositories);
     services.repositories.openRecent = async (id: string) => {
       // The watch stops and starts again while the open is being answered.
-      await services.watcher.pause(work);
-      services.watcher.endPause(work);
+      // The path the server has, which on Windows may differ from the test's own (an 8.3 short name).
+      await services.watcher.pause(alpha.path);
+      services.watcher.endPause(alpha.path);
       return openRecent(id);
     };
     client.log.length = 0;
@@ -270,8 +271,8 @@ describe('a repository per client', () => {
     // A watch that starts after the client read, here gamma's after a pause, is told with a read.
     const gamma = await second.value<Repository>('repository:open-path', pathC);
     await second.watching(gamma.id);
-    await services.watcher.pause(pathC);
-    services.watcher.endPause(pathC);
+    await services.watcher.pause(gamma.path);
+    services.watcher.endPause(gamma.path);
     await vi.waitFor(() => expect(second.log.at(-1)).toBe(`${gamma.id}:watching`), { timeout: 10_000 });
   });
 
@@ -342,14 +343,14 @@ describe('a repository per client', () => {
     const client = await connect();
     const bystander = await connect();
     const alpha = await client.value<Repository>('repository:open-path', work);
-    const beta = await bystander.value<Repository>('repository:open-path', otherWork);
+    await bystander.value('repository:open-path', otherWork);
     const moved = path.join(directory, 'alpha-moved');
     await execFileAsync('git', ['clone', '-q', work, moved]);
     const relocated = await client.value<Repository>('repository:relocate-recent', alpha.id, moved);
 
     // A client on another repository hears of it, to rebind what it holds under the old id.
-    await vi.waitFor(() => expect(bystander.events.at(-1)).toMatchObject({ repositoryId: alpha.id, relocatedTo: { id: relocated.id }, recentRepositories: expect.arrayContaining([expect.objectContaining({ id: relocated.id })]) }));
-    expect(bystander.events.at(-1)?.repositoryId).not.toBe(beta.id);
+    // Other news, such as of its own repository's watch, may come after it.
+    await vi.waitFor(() => expect(bystander.events).toContainEqual(expect.objectContaining({ repositoryId: alpha.id, relocatedTo: expect.objectContaining({ id: relocated.id }), recentRepositories: expect.arrayContaining([expect.objectContaining({ id: relocated.id })]) })));
     // Commands still naming the old id reach the repository where it is now.
     expect(await bystander.value<Repository>('repository:open-recent', alpha.id)).toMatchObject({ id: relocated.id });
     expect(await bystander.request('repository:status', alpha.id)).toMatchObject({ ok: true });
