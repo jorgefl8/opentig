@@ -43,6 +43,19 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
 
 describe('repository selection and asynchronous navigation', () => {
+  it('keeps a path typed while the first folders are still loading, and goes there', async () => {
+    let first!: (value: ServerDirectoryListing) => void;
+    onBrowse.mockImplementationOnce(() => new Promise((resolve) => { first = resolve; }));
+    await render();
+    await click('Enter a folder path');
+    await input('#repository-path', '/workspace/atlas');
+    // The listing asked for on opening arrives after the path was typed.
+    await act(async () => first(listing()));
+    expect(document.querySelector<HTMLInputElement>('#repository-path')?.value).toBe('/workspace/atlas');
+    await click('Go to folder');
+    expect(onBrowse).toHaveBeenLastCalledWith('/workspace/atlas');
+  });
+
   it('keeps path editing focused without navigating when the pencil is clicked', async () => {
     await render();
     onBrowse.mockClear();
