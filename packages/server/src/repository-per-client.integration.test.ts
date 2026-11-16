@@ -22,27 +22,39 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 })));
 });
 
-interface Repository { id: string; name: string; path: string }
+interface Repository { id: string; name: string; path: string; commonDir: string }
 interface WatchEvent { type: 'repository.changed'; repositoryId: string; scope: string; watch?: string; watchId?: string }
 
 /** One connection, as a client sees it: what it asked and what it was sent. */
 class Client {
   readonly events: WatchEvent[] = [];
-  readonly otherEvents: { type: string }[] = [];
+  readonly otherEvents: { type: string; repository?: Repository }[] = [];
+  /** Everything received, in order: `answer:<command>`, `<repository id>:<watch state or change>`. */
+  readonly log: string[] = [];
+  private readonly commands = new Map<string, string>();
   private sequence = 0;
   private readonly waiting = new Map<string, (result: { ok: boolean; value?: unknown; error?: { code: string; message: string } }) => void>();
 
   constructor(readonly socket: WebSocket) {
     socket.on('message', (raw) => {
       const message = JSON.parse(raw.toString()) as { type: string; id?: string; result?: never; event?: { type: string } };
-      if (message.type === 'result' && message.id) this.waiting.get(message.id)?.(message.result!);
-      else if (message.type === 'event' && message.event?.type === 'repository.changed') this.events.push(message.event as WatchEvent);
-      else if (message.type === 'event' && message.event) this.otherEvents.push(message.event);
+      if (message.type === 'result' && message.id) {
+        this.log.push(`answer:${this.commands.get(message.id)}`);
+        this.waiting.get(message.id)?.(message.result!);
+      } else if (message.type === 'event' && message.event?.type === 'repository.changed') {
+        const event = message.event as WatchEvent;
+        this.log.push(`${event.repositoryId}:${event.watch ?? 'change'}`);
+        this.events.push(event);
+      } else if (message.type === 'event' && message.event) {
+        this.log.push(message.event.type);
+        this.otherEvents.push(message.event);
+      }
     });
   }
 
   request<Value = unknown>(command: string, ...args: unknown[]): Promise<{ ok: boolean; value?: Value; error?: { code: string; message: string } }> {
     const id = String(++this.sequence);
+    this.commands.set(id, command);
     return new Promise((resolve) => {
       this.waiting.set(id, (result) => { this.waiting.delete(id); resolve(result as never); });
       this.socket.send(JSON.stringify({ type: 'request', id, command, args }));
@@ -183,6 +195,48 @@ describe('a repository per client', () => {
     expect(services.clients.connectionsOn(beta.id).size).toBe(0);
     await second.settled();
     expect(second.events.map((event) => event.repositoryId)).not.toContain(beta.id);
+  });
+
+  it('tells a connection the repository it left is no longer watched for it, after the answer to the open, and the one it joined after that', async () => {
+    const { connect, repository } = await startServer();
+    const [pathA, pathB] = await Promise.all([repository('alpha'), repository('beta')]);
+    const first = await connect();
+    const second = await connect();
+    const beta = await second.value<Repository>('repository:open-path', pathB);
+    await second.watching(beta.id);
+    const alpha = await first.value<Repository>('repository:open-path', pathA);
+    await first.watching(alpha.id);
+
+    first.log.length = 0;
+    await first.value('repository:open-recent', beta.id);
+    await first.watching(beta.id);
+    // Nothing about either repository comes before the answer, which a client would take for the one it is leaving.
+    expect(first.log).toEqual(['answer:repository:open-recent', `${alpha.id}:stopped`, `${beta.id}:watching`]);
+  });
+
+  it('detaches every connection from a repository removed from OpenTig, and never announces it a watch it is not counted on', async () => {
+    const { connect, repository, services } = await startServer();
+    const work = await repository('alpha');
+    const first = await connect();
+    const second = await connect();
+    const alpha = await first.value<Repository>('repository:open-path', work);
+    await first.watching(alpha.id);
+
+    await second.value('repository:forget', alpha.commonDir);
+    await vi.waitFor(() => expect(first.events.at(-1)).toMatchObject({ repositoryId: alpha.id, watch: 'stopped' }));
+    expect(services.clients.repositoryOf([...services.clients.connectionsOn(alpha.id)][0] ?? '')).toBeNull();
+    expect(services.clients.connectionsOn(alpha.id).size).toBe(0);
+
+    // Added again by another connection, which then leaves: the first one hears nothing of that watch.
+    first.log.length = 0;
+    const again = await second.value<Repository>('repository:open-path', work);
+    expect(again.id).toBe(alpha.id);
+    await second.watching(alpha.id);
+    const other = await repository('beta');
+    await second.value('repository:open-path', other);
+    await Promise.all([first.settled(), second.settled()]);
+    expect(first.log.filter((entry) => entry.startsWith(alpha.id))).toEqual([]);
+    expect(await first.value<{ watchId?: string }>('repository:read-file', alpha.id, 'README.md')).not.toHaveProperty('watchId');
   });
 
   it('opens the repository a client asks for at start for it alone, and the last one opened for a client that asks for none', async () => {

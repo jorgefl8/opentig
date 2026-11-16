@@ -259,9 +259,15 @@ export class OpenTigWebSocketTransport {
     const read = commandDefinition(input.command)?.mutation === false;
     state.requests.set(input.id, { controller, cancellable: read });
     let kept: KeptAnswer | undefined;
+    // What the handler leaves for after the answer, which runs at once once the answer has gone.
+    const afterAnswer: { sent: boolean; tasks: (() => void)[] } = { sent: false, tasks: [] };
+    const runAfterAnswer = (task: () => void) => {
+      try { task(); } catch { this.options.logger('warn', 'A follow-up to a WebSocket answer failed.'); }
+    };
     const execution = this.options.registry.execute(state.sessionId, input.command, input.args, {
       signal: controller.signal,
       connectionId: state.connectionId,
+      afterAnswer: (task) => { if (afterAnswer.sent) runAfterAnswer(task); else afterAnswer.tasks.push(task); },
       ...(read && input.acceptKept === true ? { kept: (answer: KeptAnswer) => { kept ??= answer; } } : {}),
     });
     this.pendingOperations.add(execution);
@@ -298,6 +304,8 @@ export class OpenTigWebSocketTransport {
         }, () => undefined);
       } else this.send(socket, { type: 'result', id: input.id, result });
     } finally {
+      afterAnswer.sent = true;
+      for (const task of afterAnswer.tasks.splice(0)) runAfterAnswer(task);
       state.requests.delete(input.id);
       if (startedAt !== undefined) this.measure('request', startedAt, {
         requestBytes: bytes.byteLength,

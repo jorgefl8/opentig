@@ -63,7 +63,7 @@ export function registerServerCommands(
     const ticket = services.clients.beginOpen(context.connectionId);
     const repository = await open();
     fileClipboardState(context).pendingCut = null;
-    services.clients.attach(context.connectionId, repository, ticket);
+    services.clients.attach(context.connectionId, repository, ticket, { afterAnswer: (task) => context.afterAnswer(task) });
     return repository;
   };
   const openRepositoryPath = (selectedPath: string, context: CommandExecutionContext) => openForClient(
@@ -101,7 +101,7 @@ export function registerServerCommands(
       activeRepository = await services.repositories.openKnown(requestedId).catch(() => null);
     }
     activeRepository ??= await services.repositories.restore();
-    if (activeRepository) services.clients.attach(context.connectionId, activeRepository, ticket, true);
+    if (activeRepository) services.clients.attach(context.connectionId, activeRepository, ticket, { quiet: true, afterAnswer: (task) => context.afterAnswer(task) });
     const activeRepositoryWatch = activeRepository ? services.clients.watch(context.connectionId, activeRepository.id) : undefined;
     const unavailableRepositoryIds = await services.repositories.unavailableIds();
     const activeId = services.settings.activeRepositoryId;
