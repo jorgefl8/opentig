@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { IconCheck, IconX } from '@tabler/icons-react';
 import type { RepositoryInfo } from '@shared/contracts';
@@ -14,7 +14,7 @@ import './onboarding.css';
 import { Spinner } from '@/components/ui/spinner';
 
 /** What a new user still needs before their first commit and pull request. */
-export function GettingStartedChecklist({ repository, onDismiss, onSettings }: {
+export const GettingStartedChecklist = memo(function GettingStartedChecklist({ repository, onDismiss, onSettings }: {
   repository: RepositoryInfo;
   onDismiss(): void;
   onSettings(section: SettingsSection): void;
@@ -99,7 +99,7 @@ export function GettingStartedChecklist({ repository, onDismiss, onSettings }: {
     {error && <p className="onboarding-error" role="alert">{error}</p>}
     {done === 3 && <Button size="sm" className="onboarding-checklist-done" onClick={onDismiss}>Done</Button>}
   </section>;
-}
+});
 
 function Item({ done, pending = false, title, detail, children }: { done: boolean; pending?: boolean; title: string; detail?: string; children?: ReactNode }) {
   return <li data-done={done || undefined}>

@@ -37,10 +37,10 @@ import { MobileFilesView } from './MobileFilesView';
 import type { FileSession } from './open-files-model';
 import { Spinner } from '@/components/ui/spinner';
 
-export function FilesView(props: FilesViewProps) {
+export const FilesView = memo(function FilesView(props: FilesViewProps) {
   const mobile = useMobileLayout();
   return mobile ? <MobileFilesView {...props} /> : <DesktopFilesView {...props} />;
-}
+});
 
 // Match this height to .file-tree-row in index.css.
 const FILE_ROW_HEIGHT = 28;

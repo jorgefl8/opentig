@@ -2,7 +2,7 @@ import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { KeptReadNotice } from '@/components/KeptReadNotice';
 import { formatTimeAgo } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { Suspense, useEffect, useRef } from 'react';
+import { memo, Suspense, useEffect, useRef } from 'react';
 import { lazyWithPreload } from '@/lib/lazy-with-retry';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -61,7 +61,7 @@ interface PullRequestsViewProps {
   onActionsWorkflowChange(workflowId: number | null): void;
 }
 
-export function PullRequestsView(props: PullRequestsViewProps) {
+export const PullRequestsView = memo(function PullRequestsView(props: PullRequestsViewProps) {
   // So opening a PR or the Releases tab doesn't wait for its code.
   useEffect(() => { LazyPullRequestViewer.preload(); ReleasesView.preload(); ReleasesTools.preload(); ActionsView.preload(); ActionsTools.preload(); }, []);
   if (props.info === null) {
@@ -131,7 +131,7 @@ export function PullRequestsView(props: PullRequestsViewProps) {
       </ViewerTabsPanel>
     </ViewerTabs>
   );
-}
+});
 
 function PullsTools(props: PullRequestsViewProps & { nameWithOwner: string | null }) {
   return (

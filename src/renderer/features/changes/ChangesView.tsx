@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLongPress } from '@/lib/use-long-press';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useTruncatedText } from '@/lib/use-truncated-text';
@@ -44,7 +44,7 @@ interface ChangesViewProps {
 /** A phone row's sheet: what it isn't worth risking a slip on sits behind a long press. */
 interface ChangeRowMenu { change: FileChange; kind: 'conflict' | 'staged' | 'unstaged' }
 
-export function ChangesView(props: ChangesViewProps) {
+export const ChangesView = memo(function ChangesView(props: ChangesViewProps) {
   const mobile = useMobileLayout();
   // A phone has no room for a tree; the saved choice stays for the desktop layout.
   const displayMode = mobile ? 'list' : props.displayMode;
@@ -70,7 +70,7 @@ export function ChangesView(props: ChangesViewProps) {
       {mobile && <ChangeRowSheet menu={menu} open={menuOpen} readOnly={props.readOnly} discardDisabled={props.discardDisabled} onOpenChange={setMenuOpen} onSelect={props.onSelect} onOpenFile={props.onOpenFile} onDiscard={props.onDiscard} />}
     </div>
   );
-}
+});
 
 function ChangesStrip({ count, insertions, deletions, staged, changed, disabled, onStageAll, onUnstageAll }: {
   count: number; insertions: number; deletions: number; staged: number; changed: number; disabled: boolean;

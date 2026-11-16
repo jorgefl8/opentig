@@ -3,21 +3,35 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { CommitInfo, CommitPage, RepositoryStatus } from '../../shared/git-types';
+import type { ComponentProps } from 'react';
+import type { CommitInfo, CommitPage, FileChange, RepositoryStatus } from '../../shared/git-types';
 import type { ToolbarProps } from './Toolbar';
+import type { ChangesView } from '@/features/changes/ChangesView';
+import type { FilesViewProps } from '@/features/files/FilesView';
+import type { HistoryView } from '@/features/history/HistoryView';
+import type { SearchView } from '@/features/search/SearchView';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
   bootstrap: vi.fn(), setPreferences: vi.fn(), status: vi.fn(), fetch: vi.fn(), checkUpdates: vi.fn(), error: vi.fn(), renders: vi.fn(), history: vi.fn(), toolbar: vi.fn(), viewer: vi.fn(),
+  /** Each memoized stand-in below reports its name here when it redraws. */
+  section: vi.fn(),
+  repositoryChanged: [] as ((repositoryId: string, scope: string) => void)[],
 }));
 vi.mock('@/lib/opentig-api', () => ({
   opentig: {
-    app: { bootstrap: calls.bootstrap, setPreferences: calls.setPreferences, capabilities: async () => null, setZoomFactor: () => {}, setTitleBarTheme: async () => {} },
+    app: { bootstrap: calls.bootstrap, setPreferences: calls.setPreferences, capabilities: async () => null, setZoomFactor: () => {}, setTitleBarTheme: async () => {}, setOpenFilesState: async () => {} },
     repository: { getStatus: calls.status, fileHistoryState: async () => ({ canUndo: false, canRedo: false }), getFiles: async () => [] },
     refs: { fetch: calls.fetch, listBranches: async () => [], listWorktrees: async () => [] },
     github: { status: async () => ({ installed: false }), repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }) },
     diagnostics: { record: async () => {} },
-    events: { onGitHubAccountsChanged: () => () => {}, onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {}, onReconnected: () => () => {} },
+    events: {
+      onGitHubAccountsChanged: () => () => {}, onActiveRepositoryChanged: () => () => {}, onReconnected: () => () => {},
+      onRepositoryChanged: (listener: (repositoryId: string, scope: string) => void) => {
+        calls.repositoryChanged.push(listener);
+        return () => { calls.repositoryChanged.splice(calls.repositoryChanged.indexOf(listener), 1); };
+      },
+    },
   },
   serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' }, connection: { current: () => null, subscribe: () => () => {} } },
 }));
@@ -29,14 +43,49 @@ vi.mock('./Toolbar', async () => {
   const { memo } = await vi.importActual<typeof import('react')>('react');
   return { Toolbar: memo((props: ToolbarProps) => { calls.toolbar(); return createElement('header', null,
     createElement('button', { 'aria-label': 'Refresh', disabled: Boolean(props.busy), onClick: props.onRefresh }, 'Refresh'),
+    createElement('button', { 'aria-label': 'Settings', onClick: () => props.onSettingsOpen(true) }, 'Settings'),
     createElement('output', null, `Behind: ${props.status?.behind ?? 0}`),
   ); }) };
 });
-vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => null }));
-vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
+// The sections and the commit box are memoized too, so the tests see which of them App makes redraw.
+// Each offers the one action a test takes through it, which calls the handler App gave it.
+vi.mock('@/features/changes/ChangesView', async () => {
+  const { memo } = await vi.importActual<typeof import('react')>('react');
+  return { ChangesView: memo((props: ComponentProps<typeof ChangesView>) => { calls.section('changes'); return createElement('section', { 'aria-label': 'Changes' },
+    createElement('button', { onClick: () => props.onSelect('changed.txt', 'unstaged') }, 'Select changed.txt'),
+    createElement('output', null, `${props.changeCount} changes, selected: ${props.selection?.path ?? 'none'}`),
+  ); }) };
+});
+vi.mock('@/features/commit/StoredCommitComposer', async () => {
+  const { memo } = await vi.importActual<typeof import('react')>('react');
+  return { StoredCommitComposer: memo(() => { calls.section('commit'); return null; }) };
+});
 vi.mock('@/lib/use-mobile-layout', () => ({ useMobileLayout: () => { calls.renders(); return false; } }));
-vi.mock('@/features/files/FilesView', () => ({ FilesView: () => null }));
-vi.mock('@/features/history/HistoryView', () => ({ HistoryView: (props: { commits: CommitInfo[] | null }) => { calls.history(props.commits); return null; } }));
+vi.mock('@/features/files/FilesView', async () => {
+  const { memo } = await vi.importActual<typeof import('react')>('react');
+  return { FilesView: memo((props: FilesViewProps) => { calls.section('files'); return createElement('section', { 'aria-label': 'Files' },
+    createElement('button', { onClick: () => props.onOpenFile('notes.txt') }, 'Open notes.txt'),
+    createElement('output', null, `open: ${props.activePath ?? 'none'}`),
+  ); }) };
+});
+vi.mock('@/features/history/HistoryView', async () => {
+  const { memo } = await vi.importActual<typeof import('react')>('react');
+  return { HistoryView: memo((props: ComponentProps<typeof HistoryView>) => { calls.history(props.commits); calls.section('history'); return createElement('section', { 'aria-label': 'History' },
+    createElement('button', { onClick: () => props.onSelectCommit(sampleCommit) }, 'Select a commit'),
+    createElement('output', null, `active: ${props.activeOid ?? 'none'}`),
+  ); }) };
+});
+vi.mock('@/features/search/SearchView', async () => {
+  const { memo } = await vi.importActual<typeof import('react')>('react');
+  return { SearchView: memo((props: ComponentProps<typeof SearchView>) => { calls.section('search'); return createElement('output', { 'aria-label': 'Search' }, `revision ${props.revision}`); }) };
+});
+vi.mock('@/features/pulls/PullRequestsView', async () => {
+  const { memo } = await vi.importActual<typeof import('react')>('react');
+  return { PullRequestsView: memo(() => { calls.section('prs'); return null; }) };
+});
+vi.mock('@/features/palette/CommandPalette', () => ({
+  CommandPalette: (props: { onClose(): void }) => createElement('button', { 'aria-label': 'Close the palette', onClick: props.onClose }, 'Palette'),
+}));
 vi.mock('@/features/viewer/Viewer', async () => {
   const { memo } = await vi.importActual<typeof import('react')>('react');
   return { default: memo(() => { calls.viewer(); return null; }) };
@@ -49,6 +98,11 @@ import App from './App';
 let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
+const sampleCommit: CommitInfo = {
+  oid: 'commit-1', shortOid: 'c1', subject: 'First', body: '', author: 'Author', email: '',
+  date: '2026-01-01', decorations: [], parentOids: [], parentCount: 0, upstreamState: 'unknown', isHead: true,
+};
+const changedFile: FileChange = { path: 'changed.txt', indexStatus: ' ', worktreeStatus: 'M', kind: 'modified', staged: false, unstaged: true, conflict: false, submodule: '' };
 const initialStatus: RepositoryStatus = {
   branch: 'main', oid: 'abc', upstream: 'origin/main', ahead: 0, behind: 0, insertions: 0, deletions: 0,
   detached: false, unborn: false, operation: null, readOnly: false, changes: [], stagedCount: 0, unstagedCount: 0,
@@ -128,6 +182,7 @@ it('keeps 5,000 loaded commits identical across UI renders and invalidates on pa
   const data = { pages: [page], pageParams: [undefined] };
   await act(async () => { client.setQueryData(queryKeys.history('repo', 'branch:main'), data); });
   await key('keydown', { key: '3', ctrlKey: true });
+  await settle();
   const loaded = calls.history.mock.lastCall![0];
   expect(loaded).toEqual(commits);
   await key('keyup', { key: 'Control' });
@@ -204,3 +259,62 @@ it('redraws the toolbar but not the viewer for a new status, and neither for ano
 });
 
 async function settle() { await act(async () => { for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0)); }); }
+
+/** The memoized stand-ins that redrew while `action` ran, by name. */
+async function redrawnBy(action: () => Promise<void> | void): Promise<string[]> {
+  await settle();
+  calls.section.mockClear();
+  await act(async () => { await action(); });
+  await settle();
+  return [...new Set(calls.section.mock.calls.map(([name]) => name as string))].sort();
+}
+const click = (name: string) => () => {
+  [...container.querySelectorAll('button')].find((button) => button.textContent === name || button.getAttribute('aria-label') === name)!.click();
+};
+/** A background refresh, as the server reports a change in the working tree. */
+const worktreeChanged = () => { for (const listener of [...calls.repositoryChanged]) listener('repo', 'worktree'); };
+
+async function openEverySection() {
+  await settle();
+  for (const digit of ['1', '2', '3', '4', '5', '1']) {
+    await key('keydown', { key: digit, ctrlKey: true });
+    await key('keyup', { key: 'Control' });
+    await settle();
+  }
+  expect(calls.section.mock.calls.map(([name]) => name)).toEqual(expect.arrayContaining(['changes', 'files', 'history', 'search', 'prs', 'commit']));
+}
+
+it('redraws each section for what it shows, and none of them for what another section or a dialog changes', async () => {
+  // The open-files strip brings the opened file's tab into view, which jsdom does not lay out.
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: () => {} });
+  await openEverySection();
+
+  // A new changed file: Changes and the commit box list it, and Search reads its results again.
+  calls.status.mockResolvedValue({ ...initialStatus, changes: [changedFile], unstagedCount: 1 });
+  expect(await redrawnBy(worktreeChanged)).toEqual(['changes', 'commit', 'search']);
+  expect(container.textContent).toContain('1 changes, selected: none');
+
+  // A row chosen in Changes is marked there, and nowhere else changes.
+  expect(await redrawnBy(click('Select changed.txt'))).toEqual(['changes']);
+  expect(container.textContent).toContain('selected: changed.txt');
+
+  // A commit chosen in History: Changes no longer marks a row.
+  expect(await redrawnBy(click('Select a commit'))).toEqual(['changes', 'history']);
+  expect(container.textContent).toContain('active: commit-1');
+
+  // A file that is not among the changes, opened in Files, changes Files alone.
+  expect(await redrawnBy(click('Open notes.txt'))).toEqual(['files', 'history']);
+  expect(container.textContent).toContain('open: notes.txt');
+  expect(await redrawnBy(click('Select a commit'))).toEqual(['files', 'history']);
+
+  // Another section shows what it last showed, here nothing: History no longer marks its commit.
+  const section = (digit: string) => async () => { await key('keydown', { key: digit, ctrlKey: true }); await key('keyup', { key: 'Control' }); };
+  expect(await redrawnBy(section('4'))).toEqual(['history']);
+  // Search takes the keyboard when it shows; the others are left as they are.
+  expect(await redrawnBy(section('5'))).toEqual(['search']);
+  // Settings and the palette show nothing a section shows.
+  expect(await redrawnBy(click('Settings'))).toEqual([]);
+  expect(await redrawnBy(section('k'))).toEqual([]);
+  expect(container.querySelector('[aria-label="Close the palette"]')).not.toBeNull();
+  expect(await redrawnBy(click('Close the palette'))).toEqual([]);
+});

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { IconX } from '@tabler/icons-react';
 import { closestCenter, DndContext, DragOverlay, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable';
@@ -27,7 +27,7 @@ interface OpenFilesStripProps {
  * no files; every calculation comes from the pure helpers in
  * `open-files-model.ts` so the behaviour is testable without a DOM.
  */
-export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder, toolsRef, trailing }: OpenFilesStripProps) {
+export const OpenFilesStrip = memo(function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder, toolsRef, trailing }: OpenFilesStripProps) {
   const stripRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
   const [fades, setFades] = useState({ start: false, end: false });
@@ -149,7 +149,7 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder,
       </DragOverlay>
     </DndContext>
   );
-}
+});
 
 function SortableFileTab({ tab, label, active, preview, register, onActivate, onPin, onClose }: {
   tab: RuntimeTab;
