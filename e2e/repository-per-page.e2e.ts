@@ -129,5 +129,14 @@ test('removing a worktree another page shows takes that page to the main worktre
 
   await expect(branchPicker(other)).toContainText('main');
   await expect(other.getByRole('button', { name: 'Locate folder…' })).toHaveCount(0);
+  await expect(other.getByText('sample-project-spike was removed')).toBeVisible();
+
+  // Back to where it was: the worktree is gone, which a notice says, and the page stays; nothing asks for a folder.
+  const prompts: string[] = [];
+  other.on('dialog', (shown) => { prompts.push(shown.message()); void shown.dismiss(); });
+  await other.getByRole('banner').getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(other.getByText('That repository is no longer available')).toBeVisible();
+  await expect(branchPicker(other)).toContainText('main');
+  expect(prompts).toEqual([]);
   await other.close();
 });

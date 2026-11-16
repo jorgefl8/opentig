@@ -16,7 +16,7 @@ import {
   IconRefresh, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
+import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryMove, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, navigationKeys, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { NavigationKeysProvider, isMacPlatform } from './navigation-keys';
 import { ShortcutsProvider } from './ShortcutsContext';
@@ -62,6 +62,7 @@ import { RepositoryRelocationsDialog } from '@/features/repositories/RepositoryR
 import { touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import { createRepositorySwitcher } from '@/features/repositories/repository-switch';
 import { announce, arrive, confirmedWatch, NO_WATCH_TRUST, reconnected, startedUp, suspend, type WatchTrust } from './watch-trust';
+import { relocatedId, repositoryAgreement } from './repository-agreement';
 import { remoteAccessActionLabel, remoteAccessCopy, type RemoteAccessAction } from '@/features/repositories/remote-access';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import type { RemoteAccessProblem } from '../../shared/repository-access';
@@ -345,6 +346,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     watchTrustRef.current = next;
     setWatchTrust(next);
   }, []);
+  /** Repositories relocated while this page was open, or during the server's run, from the old id to the new. */
+  const relocatedIdsRef = useRef(new Map<string, string>());
+  /** A move the server made while a choice of repository was on its way, for when that choice ends without landing. */
+  const pendingMoveRef = useRef<{ repository: RepositoryInfo; move: RepositoryMove } | null>(null);
   /** Shown instead of the section's own selection once a requested section switch lands. */
   const pendingSectionSelectionRef = useRef<{ selection: ViewerSelection } | null>(null);
   // What each section last showed, per repository; and which section of which repository the viewer shows now.
@@ -644,6 +649,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (!active) return;
       // On its repository from now: a watch announced while what was saved is painted is newer than this answer.
       updateWatchTrust((state) => arrive(state, data.activeRepository?.id ?? null, data.server?.repositoryPerClient === true));
+      for (const [previousId, id] of Object.entries(data.relocatedRepositoryIds ?? {})) relocatedIdsRef.current.set(previousId, id);
       const arrival = watchTrustRef.current.arrival;
       // Starting up, the repository on screen paints what the server last saved of it, as one seen
       // moments ago paints what is in memory (see `knownSnapshot`): read again behind it, with Pull,
@@ -1300,13 +1306,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection, sectionSelections]);
 
-  useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope, watch, watchId) => {
+  useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope, watch, watchId, details) => {
     // Whatever repository it is about. An older server watches one at a time, for every client, so a change
     // it reports, or a watch it begins elsewhere, may be news about this one too. A newer one sends only what
     // concerns the repository this page has open, after the answer that opened it, and that it no longer
     // watches one the page left, which is not read again.
     noteChange();
     if (watch) updateWatchTrust((state) => announce(state, repositoryId, watch, watchId));
+    // Told right after the answer that opened the repository, which every read of it follows, or of one it left.
+    if (details?.refresh === false) return;
     const trust = watchTrustRef.current;
     if (repositoryId !== repository?.id || (trust.perClient && repositoryId !== trust.repositoryId)) return;
     void refresh({ background: true, scope });
@@ -1367,6 +1375,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // project membership) from a moved repository's old id to its new one.
   const rebindRelocatedRepository = useCallback((previousId: string, selected: RepositoryInfo) => {
     if (previousId === selected.id) return;
+    // Steps and addresses under the old id lead here.
+    relocatedIdsRef.current.set(previousId, selected.id);
     const expandedPaths = filesTreeStates.get(previousId);
     filesTreeStates.delete(previousId);
     if (expandedPaths) filesTreeStates.set(selected.id, expandedPaths);
@@ -1410,9 +1420,86 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     setOpenRepositoryDialog(true);
   }, []);
 
-  useEffect(() => opentig.events.onActiveRepositoryChanged((selected) => {
+  /** The saved repositories as the server now has them, at once for what reads them before the next render. */
+  const takeRecentRepositories = useCallback((recentRepositories: RecentRepository[]) => {
+    if (bootstrapRef.current) bootstrapRef.current = { ...bootstrapRef.current, recentRepositories };
+    setBootstrap((current) => current ? { ...current, recentRepositories } : current);
+  }, []);
+
+  /**
+   * The server moved this page off a worktree removed elsewhere, or onto a relocated repository's new
+   * id. A relocated repository keeps its tabs, drafts and folders, as on the page that relocated it.
+   */
+  const applyMove = useCallback((selected: RepositoryInfo, move: RepositoryMove) => {
+    if (move.reason === 'relocated') {
+      recordOpenedRepository(selected, move.previousId);
+      return;
+    }
+    const left = repositoryRef.current?.id === move.previousId ? repositoryRef.current : null;
+    const unsaved = dirtyTabs(fileSessionsRef.current.get(move.previousId) ?? emptyFileSession).length;
+    const lost = unsaved === 0 ? '' : ` Unsaved changes in ${unsaved === 1 ? 'one file' : `${unsaved} files`} were lost with it.`;
+    const notice = { title: `${left?.name ?? 'The worktree'} was removed`, description: `It was removed from another window or device, so ${selected.name} is open instead.${lost}`, duration: 10_000 };
+    if (unsaved > 0) sileo.warning(notice);
+    else sileo.info(notice);
+    recordOpenedRepository(selected);
+  }, [recordOpenedRepository]);
+
+  useEffect(() => opentig.events.onActiveRepositoryChanged((selected, move) => {
+    if (move) {
+      if (move.recentRepositories) takeRecentRepositories(move.recentRepositories);
+      // While a choice is on its way the page follows it; if it ends without landing, the page comes here.
+      if (repositorySwitcher.idle()) applyMove(selected, move);
+      else pendingMoveRef.current = { repository: selected, move };
+      return;
+    }
     if (selected.id !== repositoryRef.current?.id && repositorySwitcher.accepts(selected.id)) recordOpenedRepository(selected);
-  }), [recordOpenedRepository, repositorySwitcher]);
+  }), [applyMove, recordOpenedRepository, repositorySwitcher, takeRecentRepositories]);
+
+  const reconcilingRef = useRef(false);
+  /**
+   * Makes the page and the server agree on its repository (see `repositoryAgreement`) once no choice
+   * is on its way: after a choice ends, an answer or a move says where the server has the page, or
+   * the connection comes back. One more open settles it, which also has the server tell the page of
+   * that repository's watch again.
+   */
+  const reconcileRepository = useCallback(() => {
+    if (!serverFeaturesRef.current.repositoryPerClient || reconcilingRef.current || !repositorySwitcher.idle()) return;
+    const server = serverClient.connection.current();
+    const shownId = watchTrustRef.current.repositoryId;
+    const recents = bootstrapRef.current?.recentRepositories ?? [];
+    const known = (id: string) => recents.some((item) => item.id === id) && !unavailableRepositoryIdsRef.current.has(id);
+    const agreement = repositoryAgreement({ shownId, serverId: server?.repositoryId ?? null, known });
+    if (agreement === 'agree' || agreement === 'none' || !server?.repositoryId) {
+      if (agreement === 'agree') pendingMoveRef.current = null;
+      return;
+    }
+    const serverId = server.repositoryId;
+    reconcilingRef.current = true;
+    const settled = () => {
+      reconcilingRef.current = false;
+      queueMicrotask(() => reconcileRef.current());
+    };
+    const follow = () => {
+      const pending = pendingMoveRef.current;
+      pendingMoveRef.current = null;
+      const target = pending?.repository.id === serverId ? pending.repository : server.repository ?? recents.find((item) => item.id === serverId) ?? null;
+      if (!target) { settled(); return; }
+      if (pending?.repository.id === serverId) applyMove(pending.repository, pending.move);
+      else recordOpenedRepository(target);
+      void opentig.repository.openRecent(serverId).then(settled, settled);
+    };
+    if (agreement === 'follow') { follow(); return; }
+    // Arriving on it again: only what the server announces once it has the page back counts.
+    updateWatchTrust((state) => arrive(state, shownId));
+    void opentig.repository.openRecent(shownId!).then(settled, () => {
+      // It can't be opened any more: the page goes where the server has it.
+      if (known(serverId)) follow();
+      else settled();
+    });
+  }, [applyMove, recordOpenedRepository, repositorySwitcher, updateWatchTrust]);
+  const reconcileRef = useRef(reconcileRepository);
+  useLayoutEffect(() => { reconcileRef.current = reconcileRepository; }, [reconcileRepository]);
+  useEffect(() => serverClient.connection.subscribe(() => queueMicrotask(() => reconcileRef.current())), []);
 
   useEffect(() => {
     const setHeld = (held: boolean) => {
@@ -1721,7 +1808,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    * repository, shared by every page and device, which such a step never switches: it offers to,
    * and `accepted` is that offer taken.
    */
-  const applyRestore = (entry: NavigationEntry, source: 'trail' | 'address' = 'trail', { recognized = false, accepted = false } = {}) => {
+  const applyRestore = (step: NavigationEntry, source: 'trail' | 'address' = 'trail', { recognized = false, accepted = false } = {}) => {
+    // A step under a repository's old id, from before it was relocated, leads to its new one.
+    const movedTo = relocatedId(relocatedIdsRef.current, step.location.repositoryId);
+    const entry = movedTo === step.location.repositoryId ? step : { ...step, location: { ...step.location, repositoryId: movedTo } };
     const target = entry.location;
     if (!recognized) restoreTokenRef.current += 1;
     const current = repositoryRef.current;
@@ -2573,6 +2663,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       } catch (reason) {
         const recent = recentRepositories?.find((candidate) => candidate.id === id);
         if (!recent) throw reason;
+        // Removed from OpenTig meanwhile, as from another window: nothing to locate.
+        if (serializedErrorFromReason(reason)?.code === 'INVALID_ARGUMENT') {
+          sileo.info({ title: 'That repository is no longer available', description: 'It was removed from OpenTig.' });
+          return null;
+        }
         if (isRepositoryMissing(reason)) {
           setUnavailableRepositoryIds((current) => new Set(current).add(id));
           void locateRepositoryRef.current(recent);
@@ -2598,15 +2693,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       },
       apply: recordOpenedRepository,
       // A choice given up after it was sent still opened on the server: this page's repository is the one it shows.
-      abandoned: (opened) => {
-        const shown = repositoryRef.current;
-        if (!serverFeaturesRef.current.repositoryPerClient || !shown || shown.id === opened.id) return;
-        // Arriving on it again: only what the server announces after it has the page back counts.
-        updateWatchTrust((state) => arrive(state, shown.id));
-        void opentig.repository.openRecent(shown.id).catch(() => undefined);
-      },
+      abandoned: () => reconcileRef.current(),
       fail: (reason) => reportError('Could not open repository', reason),
-      pending: setPendingRepositoryId,
+      pending: (id) => {
+        setPendingRepositoryId(id);
+        // A choice ended: the page and the server may differ (see `reconcileRepository`).
+        if (id === null) queueMicrotask(() => reconcileRef.current());
+      },
     });
   }, [recentRepositories, recordOpenedRepository, repositorySwitcher, updateWatchTrust]);
 
@@ -3111,7 +3204,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
     fileSessionsRef.current = sessions;
     setFileSessions(sessions);
-    if (repositoryRef.current && ids.has(repositoryRef.current.id)) setRepository(null);
+    if (repositoryRef.current && ids.has(repositoryRef.current.id)) {
+      setRepository(null);
+      updateWatchTrust((state) => arrive(state, null));
+    }
     setBootstrap((current) => current ? {
       ...current, ...organization,
       activeRepository: current.activeRepository && ids.has(current.activeRepository.id) ? null : current.activeRepository,
@@ -3189,6 +3285,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         if (recent) {
           setUnavailableRepository(recent);
           setRepository(null);
+          updateWatchTrust((state) => arrive(state, null));
         } else {
           sileo.error({ title, description: messageOf(reason), duration: 10_000 });
         }
@@ -3197,7 +3294,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       });
     };
     return () => { repositoryMissingHandler = null; };
-  }, []);
+  }, [updateWatchTrust]);
   const refreshUnavailableRepositories = useCallback(() => {
     void opentig.repository.unavailableRecent().then((missing) => setUnavailableRepositoryIds((current) => (
       current.size === missing.length && missing.every((id) => current.has(id)) ? current : new Set(missing)

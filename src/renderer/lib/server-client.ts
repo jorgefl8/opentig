@@ -1,4 +1,4 @@
-import type { ImageFileResult, RepositoryInfo } from '@shared/contracts';
+import type { ClientAttachment, ImageFileResult, RepositoryInfo } from '@shared/contracts';
 import { IPC } from '@shared/contracts';
 import { AI_CLIENT_TIMEOUT_MS } from '@shared/ai-timeouts';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
@@ -17,9 +17,21 @@ interface ServerClientOptions {
   fetch?: typeof fetch;
 }
 
+/** Where a server with `repositoryPerClient` has this client, as its answers and moves last said. */
+export interface ConnectionRepository {
+  repositoryId: string | null;
+  /** Known when an answer or a move named it; otherwise look it up among the saved repositories. */
+  repository: RepositoryInfo | null;
+}
+
 export interface OpenTigServerClient {
   api: OpenTigServerApi;
   transport: OpenTigWebSocketTransport;
+  connection: {
+    /** Null until a server with `repositoryPerClient` has said, and again after the connection drops. */
+    current(): ConnectionRepository | null;
+    subscribe(listener: () => void): () => void;
+  };
 }
 
 /** Typed API facade over the sole domain transport. */
@@ -64,9 +76,27 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     openTaken = started;
     ownRepositoryId = repositoryId;
   };
+  /** What the server's answers and moves on this connection said, the one with the highest number last. */
+  let connection: (ConnectionRepository & { ticket: number }) | null = null;
+  const connectionListeners = new Set<() => void>();
+  const noteAttachment = (attachment: ClientAttachment, repository: RepositoryInfo | null) => {
+    if (connection && attachment.ticket < connection.ticket) return;
+    const known = repository?.id === attachment.repositoryId ? repository
+      : connection?.repositoryId === attachment.repositoryId ? connection.repository : null;
+    const changed = connection?.repositoryId !== attachment.repositoryId;
+    connection = { repositoryId: attachment.repositoryId, repository: known, ticket: attachment.ticket };
+    if (attachment.repositoryId) ownRepositoryId = attachment.repositoryId;
+    if (changed) for (const listener of connectionListeners) listener();
+  };
   const opening = (request: Promise<RepositoryInfo>): Promise<RepositoryInfo> => {
     const started = ++openStarted;
-    return request.then((repository) => { take(started, repository.id); return repository; });
+    return request.then((answer) => {
+      // A server with `repositoryPerClient` says whether the open took and where it has this client.
+      const { attachment, ...repository } = answer as RepositoryInfo & { attachment?: ClientAttachment };
+      if (attachment) noteAttachment(attachment, attachment.attached ? repository : null);
+      else take(started, repository.id);
+      return repository;
+    });
   };
 
   const bootstrap: OpenTigServerApi['app']['bootstrap'] = async (request) => {
@@ -78,7 +108,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     }
     if (data.server.requestCancellation === true) transport.enableCancellation();
     if (data.server.keptReads === true) transport.enableKeptReads();
-    if (data.activeRepository) take(started, data.activeRepository.id);
+    if (data.attachment) noteAttachment(data.attachment, data.activeRepository);
+    else if (data.activeRepository) take(started, data.activeRepository.id);
     return data;
   };
 
@@ -253,18 +284,27 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
 
   transport.onEvent((event) => {
     // The server moved this client, as when its worktree was removed: later than any open started before.
-    if (event.type === 'repository.active-changed') take(++openStarted, event.repository.id);
+    if (event.type === 'repository.active-changed') {
+      if (event.ticket !== undefined) noteAttachment({ attached: true, repositoryId: event.repository.id, ticket: event.ticket }, event.repository);
+      else take(++openStarted, event.repository.id);
+    }
     publishRuntimeEvent(event, repositoryChanged, activeRepositoryChanged, githubAccountsChanged, aiInstructionsChanged);
   });
   transport.onReconnect(async () => {
+    // A new connection, whose answers number from the start again.
+    if (connection) {
+      connection = null;
+      for (const listener of connectionListeners) listener();
+    }
     // Where each client has its own repository, this one lands on its own, not on another's last choice.
     const data = await api.app.bootstrap(ownRepositoryId ? { repositoryId: ownRepositoryId } : undefined);
     for (const listener of aiInstructionsChanged) listener([]);
     // Not an account change, which empties what was read with the old account: what GitHub said is read again while it stays on screen.
     for (const listener of reconnected) listener();
     if (!data.activeRepository) return;
-    // Its own repository, unless that could not be opened again; on an older server, the one every client shares.
-    for (const listener of activeRepositoryChanged) listener(data.activeRepository);
+    // On an older server, the repository every client shares. Where each client has its own, where the
+    // server has it now is in `connection`, which the page compares with what it shows.
+    if (!data.attachment) for (const listener of activeRepositoryChanged) listener(data.activeRepository);
     // Changes may have gone unreported while disconnected; the server says how its repository is watched now.
     const watch = data.activeRepositoryWatch;
     for (const listener of repositoryChanged) {
@@ -273,7 +313,14 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     }
   });
 
-  return { api, transport };
+  return {
+    api,
+    transport,
+    connection: {
+      current: () => connection ? { repositoryId: connection.repositoryId, repository: connection.repository } : null,
+      subscribe: (listener) => subscribe(connectionListeners, listener),
+    },
+  };
 }
 
 type OpenTigServerApiMethod<Command extends Parameters<OpenTigWebSocketTransport['request']>[0]> =
@@ -294,11 +341,18 @@ function publishRuntimeEvent(
 ): void {
   if (event.type === 'repository.changed') {
     for (const listener of repositoryChanged) {
-      if (event.watch) listener(event.repositoryId, event.scope, event.watch, ...(event.watchId ? [event.watchId] : []));
+      if (event.watch && event.refresh === false) listener(event.repositoryId, event.scope, event.watch, event.watchId, { refresh: false });
+      else if (event.watch) listener(event.repositoryId, event.scope, event.watch, ...(event.watchId ? [event.watchId] : []));
       else listener(event.repositoryId, event.scope);
     }
   } else if (event.type === 'repository.active-changed') {
-    for (const listener of activeRepositoryChanged) listener(event.repository);
+    const move = event.previousId && event.reason
+      ? { previousId: event.previousId, reason: event.reason, ...(event.recentRepositories ? { recentRepositories: event.recentRepositories } : {}) }
+      : null;
+    for (const listener of activeRepositoryChanged) {
+      if (move) listener(event.repository, move);
+      else listener(event.repository);
+    }
   } else if (event.type === 'ai.instructions-changed') {
     for (const listener of aiInstructionsChanged) listener(event.repositoryIds);
   } else if (event.type === 'github.read-refreshed') {

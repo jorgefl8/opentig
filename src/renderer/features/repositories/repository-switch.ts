@@ -31,6 +31,8 @@ export interface RepositorySwitcher {
   cancel(): void;
   /** Whether a repository activated elsewhere may replace the current one right now. */
   accepts(repositoryId: string): boolean;
+  /** No choice is waiting or on its way. */
+  idle(): boolean;
 }
 
 /**
@@ -59,6 +61,7 @@ export function createRepositorySwitcher(): RepositorySwitcher {
   return {
     connect: (next) => { current = next; },
     accepts: (repositoryId) => repositoryId !== abandoned && (target === null || repositoryId === target),
+    idle: () => !running && target === null,
     cancel() {
       if (target === null) return;
       abandoned = inFlight;

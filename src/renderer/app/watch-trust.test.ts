@@ -45,6 +45,14 @@ describe('watch trust where each page has its own repository', () => {
     expect(confirmedWatch(state, 'x')).toBeNull();
   });
 
+  it('does not trust again a repository the server moved the page off while a choice was on its way, once the choice fails', () => {
+    // On a worktree, choosing another; the worktree is removed elsewhere, and the server says its watch is over first.
+    let state = suspend(onX(), true);
+    state = announce(state, 'x', 'stopped', undefined);
+    state = suspend(state, false);
+    expect(confirmedWatch(state, 'x')).toBeNull();
+  });
+
   it('forgets every announcement when the connection comes back', () => {
     expect(confirmedWatch(reconnected(onX()), 'x')).toBeNull();
   });
