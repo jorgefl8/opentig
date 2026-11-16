@@ -163,7 +163,10 @@ test('going Back while another repository is opening still shows what changed on
   try {
     await openRepository(page, repository);
     await addRepository(page, second);
+    const secondId = addressRepositoryId(page);
     await choose(page, repository.name);
+    // The address follows the choice once the repository shows.
+    await expect(page).not.toHaveURL(new RegExp(`/r/${secondId}/`));
     const address = page.url();
 
     // A page whose answer to opening the second repository is held back until it picks the first again.
