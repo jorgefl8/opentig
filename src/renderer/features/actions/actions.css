@@ -71,7 +71,7 @@ button.workflow-node-header:focus-visible, .workflow-job:focus-visible { outline
 .workflow-job-panel > header { display: flex; align-items: center; gap: 8px; }
 .workflow-job-panel h3 { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: var(--text-body); font-weight: var(--weight-strong); }
 .workflow-job-facts { margin: 4px 0 10px 23px; color: var(--muted-foreground); font-size: var(--text-meta); }
-.workflow-job-open { align-self: flex-start; margin: 0 0 12px 23px; }
+.workflow-job-open { display: flex; flex-wrap: wrap; align-self: flex-start; gap: 4px; margin: 0 0 12px 23px; }
 .workflow-steps { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; }
 .workflow-step { display: flex; min-width: 0; min-height: 28px; align-items: center; gap: 8px; border-radius: var(--radius-md); padding: 2px 6px; font-size: var(--text-ui); }
 .workflow-step.tone-failure { background: color-mix(in oklch, var(--destructive) 9%, transparent); }
@@ -79,6 +79,10 @@ button.workflow-node-header:focus-visible, .workflow-job:focus-visible { outline
 .workflow-step.empty { color: var(--muted-foreground); }
 .workflow-step .workflow-step-name { overflow-wrap: anywhere; white-space: normal; }
 .workflow-step .action-status-icon { align-self: flex-start; margin-top: 4px; }
+.workflow-step:has(> .workflow-step-open) { padding: 0; }
+.workflow-step-open { display: flex; width: 100%; min-width: 0; min-height: 28px; align-items: center; gap: 8px; border-radius: var(--radius-md); padding: 2px 6px; color: inherit; text-align: left; }
+.workflow-step-open:hover { background: var(--row-hover); }
+.workflow-step-open:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 
 /* Narrow windows put the job under the graph. */
 @media (max-width: 760px) {

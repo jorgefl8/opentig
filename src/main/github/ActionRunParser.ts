@@ -84,53 +84,63 @@ function runFromRest(run: z.infer<typeof restRunSchema>): ActionRunSummary & { p
   };
 }
 
-const restJobsSchema = z.object({
-  total_count: z.number().int().nonnegative(),
-  jobs: z.array(z.object({
-    id: z.number().int().positive(),
+const restJobSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string(),
+  status: z.string(),
+  conclusion: optionalText,
+  started_at: optionalTime,
+  completed_at: optionalTime,
+  html_url: optionalText,
+  runner_name: optionalText,
+  steps: z.array(z.object({
+    number: z.number().int(),
     name: z.string(),
     status: z.string(),
     conclusion: optionalText,
     started_at: optionalTime,
     completed_at: optionalTime,
-    html_url: optionalText,
-    runner_name: optionalText,
-    steps: z.array(z.object({
-      number: z.number().int(),
-      name: z.string(),
-      status: z.string(),
-      conclusion: optionalText,
-      started_at: optionalTime,
-      completed_at: optionalTime,
-    })).nullish(),
-  })),
+  })).nullish(),
 });
+
+const restJobsSchema = z.object({
+  total_count: z.number().int().nonnegative(),
+  jobs: z.array(restJobSchema),
+});
+
+function toJob(job: z.infer<typeof restJobSchema>): ActionRunJob {
+  return {
+    id: job.id,
+    name: job.name,
+    status: job.status,
+    conclusion: job.conclusion,
+    startedAt: job.started_at,
+    completedAt: job.completed_at,
+    url: job.html_url,
+    runnerName: job.runner_name,
+    steps: (job.steps ?? []).map((step) => ({
+      number: step.number,
+      name: step.name,
+      status: step.status,
+      conclusion: step.conclusion,
+      startedAt: step.started_at,
+      completedAt: step.completed_at,
+    })),
+  };
+}
 
 export function parseActionRunJobs(raw: string): { jobs: ActionRunJob[]; total: number } {
   const operation = 'gh-action-run-view';
   const parsed = restJobsSchema.safeParse(parseJson(raw, operation));
   if (!parsed.success) throw invalid(operation);
-  return {
-    total: parsed.data.total_count,
-    jobs: parsed.data.jobs.map((job) => ({
-      id: job.id,
-      name: job.name,
-      status: job.status,
-      conclusion: job.conclusion,
-      startedAt: job.started_at,
-      completedAt: job.completed_at,
-      url: job.html_url,
-      runnerName: job.runner_name,
-      steps: (job.steps ?? []).map((step) => ({
-        number: step.number,
-        name: step.name,
-        status: step.status,
-        conclusion: step.conclusion,
-        startedAt: step.started_at,
-        completedAt: step.completed_at,
-      })),
-    })),
-  };
+  return { total: parsed.data.total_count, jobs: parsed.data.jobs.map(toJob) };
+}
+
+/** One job, as `actions/jobs/{id}` gives it. */
+export function parseActionRunJob(raw: string, operation: string): ActionRunJob {
+  const parsed = restJobSchema.safeParse(parseJson(raw, operation));
+  if (!parsed.success) throw invalid(operation);
+  return toJob(parsed.data);
 }
 
 /** The base64 file body of a `contents` API response. */

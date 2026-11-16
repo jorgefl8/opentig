@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KeptReadNotice } from '@/components/KeptReadNotice';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconExternalLink, IconRefresh, IconX } from '@tabler/icons-react';
+import { IconExternalLink, IconFileText, IconRefresh, IconX } from '@tabler/icons-react';
 import { formatDateTime } from '@shared/date-format';
 import type { ActionRunDetails, ActionRunJob } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,8 @@ import { WorkflowCanvas } from './WorkflowCanvas';
 import './actions.css';
 import { Spinner } from '@/components/ui/spinner';
 import { RepositoryLink } from '@/components/RepositoryLink';
+import { useServerFeatures } from '@/lib/server-features';
+import { JobLogView } from './JobLogView';
 
 /** --motion-med and --ease-out. */
 const PANEL_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
@@ -54,10 +56,28 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
   const run = details ?? listed;
   const [selectedJobId, setSelectedJobId] = useState<number | null>(jobId);
   useEffect(() => { setSelectedJobId(jobId); }, [jobId]);
+  /** The job whose log fills the body, and the step it opened on. */
+  const [logOf, setLogOf] = useState<{ jobId: number; step: number | null } | null>(null);
+  const logs = useServerFeatures().actionJobLogs;
+  // The control that opened the log gets the focus back when it closes; the graph stays as it was behind the log.
+  const openedFrom = useRef<HTMLElement | null>(null);
+  const openLog = useCallback((jobId: number, step: number | null) => {
+    openedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setLogOf({ jobId, step });
+  }, []);
+  const closeLog = useCallback(() => setLogOf(null), []);
   const active = run !== null && run.status !== 'completed';
   const now = useNow(active);
   const jobs = useMemo(() => new Map((details?.jobs ?? []).map((job) => [job.id, job])), [details?.jobs]);
   const selectedJob = selectedJobId === null ? null : jobs.get(selectedJobId) ?? null;
+  const logJob = logOf === null ? null : jobs.get(logOf.jobId) ?? null;
+  const logShown = logJob !== null && logOf !== null;
+  useEffect(() => {
+    if (logShown || !openedFrom.current) return;
+    const control = openedFrom.current;
+    openedFrom.current = null;
+    if (control.isConnected) control.focus({ preventScroll: true });
+  }, [logShown]);
   const title = run ? run.title : `Run ${runId}`;
   const bar = <MobileViewerTitle title={title} subtitle={run ? `${run.workflowName} #${run.number}` : undefined} />;
 
@@ -107,16 +127,20 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
         </div>
       </header>
       {details && <RunNotes run={details} />}
-      <div className={`workflow-run-body ${selectedJob ? 'with-job' : ''}`}>
+      {logJob && logOf && <div className="workflow-run-body">
+        <JobLogView key={logJob.id} repositoryId={repositoryId} job={logJob} initialStep={logOf.step} now={now} onBack={closeLog} />
+      </div>}
+      <Activity mode={logShown ? 'hidden' : 'visible'}><div className={`workflow-run-body ${selectedJob ? 'with-job' : ''}`}>
         {!details
           ? <div className="viewer-message" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading jobs…" /></div>
           : details.graph.length
           ? <WorkflowCanvas graph={details.graph} jobs={jobs} runCompleted={!active} selectedJobId={selectedJobId} onSelectJob={setSelectedJobId} now={now} />
           : <div className="viewer-message">{active ? 'Waiting for the first job to start…' : 'This run has no jobs.'}</div>}
         <AnimatePresence initial={false}>
-          {selectedJob && <JobPanel key="job" job={selectedJob} now={now} reduceMotion={Boolean(reduceMotion)} onClose={() => setSelectedJobId(null)} />}
+          {selectedJob && <JobPanel key="job" job={selectedJob} now={now} reduceMotion={Boolean(reduceMotion)} onClose={() => setSelectedJobId(null)}
+            onOpenLog={logs ? (step) => openLog(selectedJob.id, step) : null} />}
         </AnimatePresence>
-      </div>
+      </div></Activity>
     </div>
   );
 }
@@ -130,7 +154,11 @@ function RunNotes({ run }: { run: ActionRunDetails }) {
   return <div className="workflow-run-notes">{notes.map((note) => <p key={note}>{note}</p>)}</div>;
 }
 
-function JobPanel({ job, now, reduceMotion, onClose }: { job: ActionRunJob; now: number; reduceMotion: boolean; onClose(): void }) {
+function JobPanel({ job, now, reduceMotion, onClose, onOpenLog }: {
+  job: ActionRunJob; now: number; reduceMotion: boolean; onClose(): void;
+  /** Opens the job's log, on a step when one is given; null on a server that can't read logs. */
+  onOpenLog: ((step: number | null) => void) | null;
+}) {
   const tone = actionTone(job.status, job.conclusion);
   const duration = elapsed(job.startedAt, job.completedAt, now);
   return (
@@ -155,7 +183,10 @@ function JobPanel({ job, now, reduceMotion, onClose }: { job: ActionRunJob; now:
         {duration !== null && ` · ${formatDuration(duration)}`}
         {job.runnerName && ` · ${job.runnerName}`}
       </p>
-      {job.url && <Button variant="outline" size="xs" className="workflow-job-open" onClick={() => openOnGitHub(job.url!)}><IconExternalLink /> Logs on GitHub</Button>}
+      <div className="workflow-job-open">
+        {onOpenLog && <Button variant="outline" size="xs" onClick={() => onOpenLog(null)}><IconFileText /> View log</Button>}
+        {job.url && <Button variant={onOpenLog ? 'ghost' : 'outline'} size="xs" onClick={() => openOnGitHub(job.url!)}><IconExternalLink /> {onOpenLog ? 'On GitHub' : 'Logs on GitHub'}</Button>}
+      </div>
       <ol className="workflow-steps" aria-label="Steps">
         {job.steps.length === 0 && <li className="workflow-step empty">{job.status === 'completed' ? 'GitHub listed no steps.' : 'Steps appear once the job starts.'}</li>}
         {job.steps.map((step) => {
@@ -163,9 +194,17 @@ function JobPanel({ job, now, reduceMotion, onClose }: { job: ActionRunJob; now:
           const stepTone = actionTone(step.status, step.conclusion);
           return (
             <li key={step.number} className={`workflow-step tone-${stepTone}`}>
-              <ActionStatusIcon tone={stepTone} />
-              <span className="workflow-step-name">{step.name}</span>
-              <span className="workflow-node-meta">{stepTone === 'skipped' ? 'Skipped' : stepDuration !== null ? formatDuration(stepDuration) : ''}</span>
+              {onOpenLog && stepTone !== 'skipped' ? (
+                <button type="button" className="workflow-step-open" aria-label={`${step.name}: ${actionStatusLabel(step.status, step.conclusion)}. Open its log`} onClick={() => onOpenLog(step.number)}>
+                  <ActionStatusIcon tone={stepTone} />
+                  <span className="workflow-step-name">{step.name}</span>
+                  <span className="workflow-node-meta">{stepDuration !== null ? formatDuration(stepDuration) : ''}</span>
+                </button>
+              ) : <>
+                <ActionStatusIcon tone={stepTone} />
+                <span className="workflow-step-name">{step.name}</span>
+                <span className="workflow-node-meta">{stepTone === 'skipped' ? 'Skipped' : stepDuration !== null ? formatDuration(stepDuration) : ''}</span>
+              </>}
             </li>
           );
         })}

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileDiff, Virtualizer, useWorkerPool } from '@pierre/diffs/react';
 import {
-  IconArrowsMaximize, IconArrowsMinimize, IconChevronRight, IconFileArrowRight,
+  IconArrowsMaximize, IconArrowsMinimize, IconChevronRight, IconFileArrowRight, IconHistory,
   IconLayoutColumns, IconLayoutRows, IconTextWrap, IconX,
 } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, ThemePreference } from '@shared/contracts';
@@ -16,6 +16,7 @@ import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { useTruncatedText } from '@/lib/use-truncated-text';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useParsedDiff } from './useParsedDiff';
+import { FileHistoryContext } from '@/features/history/file-history-context';
 import { primeDiffsWhenIdle } from './diff-idle-prime';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { ChangeStatusBadge } from '@/features/changes/ChangeStatusBadge';
@@ -280,8 +281,11 @@ function CompactFileHeader({ file, actions }: { file: DiffFileEntry; actions: Re
  */
 function CollapsibleFileHeader({ file, collapsed, onToggle, onOpenFile }: { file: HeaderFile; collapsed: boolean; onToggle(): void; onOpenFile?: ((path: string) => void) | undefined }) {
   const [pathRef, truncated] = useTruncatedText(file.path);
-  // A deleted file has nothing left to open.
+  // A deleted file has nothing left to open, nor a history to start from here.
   const canOpen = onOpenFile && file.kind !== 'deleted';
+  // A phone's header has no room for it: its top bar's menu offers it instead.
+  const openHistory = useContext(FileHistoryContext);
+  const phone = useMobileChrome() !== null;
   return (
     <div className="diff-file-header" onClick={(event) => { if (!(event.target as Element).closest('button')) onToggle(); }}>
       <Tooltip disabled={!truncated}>
@@ -293,6 +297,7 @@ function CollapsibleFileHeader({ file, collapsed, onToggle, onOpenFile }: { file
         <TooltipContent anchor={pathRef}>{file.path}</TooltipContent>
       </Tooltip>
       {canOpen && <DiffAction label="Open file" className="diff-file-open" onClick={() => onOpenFile(file.path)}><IconFileArrowRight /></DiffAction>}
+      {canOpen && openHistory && !phone && <DiffAction label="File history" className="diff-file-open" onClick={() => openHistory(file.path)}><IconHistory /></DiffAction>}
       <span className="diff-file-header-gap" />
       <FileHeaderFacts file={file} />
     </div>

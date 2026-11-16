@@ -9,6 +9,8 @@ export interface CliRunOptions {
   stdin?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  /** Past `maxOutputBytes`, return what was read, marked `truncated`, instead of failing. */
+  allowTruncatedOutput?: boolean;
   signal?: AbortSignal;
   removeEnv?: string[];
   env?: Record<string, string>;
@@ -20,6 +22,8 @@ export interface CliRunResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  /** Output stopped at `maxOutputBytes` (see `allowTruncatedOutput`): the process was stopped there. */
+  truncated?: true;
 }
 
 export class CliProcessRunner {
@@ -60,6 +64,8 @@ export class CliProcessRunner {
         killDescendants: true,
         timeout: timeoutMs,
         maxBuffer: maxOutputBytes,
+        // Text is counted in characters, which can be three bytes each: output kept up to a limit is counted in bytes.
+        ...(options.allowTruncatedOutput ? { encoding: 'buffer' as const } : {}),
         input: options.stdin ?? '',
         stripFinalNewline: false,
         reject: false,
@@ -79,13 +85,16 @@ export class CliProcessRunner {
     if (result.timedOut) {
       throw new AiOperationError({ code: 'AI_TIMEOUT', operation: 'ai-process', message: 'Generation took too long.', retryable: true });
     }
+    if (result.isMaxBuffer && options.allowTruncatedOutput && resolvedCommand.found) {
+      return { exitCode: 0, stdout: textOf(result.stdout), stderr: textOf(result.stderr), truncated: true };
+    }
     if (result.isMaxBuffer) {
       throw new AiOperationError({ code: 'AI_CONTEXT_TOO_LARGE', operation: 'ai-process', message: 'The AI tool produced too much output.' });
     }
     if (result.exitCode === undefined || !resolvedCommand.found) {
       throw processFailed(result);
     }
-    return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+    return { exitCode: result.exitCode, stdout: textOf(result.stdout), stderr: textOf(result.stderr) };
   }
 
   close(timeoutMs = 2_000): Promise<void> {
@@ -106,6 +115,11 @@ export class CliProcessRunner {
       this.idleWaiters.add(finish);
     });
   }
+}
+
+/** Output read as bytes, as text; a character cut at the limit becomes U+FFFD. */
+function textOf(value: unknown): string {
+  return typeof value === 'string' ? value : value instanceof Uint8Array ? Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('utf8') : '';
 }
 
 function cancelled(): AiOperationError {

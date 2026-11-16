@@ -1,8 +1,9 @@
-import type { ActionRunDetails, ActionRunPage, WorkflowTriggers } from '../../shared/contracts';
+import { ACTION_JOB_LOG_LIMITS, type ActionJobLog, type ActionRunDetails, type ActionRunPage, type WorkflowTriggers } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
-import { GITHUB_LIVE_READ_TIMEOUT_MS } from '../../shared/operation-timeouts';
+import { GITHUB_LIVE_READ_TIMEOUT_MS, GITHUB_NETWORK_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import type { GitHubAccess, GitHubTarget } from './GitHubAccess';
-import { parseActionRun, parseActionRunJobs, parseActionRunPage, parseBranchNames, parseContentsFile } from './ActionRunParser';
+import { parseActionJobLog } from './ActionJobLogParser';
+import { parseActionRun, parseActionRunJob, parseActionRunJobs, parseActionRunPage, parseBranchNames, parseContentsFile } from './ActionRunParser';
 import { parseWorkflowTriggers } from './WorkflowDispatch';
 import { buildRunGraph, parseWorkflowJobs, type WorkflowJobDefinition } from './WorkflowGraph';
 
@@ -76,6 +77,30 @@ export class GitHubActions {
     ]);
     const { graph, source } = buildRunGraph(definition, jobs);
     return { ...run, jobs, jobsTruncated: total > jobs.length, graph, graphSource: source };
+  }
+
+  /**
+   * A job's log, by step. Nothing is kept: a log can hold what a workflow printed, and is read
+   * again when asked for. A job that hasn't finished isn't read, since GitHub serves its log only
+   * then; GitHub's 404 or 410 for a finished job means the log is gone.
+   */
+  async jobLog(repositoryId: string, jobId: number, signal?: AbortSignal): Promise<ActionJobLog> {
+    const operation = 'gh-action-job-log';
+    const target = await this.github.requireGitHub(repositoryId, operation);
+    const cancel = signal ? { signal } : {};
+    const job = parseActionRunJob((await this.github.runRead(['api', `repos/${target.nameWithOwner}/actions/jobs/${jobId}`], { ...this.options(target, operation), ...cancel })).stdout, operation);
+    if (job.status !== 'completed') return { state: 'pending', jobId };
+    if (job.conclusion === 'skipped' || !job.startedAt) return { state: 'unavailable', jobId, reason: 'not-run' };
+    const options = { ...this.options(target, operation), ...cancel, timeoutMs: GITHUB_NETWORK_TIMEOUT_MS, maxOutputBytes: ACTION_JOB_LOG_LIMITS.readBytes, allowTruncatedOutput: true };
+    const endpoint = `repos/${target.nameWithOwner}/actions/jobs/${jobId}/logs`;
+    // Newer GitHub CLIs refuse to print a response with terminal escape codes unless told to, and a log has
+    // colors; older ones don't know the flag. The text is never printed to a terminal: it is parsed below.
+    let result = await this.github.run(target.executable, ['api', '--allow-escape-sequences', endpoint], options);
+    if (result.exitCode !== 0 && /unknown flag:? .*allow-escape-sequences/i.test(result.stderr)) result = await this.github.run(target.executable, ['api', endpoint], options);
+    if (result.exitCode !== 0 && /HTTP (?:404|410)\b/i.test(result.stderr)) return { state: 'unavailable', jobId, reason: 'expired' };
+    // Whatever came out on stdout is the log, or part of it: it is never quoted, kept or read for what went wrong.
+    if (result.exitCode !== 0) throw this.github.failure({ ...result, stdout: '' }, options);
+    return parseActionJobLog(result.stdout, job, result.truncated === true, signal ? { signal } : {});
   }
 
   /** The jobs of the workflow file at the run's commit. Without it the graph still shows every job, unconnected. */

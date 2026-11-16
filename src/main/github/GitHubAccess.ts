@@ -12,6 +12,10 @@ export interface GhRunOptions {
   operation: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  /** Past `maxOutputBytes`, the output read so far, marked `truncated`, instead of a failure. */
+  allowTruncatedOutput?: boolean;
+  /** Stops the command when whoever asked no longer needs it. */
+  signal?: AbortSignal;
   stdin?: string;
   auth: GitHubCommandAuth;
   executable: CliCandidate;
@@ -34,6 +38,8 @@ export interface GitHubAccess {
   run(executable: CliCandidate, args: string[], options: GhRunOptions): Promise<CliRunResult>;
   /** Fails with a read's classification of what went wrong. */
   runRead(args: string[], options: GhRunOptions): Promise<CliRunResult>;
+  /** What went wrong in a command `run` reported as failed, classified as `runRead` would. */
+  failure(result: CliRunResult, options: GhRunOptions): Error;
   /** After a change made on GitHub: what `change` makes outdated is not served again. Without it, nothing read for the repository is. */
   invalidate(repositoryId: string, change?: GitHubChange): void;
   /** Reads GitHub now, without joining a read already in progress. */

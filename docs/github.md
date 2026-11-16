@@ -249,7 +249,20 @@ Each job of the workflow file is a box, connected to the jobs it needs, and a ma
 | `Ctrl`/`⌘` + wheel, or pinch | Zoom, from 25% to 200% |
 | `+`, `-`, `0`, arrow keys | Zoom in, zoom out, fit, and move, with the graph focused |
 | Buttons at the bottom right | **Zoom out**, the zoom level, which returns to actual size, **Zoom in**, and **Fit to view** |
-| Click a job | Show its state, duration, runner, and steps, with **Logs on GitHub** |
+| Click a job | Show its state, duration, runner, and steps, with **View log** and **On GitHub** |
+
+**Read a job's log**
+
+**View log**, or a step of the job, opens the job's log in place of the graph; the arrow at its top left, or `Esc`, goes back to the run. The log is shown by step, each folded under a line with its state and its count of errors and warnings. It opens on why the job failed: the failed step unfolded at its first error, or at its last lines when GitHub marked no error. Choosing a step opens the log on that step instead. GitHub's log doesn't mark where each step starts, so OpenTig finds the line GitHub writes at the start of each step, within the step's times; a step without such a line takes the lines written in its own times, and a step that started after the part of a log OpenTig read stays empty. When a step had to be placed that way, or among lines that fit it as well, a note says the steps may not line up exactly; when most steps can't be placed, the log is shown whole, with a note, rather than split wrongly.
+
+- Lines GitHub marks as errors, warnings, and notices (`##[error]`, `##[warning]`, `##[notice]`) are highlighted, and the arrows beside **Error 1 of 3** move between errors, unfolding what hides them. Groups (`##[group]`) fold under their title, and those with an error start unfolded.
+- Each line shows its number within the step. Times are hidden; the clock button shows when each line was written, in your time zone.
+- Terminal colors show in the theme's own colors; other terminal codes, such as cursor movement and links, are left out. The log is always shown as text.
+- The copy button on a step copies its log as plain text. Selecting lines and copying them copies their text without the numbers.
+
+A job's log appears once the job has finished: GitHub doesn't serve it before then. While a job is running, its log says so, with a link to follow it on GitHub, and it is read as soon as the run shows the job finished. A job that didn't run has no log, and GitHub deletes logs after the repository's retention period.
+
+OpenTig reads up to the first 16 MB or 500,000 lines of a log, and shows up to 20,000 lines of it, about 2.4 MB of text, cutting any line longer than 2,000 characters. Past those limits, it keeps the last 20 lines of every step, then as much more as fits of each failed step first, then of steps with errors, then of the rest; a line at the top of the log says so with **Full log on GitHub**, and each step says how many earlier lines it left out. Only the lines near the screen are drawn. Logs are read again each time they're opened and aren't kept by the backend or saved to disk; the browser lets one go a minute after it leaves the screen. GitHub replaces secrets it knows with `***`, but anything else a workflow printed is in its log.
 
 **Run a workflow**
 
@@ -266,7 +279,7 @@ Running needs write access to the repository and uses the repository's account, 
 
 Apart from starting a workflow, Actions only reads runs. Use GitHub for:
 
-- logs, which each job links to;
+- logs of jobs that are still running, and downloading a whole run's logs;
 - re-running and cancelling runs;
 - approving deployments that wait for an environment;
 - downloading artifacts;
