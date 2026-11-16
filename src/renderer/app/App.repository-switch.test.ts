@@ -293,19 +293,22 @@ it('reads the repository on a timer while the server watches another one, until 
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   try {
     const reads = () => calls.getStatus.mock.calls.length;
+    // An announcement starts a read of its own, which a slow machine may still be making after one
+    // `settle`: the counts below are taken once no more reads arrive.
+    const quiet = async () => { let seen = -1; while (seen !== reads()) { seen = reads(); await settle(); await settle(); } };
     const before = reads();
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     // Watched: the server reports every change, so nothing is read on a timer.
     expect(reads()).toBe(before);
     // Another client opened another repository: this one's changes now go unreported.
     await act(async () => calls.repositoryChanged!('repo', 'unknown', 'stopped'));
-    await settle();
+    await quiet();
     const told = reads();
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
-    await settle();
+    await quiet();
     expect(reads()).toBe(told + 2);
     await act(async () => calls.repositoryChanged!('repo', 'worktree', 'watching', 'second'));
-    await settle();
+    await quiet();
     const watched = reads();
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     await settle();
@@ -325,10 +328,10 @@ it('reads the repository on a timer while the server watches another one, until 
     // The connection dropped, and the server's bootstrap afterwards named another repository as watched.
     await act(async () => { for (const reconnected of calls.reconnected) reconnected(); });
     await act(async () => calls.repositoryChanged!('repo-b', 'unknown', 'watching', 'elsewhere'));
-    await settle();
+    await quiet();
     const reconnected = reads();
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-    await settle();
+    await quiet();
     expect(reads()).toBe(reconnected + 1);
   } finally { vi.useRealTimers(); }
 });
