@@ -62,6 +62,8 @@ test('n and p move between the files of a commit, and Esc in the viewer returns 
   for (const name of ['alpha', 'beta', 'gamma']) await writeFile(path.join(repository.path, `${name}.txt`), `${name}\n`);
   await repository.git('add', '.');
   await repository.git('commit', '-q', '-m', 'Add three files');
+  // A newer commit, so the row to return to is not the first of the list.
+  await repository.commit('later.txt', 'later\n', 'A later change');
   await openLoadedRepository(page, repository);
   await section(page, 'History').click();
 
@@ -91,7 +93,7 @@ test('g and a letter change section, and the focus lands in its list', async ({ 
   await openLoadedRepository(page, repository);
   await expect(section(page, 'Files')).toHaveAttribute('aria-current', 'page');
 
-  await page.locator('body').click({ position: { x: 1, y: 1 } });
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press('g');
   await page.keyboard.press('h');
   await expect(section(page, 'History')).toHaveAttribute('aria-current', 'page');

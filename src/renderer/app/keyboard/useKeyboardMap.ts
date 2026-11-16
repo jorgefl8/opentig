@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { SidebarView } from '../navigation/location';
-import { isOverlayOpen, isTypingTarget, readKey, type ChordState, type KeyArea, type KeyCommand } from './keys';
+import { isOverlayOpen, isTypingTarget, ownsEscape, readKey, type ChordState, type KeyArea, type KeyCommand } from './keys';
 import {
   currentRow, focusRow, folderExpanded, isFolderRow, listRows, listScroller, moveToFile, parentRow, rowAfter, rowAt, rowTarget, shownList,
 } from './list-navigation';
@@ -33,11 +33,15 @@ export function useKeyboardMap(options: KeyboardMapOptions): void {
     let heldTimer: ReturnType<typeof setTimeout> | undefined;
     let frame = 0;
     const open = (row: HTMLElement) => rowTarget(row).click();
-    const openHeld = () => {
+    const dropHeld = () => {
       clearTimeout(heldTimer);
-      const row = held;
       held = null;
-      if (row?.isConnected) open(row);
+    };
+    const openHeld = () => {
+      const row = held;
+      dropHeld();
+      // Not a row of a section left meanwhile: hidden sections keep their rows.
+      if (row?.isConnected && shownList()?.contains(row)) open(row);
     };
     /** Opens a row the list moved to; while the key repeats, only the row it stops on. */
     const follow = (row: HTMLElement, repeat: boolean) => {
@@ -60,11 +64,12 @@ export function useKeyboardMap(options: KeyboardMapOptions): void {
       if (!body.contains(document.activeElement)) body.focus({ preventScroll: true });
       return true;
     }, 2);
-    const focusShownList = (preferCurrent = true) => afterPaint(() => {
+    /** Puts focus in the section's list: on `prefer` while it is still drawn there, else on the row the viewer shows, else on the first. */
+    const focusShownList = (prefer: HTMLElement | null = null) => afterPaint(() => {
       if (isTypingTarget(document.activeElement)) return true;
       const root = shownList();
       if (!root) return false;
-      const row = (preferCurrent ? currentRow(root) : null) ?? listRows(root)[0];
+      const row = (prefer?.isConnected && root.contains(prefer) ? prefer : null) ?? currentRow(root) ?? listRows(root)[0];
       if (!row) return false;
       focusRow(row);
       return true;
@@ -72,6 +77,8 @@ export function useKeyboardMap(options: KeyboardMapOptions): void {
 
     const run = (command: KeyCommand, area: KeyArea, target: EventTarget | null, repeat: boolean): boolean => {
       const { mobile, viewer } = latest.current;
+      // A row a held key was about to open is given up by any key that is not another step.
+      if (command.kind !== 'move' && command.kind !== 'file') dropHeld();
       if (command.kind === 'chord') return true;
       if (command.kind === 'section') {
         latest.current.showSection(command.view);
@@ -109,6 +116,8 @@ export function useKeyboardMap(options: KeyboardMapOptions): void {
           return true;
         }
         if (command.kind === 'open') {
+          // Held, Enter would open and shut a folder over and over.
+          if (repeat) return true;
           open(row);
           if (!isFolderRow(row)) keepFocusInViewer();
           return true;
@@ -146,15 +155,20 @@ export function useKeyboardMap(options: KeyboardMapOptions): void {
       }
       if (command.kind === 'move' && (command.to === 'next' || command.to === 'previous')) return moveFromViewer(command.to, repeat);
       if (command.kind === 'close') {
+        // An editor or a job's log open in the viewer closes itself with Esc, or keeps what was typed in it.
+        if (ownsEscape(target)) return false;
+        // Closing takes the mark off the row the viewer showed, so the row is noted first.
+        const list = shownList();
+        const shownRow = list ? currentRow(list) : null;
         if (mobile) {
           latest.current.phoneBack();
-          focusShownList();
+          focusShownList(shownRow);
           return true;
         }
         const shown = viewer();
         if (shown === 'none') return false;
         if (shown === 'other') latest.current.closeViewer();
-        focusShownList();
+        focusShownList(shownRow);
         return true;
       }
       return false;
@@ -163,7 +177,10 @@ export function useKeyboardMap(options: KeyboardMapOptions): void {
     const moveFromViewer = (to: 'next' | 'previous', repeat: boolean): boolean => {
       const root = shownList();
       if (!root) return false;
-      const from = currentRow(root);
+      // While the key is held the viewer has not opened the row before, so the step goes on from the row waiting to open.
+      const from = (held?.isConnected && root.contains(held) ? held : null) ?? currentRow(root);
+      // What the viewer shows is not among the rows drawn: there is no next row to name.
+      if (!from) return false;
       const next = rowAfter(listRows(root), from, to, true);
       if (!next || next === from) return true;
       next.scrollIntoView?.({ block: 'nearest' });

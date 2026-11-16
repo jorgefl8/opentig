@@ -37,7 +37,7 @@ export interface KeyContext {
 /** When `g` was pressed, while it waits for a letter. */
 export interface ChordState { since: number | null }
 
-type KeyInput = Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'isComposing' | 'keyCode' | 'defaultPrevented' | 'timeStamp'>;
+type KeyInput = { code?: string } & Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'isComposing' | 'keyCode' | 'defaultPrevented' | 'timeStamp'>;
 
 /**
  * What a key does, or null to leave it to the browser and whatever else listens.
@@ -51,7 +51,7 @@ export function readKey(event: KeyInput, context: KeyContext, chord: ChordState)
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return null;
   if (context.typing || context.overlay) return null;
   if (event.ctrlKey || event.metaKey || event.altKey) return null;
-  const key = event.key;
+  const key = plainKey(event);
   // `?` is a shifted key on most layouts; every other key here is read without Shift.
   if (key === '?') return { kind: 'help' };
   if (event.shiftKey) return null;
@@ -82,6 +82,28 @@ export function readKey(event: KeyInput, context: KeyContext, chord: ChordState)
     if (key === 'Escape') return { kind: 'close' };
   }
   return null;
+}
+
+/**
+ * The key as its letter: lower case with Caps Lock on, and on a layout whose keys are
+ * not Latin letters, the letter printed on the same key of a Latin one.
+ */
+function plainKey(event: KeyInput): string {
+  const { key } = event;
+  if (key.length !== 1) return key;
+  if (key >= 'A' && key <= 'Z' && !event.shiftKey) return key.toLowerCase();
+  const letter = /^Key([A-Z])$/.exec(event.code ?? '');
+  if (letter && key.charCodeAt(0) > 127) return letter[1]!.toLowerCase();
+  return key;
+}
+
+/**
+ * Whether Esc pressed here belongs to what is open inside the viewer, which marks itself
+ * with `data-escape-owner`: it closes itself, or holds on to text that would be lost.
+ */
+export function ownsEscape(target: EventTarget | null): boolean {
+  if (!target || typeof (target as Element).closest !== 'function') return false;
+  return (target as Element).closest('[data-escape-owner]') !== null;
 }
 
 const TEXT_TARGETS = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="searchbox"], [role="combobox"], [role="spinbutton"]';

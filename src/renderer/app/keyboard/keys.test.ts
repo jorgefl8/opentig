@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHORD_TIMEOUT_MS, isOverlayOpen, isTypingTarget, readKey, type ChordState, type KeyContext } from './keys';
 
-type Press = Partial<Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'isComposing' | 'keyCode' | 'defaultPrevented' | 'timeStamp'>>;
+type Press = Partial<Pick<KeyboardEvent, 'code' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'isComposing' | 'keyCode' | 'defaultPrevented' | 'timeStamp'>>;
 const press = (key: string, extra: Press = {}) => ({
   key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, isComposing: false, keyCode: 0, defaultPrevented: false, timeStamp: 0, ...extra,
 });
@@ -104,6 +104,22 @@ describe('g and a section letter', () => {
     readKey(press('g'), elsewhere, chord);
     expect(readKey(press('h', { ctrlKey: true }), elsewhere, chord)).toBeNull();
     expect(readKey(press('h'), elsewhere, chord)).toBeNull();
+  });
+});
+
+describe('letters on other keyboards', () => {
+  it('reads a letter with Caps Lock on as the letter, and still not with Shift', () => {
+    expect(readKey(press('J'), list, fresh())).toEqual({ kind: 'move', to: 'next' });
+    expect(readKey(press('J', { shiftKey: true }), list, fresh())).toBeNull();
+    expect(readKey(press('j', { shiftKey: true }), list, fresh())).toBeNull();
+  });
+
+  it('reads a key of a layout without Latin letters by its place, and a Latin layout by its letter', () => {
+    expect(readKey(press('о', { code: 'KeyJ' }), list, fresh())).toEqual({ kind: 'move', to: 'next' });
+    expect(readKey(press('п', { code: 'KeyG' }), elsewhere, fresh())).toEqual({ kind: 'chord' });
+    // Dvorak prints j on the key a QWERTY keyboard calls C.
+    expect(readKey(press('j', { code: 'KeyC' }), list, fresh())).toEqual({ kind: 'move', to: 'next' });
+    expect(readKey(press('ж', { code: 'Semicolon' }), list, fresh())).toBeNull();
   });
 });
 

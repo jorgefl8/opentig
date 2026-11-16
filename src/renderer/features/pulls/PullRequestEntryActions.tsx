@@ -142,7 +142,7 @@ export function PullRequestEntryEditor({ repositoryId, number, entry, onClose }:
   // Escape only leaves untouched text, so a stray key can't throw it away.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => { if (event.key === 'Escape' && !edited && !busy) cancel(); };
   return (
-    <div className="pr-composer pr-entry-editor" onKeyDown={onKeyDown}>
+    <div className="pr-composer pr-entry-editor" data-escape-owner="" onKeyDown={onKeyDown}>
       {field}
       <div className="pr-composer-actions">
         {note && <span className="pr-composer-account">{note}</span>}
