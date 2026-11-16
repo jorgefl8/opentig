@@ -24,8 +24,8 @@ export function KeptReadNotice({ prefixes, onRetry, className }: { prefixes: rea
     <span className={cn('kept-read-notice', kept.status === 'failed' && 'kept-read-failed', className)} role="status">
       {kept.status === 'refreshing'
         ? <><Spinner className="size-3" />{saved}<span>· Updating…</span></>
-        : <>{saved}<span>· Couldn’t update{kept.error?.message ? `: ${kept.error.message}` : ''}</span>
-          {onRetry && <Button variant="ghost" size="xs" onClick={onRetry}>Retry</Button>}</>}
+        : <>{saved}<span className="kept-read-outcome">· Couldn’t update{kept.error?.message ? <>: <span className="kept-read-message">{kept.error.message}</span></> : null}</span>
+          {onRetry && <Button variant="ghost" size="xs" className="kept-read-retry" onClick={onRetry}>Retry</Button>}</>}
     </span>
   );
 }
