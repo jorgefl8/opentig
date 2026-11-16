@@ -233,21 +233,34 @@ describe('RepositoryWatchPool', () => {
     expect(started).toEqual(['a', 'a']);
   });
 
-  it('stops a watch before its folder goes, keeps who holds it, and watches it again if asked', async () => {
+  it('stops a watch before its folder goes, keeps who holds it, and watches it again when the folder may be', async () => {
     const { pool, started, stopped, states } = fixture();
     pool.hold('tab', repository('a'));
     pool.hold('other', repository('b'));
-    const paused = await pool.pause((target) => target.id === 'a');
-    expect(paused).toEqual(['a']);
+    await pool.pause('/repositories/a/');
     expect(stopped).toEqual(['a']);
     expect(states.at(-1)).toEqual(['a', 'stopped', null]);
     expect(pool.status('a').state).toBe('stopped');
     expect(pool.heldBy('tab')).toBe('a');
-    // Held again meanwhile, it stays stopped until it is resumed.
+    // Held again meanwhile, it stays stopped until the pause ends.
     pool.hold('third', repository('a'));
     expect(started).toEqual(['a', 'b']);
-    pool.resume(paused);
+    pool.endPause('/repositories/a');
     expect(started).toEqual(['a', 'b', 'a']);
     expect(pool.status('a').state).toBe('watching');
   });
+
+  it('starts no watch in a folder being deleted, even for someone who opens it after everyone left it', async () => {
+    const { pool, started } = fixture();
+    pool.hold('tab', repository('a'));
+    await pool.pause('/repositories/a');
+    // Its last holder leaves, and a page reconnecting asks for it again.
+    pool.release('tab');
+    pool.hold('reconnected', repository('a'));
+    expect(started).toEqual(['a']);
+    expect(pool.status('a').state).toBe('stopped');
+    pool.endPause('/repositories/a');
+    expect(started).toEqual(['a', 'a']);
+  });
+
 });
