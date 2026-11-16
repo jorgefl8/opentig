@@ -10,13 +10,17 @@ import { git, standaloneRepository } from './test-support/repository-fixtures';
 const run = promisify(execFile);
 const hasSshKeygen = (() => { try { execFileSync('ssh-keygen', ['-?'], { stdio: 'ignore' }); return true; } catch (error) { return (error as { status?: number }).status !== undefined; } })();
 
-/** Appends `count` commits that each change `file`, in one `git fast-import` run. */
-async function fastCommits(work: string, file: string, count: number) {
+/**
+ * Appends `count` commits that each change `file`, in one `git fast-import` run: a process per
+ * commit takes Windows longer than a test may run.
+ */
+async function fastCommits(work: string, file: string, count: number, subject: (index: number) => string = () => 'change') {
   const now = Math.floor(Date.now() / 1000);
   let stream = '';
   for (let index = 0; index < count; index++) {
     const content = `${index}\n`;
-    stream += `commit refs/heads/main\ncommitter OpenTig Test <opentig@example.invalid> ${now} +0000\ndata 7\nchange\n${index === 0 ? 'from refs/heads/main^0\n' : ''}M 100644 inline ${file}\ndata ${Buffer.byteLength(content)}\n${content}\n`;
+    const message = `${subject(index)}\n`;
+    stream += `commit refs/heads/main\ncommitter OpenTig Test <opentig@example.invalid> ${now} +0000\ndata ${Buffer.byteLength(message)}\n${message}${index === 0 ? 'from refs/heads/main^0\n' : ''}M 100644 inline ${file}\ndata ${Buffer.byteLength(content)}\n${content}\n`;
   }
   const child = run('git', ['fast-import', '--quiet'], { cwd: work, maxBuffer: 16 * 1024 * 1024 });
   child.child.stdin!.end(stream);
@@ -78,10 +82,10 @@ describe("a file's history", () => {
 
   it('pages a long history from where the first page started, across a rename, even after HEAD moves', async () => {
     const fixture = await standaloneRepository();
-    for (let index = 0; index < 60; index++) await commitFile(fixture.work, 'old.txt', `${index}\n`, `Old ${index}`);
+    await fastCommits(fixture.work, 'old.txt', 60, (index) => `Old ${index}`);
     await git(fixture.work, ['mv', 'old.txt', 'new.txt']);
     await git(fixture.work, ['commit', '-m', 'Rename']);
-    for (let index = 0; index < 60; index++) await commitFile(fixture.work, 'new.txt', `${index}\n`, `New ${index}`);
+    await fastCommits(fixture.work, 'new.txt', 60, (index) => `New ${index}`);
 
     const first = await fixture.operations.fileHistory(fixture.repositoryId, 'new.txt');
     expect(first.entries).toHaveLength(100);
