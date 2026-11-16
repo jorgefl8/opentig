@@ -56,7 +56,7 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     try { window.sessionStorage.setItem(TOP_KEY, String(value)); } catch { /* storage unavailable: Forward is known for this page only */ }
   };
   const write = (entry: NavigationEntry, mode: 'push' | 'replace') => {
-    const stored: StoredEntry = { v: 1, key: entry.key, index, location: entry.location, memory: entry.memory };
+    const stored: StoredEntry = { v: 1, key: entry.key, index, location: storedLocation(entry.location), memory: entry.memory };
     const url = addressFor(entry.location);
     writtenUrl = url;
     try {
@@ -177,6 +177,16 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
   };
 }
 
+/** What a step keeps in the browser's history: only what brings it back, so not a commit's subject. */
+function storedLocation(location: NavigationLocation): NavigationLocation {
+  const strip = (selection: ViewerSelection): ViewerSelection => selection?.type === 'commit' ? { ...selection, subject: '' } : selection;
+  return {
+    ...location,
+    selection: strip(location.selection),
+    fileHistory: location.fileHistory ? { ...location.fileHistory, returnTo: { ...location.fileHistory.returnTo, selection: strip(location.fileHistory.returnTo.selection) } } : null,
+  };
+}
+
 function readTop(): number {
   try {
     const value = Number(window.sessionStorage.getItem(TOP_KEY));
@@ -255,7 +265,8 @@ function validSelection(value: unknown): ViewerSelection | undefined {
   } catch {
     return undefined;
   }
-  if (candidate.type === 'commit') return { type: 'commit', oid: candidate.oid, subject: typeof candidate.subject === 'string' ? candidate.subject.slice(0, 500) : candidate.oid.slice(0, 8) };
+  // A commit's subject is only its label until History has it, and is not kept: the short id stands in.
+  if (candidate.type === 'commit') return { type: 'commit', oid: candidate.oid, subject: candidate.oid.slice(0, 8) };
   return candidate;
 }
 

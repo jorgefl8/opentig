@@ -199,7 +199,7 @@ function wholeNumber(value: string | undefined): number | null {
 /**
  * A path relative to the worktree that cannot leave it: no empty, `.` or `..`
  * parts, no absolute or drive paths, no backslashes, no control characters, and
- * nothing inside `.git`. The server checks paths again before reading them.
+ * nothing inside a `.git` folder at any depth. The server checks paths again before reading them.
  */
 export function safePath(value: string): string | null {
   if (!value || value.length > MAX_PATH_LENGTH) return null;
@@ -207,7 +207,7 @@ export function safePath(value: string): string | null {
   if (/[\u0000-\u001f\u007f\\]/.test(value) || /^[A-Za-z]:/.test(value)) return null;
   const parts = value.split('/');
   if (parts.some((part) => part === '' || part === '.' || part === '..')) return null;
-  if (parts[0]!.toLowerCase() === '.git') return null;
+  if (parts.some((part) => part.toLowerCase() === '.git')) return null;
   return value;
 }
 

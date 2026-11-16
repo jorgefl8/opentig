@@ -18,11 +18,11 @@ The expanded tabs count the changed files and the listed pull requests and mark 
 
 ## Back and Forward
 
-OpenTig keeps a trail of the places you visit. Go back and forward along it with the **Back** and **Forward** arrows at the right of the top bar, `Alt+←` and `Alt+→`, or the back and forward buttons of a mouse. On a Mac, `Option+←` and `Option+→` keep moving the caret by word in a text field.
+OpenTig keeps a trail of the places you visit. Go back and forward along it with the **Back** and **Forward** arrows at the right of the top bar, the back and forward buttons of a mouse, or the keys: `Alt+←` and `Alt+→` in the desktop app, and the browser's own in a browser, which are `Cmd+[` and `Cmd+]` on a Mac. The arrows' tooltips and **Settings → Shortcuts** show the keys that apply where OpenTig is running.
 
 **A step is a place you open:** a repository or worktree, a section, a change, a file, a commit or one of its files, a pull request, a release, a workflow run, or a file's history. Everything else updates the step you are on instead of adding one: a pull request's tab, the files you unfold, a job's log in a run, the scroll position of the list and the viewer, a search you type. So Back brings a place back as you left it, with the same tab, the same files unfolded, and the line you were reading back on screen. Going somewhere new from the middle of the trail drops the steps that were ahead.
 
-**Back only navigates.** It never stages, saves, discards, or switches a branch, and what is still in memory shows without being read again. Unsaved edits stay in their tabs. A file whose tab you closed opens again. A step in another repository opens that repository, as choosing it in the picker would. When what a step showed is gone, such as a change you committed or discarded, a deleted file, or a repository removed from OpenTig, a notice says so and you land on the section without it.
+**Back only navigates.** It never stages, saves, discards, or switches a branch, and what is still in memory shows without being read again. Unsaved edits stay in their tabs. A file whose tab you closed opens again. A step in another repository opens that repository, as choosing it in the picker would; if you go somewhere else before it opens, it doesn't open. When what a step showed is gone, such as a change you committed or discarded, a deleted file, or a repository removed from OpenTig, a notice says so and you land on the section without it.
 
 The desktop app keeps the last 100 steps of the session. In a browser, the trail is the browser's own history: each step has an [address](web-access.md#addresses), and the browser's Back and Forward walk it too.
 

@@ -33,7 +33,7 @@ describe('addresses', () => {
   it('refuse paths that leave the worktree or reach into Git’s own folder', () => {
     for (const address of [
       '/r/r1/file/..%2F..%2Fetc%2Fpasswd', '/r/r1/file/src/../../etc/passwd', '/r/r1/file//etc/passwd', '/r/r1/file/src%5C..%5Csecret',
-      '/r/r1/file/C:%2Fwindows', '/r/r1/file/.git/config', '/r/r1/file/a%00b', '/r/r1/changes/staged/../x', '/r/r1/commit/' + OID + '/file/..%2Fx',
+      '/r/r1/file/C:%2Fwindows', '/r/r1/file/.git/config', '/r/r1/file/sub/.git/config', '/r/r1/file/sub/.GIT/hooks/x', '/r/r1/file/a%00b', '/r/r1/changes/staged/../x', '/r/r1/commit/' + OID + '/file/..%2Fx',
       '/r/r1/history?history-of=../x', '/r/r1/commit/' + OID + '/file/x?from=..%2Fy', '/r/r1/file/%E0%A4%A',
     ]) expect(read(address).kind, address).toBe('malformed');
   });
