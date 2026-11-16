@@ -5,7 +5,7 @@ import { githubAccountSelectionSchema } from '../../shared/github-accounts';
 import { commitAuthorshipInputSchema } from '../../shared/commit-authorship';
 import { lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import type { DiffRequest, Preferences, RepositoryInfo } from '../../shared/contracts';
+import type { ClientAttachment, DiffRequest, Preferences, RepositoryInfo } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
 import { aiExecutablePathsKey } from '../../shared/ai-status';
 import { GitOperationError } from '../../shared/errors';
@@ -76,12 +76,13 @@ export function registerServerCommands(
    * Runs an open for the client that asked: the repository becomes the one its connection has open,
    * and no other client's. Of two opens on one connection, the one asked for last wins.
    */
-  const openForClient = async (context: CommandExecutionContext, open: () => Promise<RepositoryInfo>): Promise<RepositoryInfo> => {
+  const openForClient = async (context: CommandExecutionContext, open: () => Promise<RepositoryInfo>): Promise<RepositoryInfo & { attachment?: ClientAttachment }> => {
     const ticket = services.clients.beginOpen(context.connectionId);
     const repository = await open();
     fileClipboardState(context).pendingCut = null;
-    services.clients.attach(context.connectionId, repository, ticket, { afterAnswer: (task) => context.afterAnswer(task) });
-    return repository;
+    const attachment = services.clients.attach(context.connectionId, repository, ticket, { afterAnswer: (task) => context.afterAnswer(task) });
+    // Whether it took, and where the server has the connection (see `ClientAttachment`); older clients ignore it.
+    return context.connectionId ? { ...repository, attachment } : repository;
   };
   const openRepositoryPath = (selectedPath: string, context: CommandExecutionContext) => openForClient(
     context, () => openRuntimeRepositoryPath(services, selectedPath),
@@ -113,17 +114,23 @@ export function registerServerCommands(
     // A client asks for the repository it was on, after a reload or a dropped connection: it opens
     // for this client only, and changes nothing saved. One this server does not know, or cannot open,
     // gives the repository opened last, as a client asking for none gets.
+    // A repository relocated since the client last saw it is asked for by its old id.
+    const wantedId = requestedId ? services.repositories.relocatedId(requestedId) : null;
     let activeRepository: RepositoryInfo | null = null;
-    if (requestedId && context.connectionId && services.repositories.recent(requestedId)) {
-      activeRepository = await services.repositories.openKnown(requestedId).catch(() => null);
+    if (wantedId && context.connectionId && services.repositories.recent(wantedId)) {
+      activeRepository = await services.repositories.openKnown(wantedId).catch(() => null);
     }
     activeRepository ??= await services.repositories.restore();
-    if (activeRepository) services.clients.attach(context.connectionId, activeRepository, ticket, { quiet: true, afterAnswer: (task) => context.afterAnswer(task) });
-    const activeRepositoryWatch = activeRepository ? services.clients.watch(context.connectionId, activeRepository.id) : undefined;
+    const attachment = activeRepository ? services.clients.attach(context.connectionId, activeRepository, ticket, { afterAnswer: (task) => context.afterAnswer(task) }) : null;
     const unavailableRepositoryIds = await services.repositories.unavailableIds();
     const activeId = services.settings.activeRepositoryId;
-    const missingId = [requestedId, activeId].find((id) => id && unavailableRepositoryIds.includes(id));
+    const missingId = [wantedId, activeId].find((id) => id && unavailableRepositoryIds.includes(id));
+    // Last, with nothing awaited after it: no newer news of the watch can reach the client before this answer.
+    const activeRepositoryWatch = activeRepository ? services.clients.watch(context.connectionId, activeRepository.id) : undefined;
+    const relocatedRepositoryIds = services.repositories.relocatedIds();
     return {
+      ...(attachment && context.connectionId ? { attachment } : {}),
+      ...(Object.keys(relocatedRepositoryIds).length > 0 ? { relocatedRepositoryIds } : {}),
       unavailableRepositoryIds,
       unavailableActiveRepositoryId: !activeRepository && missingId ? missingId : null,
       onboardingVersion: services.settings.onboardingVersion,
@@ -205,7 +212,7 @@ export function registerServerCommands(
   /** A repository moved and has a new id: every client on the old one follows it there. */
   const followRelocation = (previousId: string, repository: RepositoryInfo, except?: string) => {
     if (previousId === repository.id) return;
-    services.clients.move([previousId], repository, except);
+    services.clients.move([previousId], repository, { reason: 'relocated', recentRepositories: services.repositories.recents(), except });
     services.clients.forget([previousId]);
   };
   handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
@@ -538,7 +545,7 @@ export function registerServerCommands(
       if (removed.length > 0) {
         const main = services.settings.mainWorktree(commonDir);
         const target = main && remaining.has(main.id) ? services.repositories.get(main.id) : remaining.has(repositoryId) ? services.repositories.get(repositoryId) : null;
-        if (target) services.clients.move(removed, target, context.connectionId);
+        if (target) services.clients.move(removed, target, { reason: 'removed', recentRepositories: services.repositories.recents(), except: context.connectionId });
         services.clients.forget(removed);
       }
       // Whoever asked may have stopped waiting long ago, and siblings list the same worktrees.

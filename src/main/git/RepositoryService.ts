@@ -9,9 +9,14 @@ import type { SettingsStore } from '../persistence/SettingsStore';
 import type { GitProcess } from './GitProcess';
 import { parseStatus } from './StatusParser';
 
+/** Relocations remembered per run, for addresses and steps still naming a repository's old id. */
+const MAX_RELOCATIONS = 100;
+
 export class RepositoryService {
   private readonly repositories = new Map<string, RepositoryInfo>();
   private untrackedLineCache = new Map<string, { size: number; mtimeMs: number; lines: number }>();
+  /** Saved repositories relocated during this run, from their old id to the new one; the oldest give way. */
+  private readonly relocations = new Map<string, string>();
 
   constructor(private readonly git: GitProcess, private readonly settings: SettingsStore) {}
 
@@ -74,6 +79,11 @@ export class RepositoryService {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'That folder is already in OpenTig. Remove the old entry instead, or choose a different location.' });
     }
     await this.settings.relocateRepository(id, repository, activate);
+    if (repository.id !== id) {
+      this.relocations.delete(id);
+      this.relocations.set(id, repository.id);
+      if (this.relocations.size > MAX_RELOCATIONS) this.relocations.delete(this.relocations.keys().next().value!);
+    }
     this.git.unregisterRepository(previous.path);
     this.repositories.delete(id);
     this.repositories.set(repository.id, repository);
@@ -154,6 +164,23 @@ export class RepositoryService {
       }
     }
     return organization;
+  }
+
+  /** The id a repository relocated during this run has now, following each move; `id` itself otherwise. */
+  relocatedId(id: string): string {
+    let current = id;
+    for (let step = 0; step < MAX_RELOCATIONS && this.relocations.has(current) && !this.recent(current); step += 1) current = this.relocations.get(current)!;
+    return current;
+  }
+
+  /** Every relocation of this run still saved, from the old id to the current one. */
+  relocatedIds(): Record<string, string> {
+    const ids: Record<string, string> = {};
+    for (const previousId of this.relocations.keys()) {
+      const current = this.relocatedId(previousId);
+      if (current !== previousId && this.recent(current)) ids[previousId] = current;
+    }
+    return ids;
   }
 
   recent(id: string): RecentRepository | null {

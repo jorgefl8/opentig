@@ -1,4 +1,4 @@
-import type { RepositoryInfo } from './contracts';
+import type { RecentRepository, RepositoryInfo } from './contracts';
 import type { RepositoryChangeScope } from './repository-change';
 import type { GitHubAccountDetection } from './github-accounts';
 import type { KeptRefreshOutcome } from './kept-reads';
@@ -19,11 +19,29 @@ export type OpenTigRuntimeEvent =
       watch?: RepositoryWatchState;
       /** With `watch: 'watching'`: the new watch, which read results name when it covers them. */
       watchId?: string;
+      /**
+       * `false`: nothing went unreported that the client has read, so it need not read the repository
+       * again. Sent where each client has its own repository, for a watch it is told of right after
+       * the answer that opened the repository, which every read it makes from then on comes after,
+       * and for one that ended because the client left the repository. Older clients read anyway.
+       */
+      refresh?: false;
     }
-  /** Sent by servers without `repositoryPerClient`, where every client follows one shared repository. */
+  /**
+   * Servers without `repositoryPerClient` send it to every client when any opens a repository, which
+   * all of them follow. Servers with it send it only to a client they move: off a worktree that was
+   * removed, or onto the new id of a repository that was relocated, with the rest of the fields.
+   */
   | {
       type: 'repository.active-changed';
       repository: RepositoryInfo;
+      /** The repository the client was moved off, and why. */
+      previousId?: string;
+      reason?: 'removed' | 'relocated';
+      /** The saved repositories after the change, which no longer list the one the client left. */
+      recentRepositories?: RecentRepository[];
+      /** Orders this move among the client's opens (see `ClientAttachment`). */
+      ticket?: number;
     }
   /**
    * The read behind a kept answer finished. Sent only on the connection that made the
