@@ -73,14 +73,17 @@ export class ClientRepositories {
   }
 
   /**
-   * The connection now has `repository` open. Unless `quiet`, it is told at once how the repository
-   * is watched, ahead of the answer to the open, so it trusts what it reads from the start.
+   * The connection now has `repository` open. Once the answer to the open is on its way (`afterAnswer`),
+   * the connection is told the repository it left is no longer watched for it, and, unless `quiet`, how
+   * the one it opened is: a client takes a watch only for the repository it has arrived on.
    * False when the connection is gone, or a later open on it already finished.
    */
-  attach(connectionId: string | undefined, repository: RepositoryInfo, ticket: number, quiet = false): boolean {
+  attach(connectionId: string | undefined, repository: RepositoryInfo, ticket: number, options: { quiet?: boolean; afterAnswer?: (task: () => void) => void } = {}): boolean {
     const connection = connectionId === undefined ? undefined : this.connections.get(connectionId);
     if (!connectionId || !connection || ticket < connection.attached) return false;
     connection.attached = ticket;
+    const left = connection.repository && connection.repository.id !== repository.id && connection.told && connection.told !== 'stopped'
+      ? connection.repository.id : null;
     if (connection.repository?.id !== repository.id) {
       connection.watchId = null;
       connection.clientWatchId = null;
@@ -88,12 +91,26 @@ export class ClientRepositories {
     }
     connection.repository = repository;
     this.pool.hold(connectionId, repository);
-    const watch = this.watchOf(connectionId, connection);
-    if (!quiet && watch && watch.state !== connection.told) {
-      connection.told = watch.state;
-      this.sendWatch(connectionId, repository.id, watch.state, watch.watchId);
-    } else if (watch) connection.told = watch.state;
+    if (options.quiet) {
+      const watch = this.watchOf(connectionId, connection);
+      if (watch) connection.told = watch.state;
+    }
+    const tell = () => {
+      if (this.connections.get(connectionId) !== connection) return;
+      if (left && connection.repository?.id !== left) this.sendWatch(connectionId, left, 'stopped', null);
+      if (!options.quiet && connection.repository?.id === repository.id) this.announce(connectionId, connection);
+    };
+    if (options.afterAnswer) options.afterAnswer(tell);
+    else tell();
     return true;
+  }
+
+  /** Tells the connection how its repository is watched, unless it was already told so. */
+  private announce(connectionId: string, connection: ClientConnection): void {
+    const watch = this.watchOf(connectionId, connection);
+    if (!watch || watch.state === connection.told) return;
+    connection.told = watch.state;
+    this.sendWatch(connectionId, connection.repository!.id, watch.state, watch.watchId);
   }
 
   /** How the connection's repository is watched, as the connection is to know it; undefined while it is being set up. */
@@ -142,7 +159,8 @@ export class ClientRepositories {
   /** The pool's watch of the repository went from one state to another. */
   watchChanged(repositoryId: string, state: RepositoryWatchState, watchId: string | null): void {
     for (const [id, connection] of this.connections) {
-      if (connection.repository?.id !== repositoryId) continue;
+      // Only a connection the pool counts on the repository is told it is watched.
+      if (connection.repository?.id !== repositoryId || this.pool.heldBy(id) !== repositoryId) continue;
       if (state === 'watching' && watchId) {
         connection.watchId = watchId;
         connection.clientWatchId = randomUUID();
@@ -155,18 +173,22 @@ export class ClientRepositories {
     }
   }
 
-  /** Repositories removed from OpenTig: their watches stop, and whoever has one open is told so. */
+  /**
+   * Repositories removed from OpenTig: whoever has one open no longer has a repository here, and is
+   * told its watch is over; then the watch stops.
+   */
   forget(repositoryIds: Iterable<string>): void {
     for (const repositoryId of repositoryIds) {
-      this.pool.forget(repositoryId);
       for (const [id, connection] of this.connections) {
         if (connection.repository?.id !== repositoryId) continue;
-        const told = connection.told;
+        connection.repository = null;
         connection.watchId = null;
         connection.clientWatchId = null;
-        connection.told = 'stopped';
-        if (told !== 'stopped') this.sendWatch(id, repositoryId, 'stopped', null);
+        connection.told = null;
+        this.pool.release(id);
+        this.sendWatch(id, repositoryId, 'stopped', null);
       }
+      this.pool.forget(repositoryId);
     }
   }
 
