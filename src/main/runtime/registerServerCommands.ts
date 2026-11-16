@@ -531,8 +531,7 @@ export function registerServerCommands(
         ...(cleanupOnly === undefined ? {} : { cleanupOnly }),
         currentPath,
         beforeDelete: async (worktreePath) => {
-          pausedFolder = worktreePath;
-          await services.watcher.pause(worktreePath);
+          pausedFolder = await services.watcher.pause(worktreePath);
         },
       });
     } finally {

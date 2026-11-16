@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryWatchState } from '../../shared/runtime-events';
@@ -6,7 +9,7 @@ import { RepositoryWatchPool } from './RepositoryWatchPool';
 const repository = (id: string): RepositoryInfo => ({ id, name: id, repositoryName: id, path: `/repositories/${id}`, commonDir: `/repositories/${id}/.git` });
 
 /** A pool whose watches stand in for the system's: each starts watching at once and records being stopped. */
-function fixture(options: { maxWatched?: number } = {}) {
+function fixture(options: { maxWatched?: number; logger?: (level: 'info' | 'warn' | 'error', message: string) => void } = {}) {
   const started: string[] = [];
   const stopped: string[] = [];
   const states: [string, RepositoryWatchState, string | null][] = [];
@@ -16,6 +19,7 @@ function fixture(options: { maxWatched?: number } = {}) {
     graceMs: 15_000,
     startDelayMs: 300,
     ...(options.maxWatched ? { maxWatched: options.maxWatched } : {}),
+    ...(options.logger ? { logger: options.logger } : {}),
     onState: (id, state, watchId) => states.push([id, state, watchId]),
     createWatcher: (onState) => {
       let current: { id: string; watchId: string } | null = null;
@@ -263,4 +267,30 @@ describe('RepositoryWatchPool', () => {
     expect(started).toEqual(['a', 'a']);
   });
 
+
+  // Creating a symbolic link needs a privilege on Windows; there the server's own paths are what is compared.
+  it.skipIf(process.platform === 'win32')('pauses a repository named another way than Git names it, as through a symbolic link', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-pool-'));
+    try {
+      await mkdir(path.join(root, 'real'));
+      await symlink(path.join(root, 'real'), path.join(root, 'link'), 'dir');
+      const { pool, stopped } = fixture();
+      const named = await realpath(path.join(root, 'real'));
+      pool.hold('tab', { id: 'a', name: 'a', repositoryName: 'a', path: named, commonDir: path.join(named, '.git') });
+      const paused = await pool.pause(path.join(root, 'link'));
+      expect(stopped).toEqual(['a']);
+      expect(pool.status('a').state).toBe('stopped');
+      pool.endPause(paused);
+      expect(pool.status('a').state).toBe('watching');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('says so in the log when the folder to pause can not be resolved, rather than pausing nothing silently', async () => {
+    const logger = vi.fn();
+    const { pool } = fixture({ logger });
+    await pool.pause(path.join(os.tmpdir(), 'opentig-no-such-folder', 'gone'));
+    expect(logger).toHaveBeenCalledWith('warn', expect.stringContaining('Could not resolve a folder'));
+  });
 });
