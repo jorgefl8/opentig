@@ -286,16 +286,20 @@ export class SettingsStore {
    * assignments are untouched because they are keyed by `commonDir`, which
    * identifies the repository rather than any single worktree.
    */
-  async forgetWorktreePath(worktreePath: string): Promise<RecentRepository[]> {
+  async forgetWorktreePath(worktreePath: string, fallbackId?: string): Promise<RecentRepository[]> {
     const target = normalizeWorktreePath(worktreePath);
     if (!target) return this.recentRepositories;
     const matching = this.data.recentRepositories.filter((item) => normalizeWorktreePath(item.path) === target);
     if (matching.length === 0) return this.recentRepositories;
-    // The active repository is never a removal target; the operations layer
-    // blocks removing the current worktree before it reaches persistence.
-    if (matching.some((item) => item.id === this.data.activeRepositoryId)) return this.recentRepositories;
     const removedIds = new Set(matching.map((item) => item.id));
     this.data.recentRepositories = this.data.recentRepositories.filter((item) => normalizeWorktreePath(item.path) !== target);
+    // The worktree may be the repository opened last, which a client starting without one would get:
+    // that becomes its repository's main worktree, or the one the removal was asked from.
+    if (this.data.activeRepositoryId && removedIds.has(this.data.activeRepositoryId)) {
+      this.data.activeRepositoryId = mainWorktreeOf(this.data.recentRepositories, matching[0]!.commonDir)?.id
+        ?? this.data.recentRepositories.find((item) => item.id === fallbackId)?.id
+        ?? null;
+    }
     // Open-file metadata is keyed by the same worktree identifier, so a forgotten
     // worktree must not leave its tabs behind to be restored later.
     this.data.openFilesStates = this.data.openFilesStates.filter((state) => !removedIds.has(state.repositoryId));
@@ -625,6 +629,12 @@ function normalizeProjects(value: unknown): RepositoryProject[] {
 }
 
 /** Absolute worktree paths compare by resolved form, ignoring Windows casing. */
+/** The saved entry of a repository's main worktree, whose folder holds its `.git` folder. */
+function mainWorktreeOf(recents: readonly RecentRepository[], commonDir: string): RecentRepository | undefined {
+  const root = normalizeWorktreePath(commonDir.replace(/[\\/]\.git[\\/]?$/i, ''));
+  return recents.find((item) => normalizeWorktreePath(item.path) === root);
+}
+
 function normalizeWorktreePath(value: string): string {
   if (typeof value !== 'string' || !value.trim()) return '';
   return path.resolve(value).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();

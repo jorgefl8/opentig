@@ -1227,7 +1227,7 @@ export class GitRepositoryOperations {
             unfinished.push(`Git could not delete the branch ${worktree.branch}: ${error instanceof Error ? error.message : 'Unknown error.'}`);
           }
         }
-        const recentRepositories = await this.repositories.forgetWorktree(worktree.path);
+        const recentRepositories = await this.repositories.forgetWorktree(worktree.path, repositoryId);
         const removed = { path: worktree.path, branch: worktree.branch, recentRepositories };
         return unfinished.length > 0 ? { status: 'partial', ...removed, message: unfinished.join(' ') } : { status: 'removed', ...removed };
       }, repository.commonDir);
