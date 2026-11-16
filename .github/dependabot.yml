@@ -18,6 +18,9 @@ updates:
       # marked-katex-extension currently requires KaTeX <0.19.
       - dependency-name: katex
         versions: ['>=0.19']
+      # `astro check` needs TypeScript's programmatic API, which 7 does not ship; the website stays on 6.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
     groups:
       production-minor-and-patch:
         applies-to: version-updates
