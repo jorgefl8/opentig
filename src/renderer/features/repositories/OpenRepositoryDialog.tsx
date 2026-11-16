@@ -31,6 +31,9 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
   const [location, setLocation] = useState('');
   const [draftPath, setDraftPath] = useState('');
   const [editingPath, setEditingPath] = useState(false);
+  /** Read when a listing arrives: a path being typed meanwhile is the user's, not the listing's. */
+  const editingPathRef = useRef(false);
+  editingPathRef.current = editingPath;
   const [selected, setSelected] = useState<Folder | null>(null);
   const [filter, setFilter] = useState('');
   const [showHidden, setShowHidden] = useState(false);
@@ -70,7 +73,7 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
       if (current !== request.current) return;
       setListing(result);
       setLocation(result.path);
-      setDraftPath(result.path);
+      if (!editingPathRef.current) setDraftPath(result.path);
       if (directory || result.repository) setSelected({ name: folderName(result.path), path: result.path, repository: result.repository });
     } catch (reason) {
       if (current === request.current) setBrowseError(messageOf(reason, 'Could not browse this folder.'));
