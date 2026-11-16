@@ -110,6 +110,19 @@ describe('OpenTig server client', () => {
     expect(fixture.request).toHaveBeenCalledWith(IPC.bootstrap, []);
   });
 
+  it('asks for the repository it last opened when the connection comes back, not for whatever another client chose', async () => {
+    const fixture = transportFixture();
+    const other = { id: 'other-id', name: 'other', repositoryName: 'other', path: '/other', commonDir: '/other/.git' };
+    fixture.request.mockImplementation(async (command: string) => command === IPC.bootstrap ? bootstrapData() : command === IPC.repositoryOpenRecent ? other as never : []);
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+
+    await api.app.bootstrap();
+    await api.repository.openRecent('other-id');
+    await fixture.reconnect();
+
+    expect(fixture.request).toHaveBeenLastCalledWith(IPC.bootstrap, [{ repositoryId: 'other-id' }]);
+  });
+
   it('tells a reconnect apart from an account change, so what GitHub said is refreshed rather than emptied', async () => {
     const fixture = transportFixture();
     const { api } = createOpenTigServerClient({ transport: fixture.transport });

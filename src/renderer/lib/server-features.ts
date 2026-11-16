@@ -11,12 +11,21 @@ export interface ServerFeatures {
   actionJobLogs: boolean;
   /** `commits.fileHistory`. */
   fileHistory: boolean;
+  /**
+   * Each tab or window has its own open repository: opening one changes no other client, and an
+   * address opens its repository at once instead of offering to.
+   */
+  repositoryPerClient: boolean;
 }
 
-export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false };
+export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, repositoryPerClient: false };
 
 export function serverFeatures(identity: OpenTigServerIdentity | undefined): ServerFeatures {
-  return { actionJobLogs: identity?.actionJobLogs === true, fileHistory: identity?.fileHistory === true };
+  return {
+    actionJobLogs: identity?.actionJobLogs === true,
+    fileHistory: identity?.fileHistory === true,
+    repositoryPerClient: identity?.repositoryPerClient === true,
+  };
 }
 
 export const ServerFeaturesContext = createContext<ServerFeatures>(NO_SERVER_FEATURES);

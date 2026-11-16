@@ -130,6 +130,11 @@ const sidebarFallback = <div className="view-loading" role="status"><Spinner cla
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
 const VIEW_STORAGE_KEY = 'opentig.lastView';
+/**
+ * The repository this tab or window has open, kept for the tab alone: a reload of a page without an
+ * address, such as the desktop window, asks the server for it again (see `repositoryPerClient`).
+ */
+const REPOSITORY_SESSION_KEY = 'opentig.repository';
 const BACKGROUND_REFRESH_RETRY_MS = 1_000;
 const WORKTREE_AGENTS_REFRESH_MS = 10_000;
 const HISTORY_STALE_MS = 30_000;
@@ -611,10 +616,22 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // Back and Forward answer the browser's own keys where its history is the trail, and the app's otherwise.
   const navigationKeyLabels = useMemo(() => navigationKeys(addresses, isMacPlatform()), [addresses]);
   const features = useMemo(() => serverFeatures(bootstrap?.server), [bootstrap?.server]);
+  const serverFeaturesRef = useRef(features);
+  serverFeaturesRef.current = features;
+  useEffect(() => {
+    if (!features.repositoryPerClient || !repository) return;
+    try { window.sessionStorage.setItem(REPOSITORY_SESSION_KEY, repository.id); } catch { /* storage unavailable */ }
+  }, [features.repositoryPerClient, repository]);
 
   useEffect(() => {
     let active = true;
-    opentig.app.bootstrap().then(async (data) => {
+    // The repository this page was on: its address, or what this tab kept. A server where each client has
+    // its own opens it for this page alone; an older one ignores it and answers with the one all share.
+    let requested = openingEntryRef.current?.location.repositoryId ?? null;
+    if (!requested) {
+      try { requested = window.sessionStorage.getItem(REPOSITORY_SESSION_KEY); } catch { /* storage unavailable */ }
+    }
+    opentig.app.bootstrap(requested ? { repositoryId: requested } : undefined).then(async (data) => {
       if (!active) return;
       // Starting up, the repository on screen paints what the server last saved of it, as one seen
       // moments ago paints what is in memory (see `knownSnapshot`): read again behind it, with Pull,
@@ -1272,8 +1289,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection, sectionSelections]);
 
   useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope, watch, watchId) => {
-    // Whatever repository it is about: the server watches one at a time, and a change it reports, or a
-    // watch it begins elsewhere, may be news about this one too.
+    // Whatever repository it is about. An older server watches one at a time, for every client, so a change
+    // it reports, or a watch it begins elsewhere, may be news about this one too. A newer one sends only what
+    // concerns the repository this page has open, and announces the watch of one being opened just before
+    // its answer, which is kept here for when that repository shows; nothing else of it is read.
     noteChange();
     if (watch === 'watching' && watchId) setAnnouncedWatch({ repositoryId, watchId });
     else if (watch) setAnnouncedWatch((current) => current?.repositoryId === repositoryId ? null : current);
@@ -1287,8 +1306,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (scope !== 'refs' && scope !== 'worktrees') dropFilesAhead(repositoryId);
   }), [appQueryClient, refresh, repository?.id]);
 
-  // Unless the server said it reports every change of the open repository, which it stops doing when another
-  // client opens another one, the repository is read on a timer, and nothing the viewer read before is trusted.
+  // Unless the server said it reports every change of the open repository (an older server stops when another
+  // client opens another one, a newer one when it watches too many already), the repository is read on a timer,
+  // and nothing the viewer read before is trusted.
   const confirmedWatchId = announcedWatch !== null && announcedWatch.repositoryId === repository?.id ? announcedWatch.watchId : null;
   useEffect(() => {
     if (repository && confirmedWatchId) confirmWatch(repository.id, confirmedWatchId);
@@ -1682,9 +1702,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   };
 
   /**
-   * Puts a step back on screen, in its repository once that is open. A step the page was opened
-   * on (`address`: a pasted link, a bookmark or a reload) never switches the repository the server
-   * has open, which every page and device shares: it offers to, and `accepted` is that offer taken.
+   * Puts a step back on screen, in its repository once that is open. Where each page has its own
+   * repository, the server opened the one of the step the page was opened on (`address`: a pasted
+   * link, a bookmark or a reload) as the page started, or opens it now. An older server has one
+   * repository, shared by every page and device, which such a step never switches: it offers to,
+   * and `accepted` is that offer taken.
    */
   const applyRestore = (entry: NavigationEntry, source: 'trail' | 'address' = 'trail', { recognized = false, accepted = false } = {}) => {
     const target = entry.location;
@@ -1712,7 +1734,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         openedHere();
         return;
       }
-      if (source === 'address' && !accepted) {
+      if (source === 'address' && !accepted && !features.repositoryPerClient) {
         openedHere();
         withdrawRepositoryOffer();
         repositoryOfferRef.current = sileo.action({
@@ -2549,6 +2571,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         }
       },
       apply: recordOpenedRepository,
+      // A choice given up after it was sent still opened on the server: this page's repository is the one it shows.
+      abandoned: (opened) => {
+        const shown = repositoryRef.current;
+        if (serverFeaturesRef.current.repositoryPerClient && shown && shown.id !== opened.id) void opentig.repository.openRecent(shown.id).catch(() => undefined);
+      },
       fail: (reason) => reportError('Could not open repository', reason),
       pending: setPendingRepositoryId,
     });
