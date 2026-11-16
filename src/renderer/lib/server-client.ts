@@ -1,4 +1,4 @@
-import type { ClientAttachment, ImageFileResult, RepositoryInfo } from '@shared/contracts';
+import type { BootstrapData, ClientAttachment, ImageFileResult, RepositoryInfo } from '@shared/contracts';
 import { IPC } from '@shared/contracts';
 import { AI_CLIENT_TIMEOUT_MS } from '@shared/ai-timeouts';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
@@ -43,7 +43,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   const aiInstructionsChanged = new Set<(repositoryIds: string[]) => void>();
   const githubAccountsChanged = new Set<(repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void>();
   const activeRepositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>();
-  const reconnected = new Set<() => void>();
+  const reconnected = new Set<(data?: BootstrapData) => void>();
   const invoke = <Command extends Parameters<OpenTigWebSocketTransport['request']>[0]>(
     command: Command,
     ...args: Parameters<OpenTigServerApiMethod<Command>>
@@ -300,7 +300,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     const data = await api.app.bootstrap(ownRepositoryId ? { repositoryId: ownRepositoryId } : undefined);
     for (const listener of aiInstructionsChanged) listener([]);
     // Not an account change, which empties what was read with the old account: what GitHub said is read again while it stays on screen.
-    for (const listener of reconnected) listener();
+    for (const listener of reconnected) listener(data);
     if (!data.activeRepository) return;
     // On an older server, the repository every client shares. Where each client has its own, where the
     // server has it now is in `connection`, which the page compares with what it shows.
