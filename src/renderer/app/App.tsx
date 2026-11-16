@@ -10,7 +10,7 @@ import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
 import { Activity, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { isModuleLoadError, lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { replaceEqualDeep, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconBrandGithub, IconFileArrowRight, IconFiles, IconGitBranch, IconGitCompare, IconHistory,
   IconRefresh, IconRestore, IconSearch, IconTrash,
@@ -1081,10 +1081,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (nextBranches && nextWorktrees) lastReadRef.current.refs = lastReadRef.current.snapshot;
       setSnapshotRepositoryId(repositoryId);
       setConfirmedRepositoryId(repositoryId);
-      setStatus(nextStatus);
+      // A read hands back new objects even when nothing changed. What is equal to what is shown is kept, so
+      // the parts that show it redraw only for what did change.
+      setStatus((current) => replaceEqualDeep(current, nextStatus));
       setShownHistoryHead((current) => current?.repositoryId === repositoryId && current.head === historyHead(nextStatus) ? current : { repositoryId, head: historyHead(nextStatus) });
-      if (nextBranches) setBranches(nextBranches);
-      if (nextWorktrees) setWorktrees(nextWorktrees);
+      if (nextBranches) setBranches((current) => replaceEqualDeep(current, nextBranches));
+      if (nextWorktrees) setWorktrees((current) => replaceEqualDeep(current, nextWorktrees));
       if (nextFiles) {
         treeGenerationRef.current = treeReadRef.current?.repositoryId === repositoryId ? treeReadRef.current : null;
         applyFilesSnapshot(nextFiles);
