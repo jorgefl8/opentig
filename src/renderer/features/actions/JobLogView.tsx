@@ -97,7 +97,7 @@ export function JobLogView({ repositoryId, job, initialStep = null, now, onBack 
   }
 
   return (
-    <section ref={sectionRef} className="job-log" aria-label={`Log of ${job.name}`} tabIndex={-1}>
+    <section ref={sectionRef} className="job-log" data-escape-owner="" aria-label={`Log of ${job.name}`} tabIndex={-1}>
       <header className="job-log-header">
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Back to the run" onClick={onBack} />}><IconArrowLeft /></TooltipTrigger>
