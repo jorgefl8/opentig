@@ -250,6 +250,9 @@ test('going Back and Forward to what was already seen asks the server for nothin
 test('searching in the command palette asks the server nothing per letter typed', async ({ pairedPage: page, repository }) => {
   await repository.commit('src/app.js', 'const total = 1;\n', 'Add app');
   await openRepository(page, repository);
+  // Files checks its tree every five seconds while it is the open section, which would land inside a window.
+  await section(page, 'Changes').click();
+  await expect(page.getByRole('complementary').getByText('No changes')).toBeVisible();
   await page.keyboard.press('Control+p');
   const dialog = page.getByRole('dialog', { name: 'Command palette' });
   const field = dialog.getByRole('combobox');
