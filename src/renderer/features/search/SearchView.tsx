@@ -39,9 +39,11 @@ interface SearchViewProps {
   /** Open tabs with unsaved changes among the given paths, which must not be overwritten. */
   unsavedPathsAmong(paths: string[]): string[];
   onReplaced(paths: string[]): void;
+  /** Text to search for, handed over from elsewhere; a new object for each request. */
+  seed?: { text: string } | null;
 }
 
-export function SearchView({ repositoryId, active, revision, onOpenFile, unsavedPathsAmong, onReplaced }: SearchViewProps) {
+export function SearchView({ repositoryId, active, revision, onOpenFile, unsavedPathsAmong, onReplaced, seed = null }: SearchViewProps) {
   const mobile = useMobileLayout();
   const [query, setQuery] = useState('');
   const [matchCase, setMatchCase] = useState(false);
@@ -85,6 +87,10 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
     : null;
 
   useEffect(() => { if (active) inputRef.current?.focus(); }, [active]);
+  // Text the command palette found nothing for, searched for here instead, as typed.
+  useEffect(() => {
+    if (seed) setQuery(seed.text);
+  }, [seed]);
 
   useEffect(() => {
     if (!searchQuery.data) return;

@@ -52,10 +52,24 @@ describe('isValidCombo', () => {
 
 describe('resolveShortcuts', () => {
   it('falls back to defaults for missing or invalid overrides', () => {
-    const resolved = resolveShortcuts({ quickOpen: 'Ctrl+K', saveFile: 'not-a-combo' });
-    expect(resolved.quickOpen).toBe('Ctrl+K');
+    const resolved = resolveShortcuts({ quickOpen: 'Ctrl+Shift+K', saveFile: 'not-a-combo' });
+    expect(resolved.quickOpen).toBe('Ctrl+Shift+K');
     expect(resolved.saveFile).toBe(DEFAULT_SHORTCUT_MAP.saveFile);
     expect(resolved.refresh).toBe(DEFAULT_SHORTCUT_MAP.refresh);
+  });
+});
+
+describe('a shortcut added later', () => {
+  it('gives way to a key someone had already bound to another command', () => {
+    // Ctrl+K was free before the command palette took it as its default.
+    const resolved = resolveShortcuts({ toggleSidebar: 'Ctrl+K' });
+    expect(resolved.toggleSidebar).toBe('Ctrl+K');
+    expect(resolved.commandPalette).toBe('');
+    expect(Object.values(resolved).filter((combo) => combo === 'Ctrl+K')).toHaveLength(1);
+  });
+
+  it('takes its default when nothing else uses it', () => {
+    expect(DEFAULT_SHORTCUT_MAP.commandPalette).toBe('Ctrl+K');
   });
 });
 
@@ -74,21 +88,21 @@ describe('findShortcutConflict', () => {
   });
 
   it('allows a free combo', () => {
-    expect(findShortcutConflict('openRepository', 'Ctrl+K', DEFAULT_SHORTCUT_MAP)).toBeNull();
+    expect(findShortcutConflict('openRepository', 'Ctrl+Shift+K', DEFAULT_SHORTCUT_MAP)).toBeNull();
   });
 });
 
 describe('sanitizeShortcutOverrides', () => {
   it('drops invalid, reserved, no-op, and mutually-colliding entries independently', () => {
     const sanitized = sanitizeShortcutOverrides({
-      openRepository: 'Ctrl+K',
+      openRepository: 'Ctrl+Shift+K',
       refresh: 'Ctrl+1',
       quickOpen: 'not-a-combo',
       saveFile: DEFAULT_SHORTCUT_MAP.saveFile,
-      closeTab: 'Ctrl+K',
+      closeTab: 'Ctrl+Shift+K',
       repoSwitcher: 'Ctrl+Q',
     });
-    expect(sanitized).toEqual({ openRepository: 'Ctrl+K' });
+    expect(sanitized).toEqual({ openRepository: 'Ctrl+Shift+K' });
   });
 
   it('ignores non-object input', () => {
