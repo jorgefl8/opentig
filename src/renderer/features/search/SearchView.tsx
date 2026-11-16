@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -45,7 +45,7 @@ interface SearchViewProps {
   onSeedTaken?: () => void;
 }
 
-export function SearchView({ repositoryId, active, revision, onOpenFile, unsavedPathsAmong, onReplaced, seed = null, onSeedTaken }: SearchViewProps) {
+export const SearchView = memo(function SearchView({ repositoryId, active, revision, onOpenFile, unsavedPathsAmong, onReplaced, seed = null, onSeedTaken }: SearchViewProps) {
   const mobile = useMobileLayout();
   const [query, setQuery] = useState('');
   const [matchCase, setMatchCase] = useState(false);
@@ -325,7 +325,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
       </div>
     </div>
   );
-}
+});
 
 function SearchToggle({ label, active, onToggle, children }: { label: string; active: boolean; onToggle(): void; children: React.ReactNode }) {
   return (

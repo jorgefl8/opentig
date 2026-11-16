@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { memo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import {
   SIDEBAR_DEFAULT_WIDTH, SIDEBAR_KEYBOARD_STEP, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH,
   clampSidebarWidth, resolveSidebarDrag,
@@ -9,7 +9,7 @@ import {
  * releasing it far enough to the left folds the sidebar into its rail.
  * Double-click restores the default width.
  */
-export function SidebarResizeHandle({ width, railWidth, onPreview, onResize, onCollapse }: {
+export const SidebarResizeHandle = memo(function SidebarResizeHandle({ width, railWidth, onPreview, onResize, onCollapse }: {
   width: number;
   railWidth: number;
   /** The width to paint while dragging, or null once the drag ends. */
@@ -81,4 +81,4 @@ export function SidebarResizeHandle({ width, railWidth, onPreview, onResize, onC
       {collapsing && <span className="sidebar-resize-hint" role="status">Release to collapse</span>}
     </div>
   );
-}
+});
