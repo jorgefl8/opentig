@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { KeptReadNotice } from '@/components/KeptReadNotice';
+import { TimeAgo } from '@/components/TimeAgo';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { IconBolt, IconCheck, IconClock, IconExternalLink, IconFilter, IconGitCommit, IconGitPullRequest, IconPlayerPlay, IconTag } from '@tabler/icons-react';
-import { formatTimeAgo } from '@shared/date-format';
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import type { ActionRunSummary, RunnableWorkflow } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
@@ -195,7 +195,7 @@ function RunRow({ run, phone, now, onSelect }: { run: ActionRunSummary; phone: b
         </span>
         <span className="pull-line">
           <span className="pull-title">{run.title || `Run ${run.number}`}</span>
-          <time className="pull-age" dateTime={run.createdAt}>{formatTimeAgo(run.createdAt)}</time>
+          <time className="pull-age" dateTime={run.createdAt}><TimeAgo value={run.createdAt} /></time>
         </span>
         <span className="pull-line action-run-meta">
           <span className="action-run-workflow">{run.workflowName}</span>
