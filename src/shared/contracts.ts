@@ -932,6 +932,13 @@ export interface ClientAttachment {
   ticket: number;
 }
 
+/** Why and from where a server moved a client (see the `repository.active-changed` event). */
+export interface RepositoryMove {
+  previousId: string;
+  reason: 'removed' | 'relocated';
+  recentRepositories?: RecentRepository[];
+}
+
 export interface BootstrapRequest {
   repositoryId?: string;
 }
@@ -1209,8 +1216,10 @@ export interface OpenTigApi {
     /** The connection to the server came back, after events may have been missed. */
     onReconnected(callback: () => void): () => void;
     /** `watch` is set when the server's watch of the repository ran into trouble or recovered. */
-    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState, watchId?: string) => void): () => void;
-    onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
+    /** `details.refresh === false`: news of the watch that needs no read (see the `repository.changed` event). */
+    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState, watchId?: string, details?: { refresh?: false }) => void): () => void;
+    /** `move`: a server with `repositoryPerClient` moved this client off a removed worktree or a relocated repository. */
+    onActiveRepositoryChanged(callback: (repository: RepositoryInfo, move?: RepositoryMove) => void): () => void;
   };
   projects: {
     create(name: string): Promise<RepositoryOrganization>;

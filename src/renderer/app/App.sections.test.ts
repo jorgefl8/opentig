@@ -21,7 +21,7 @@ vi.mock('@/lib/opentig-api', () => ({
     diagnostics: { record: async () => {} },
     events: { onGitHubAccountsChanged: () => () => {}, onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {}, onReconnected: () => () => {} },
   },
-  serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
+  serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' }, connection: { current: () => null, subscribe: () => () => {} } },
 }));
 vi.mock('@/features/settings/update-api', () => ({ updatesApi: () => ({ check: async () => ({ phase: 'idle' }) }) }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));

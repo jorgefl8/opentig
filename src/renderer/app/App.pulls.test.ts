@@ -34,7 +34,7 @@ vi.mock('@/lib/opentig-api', () => ({
       onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {}, onReconnected: () => () => {},
     },
   },
-  serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
+  serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' }, connection: { current: () => null, subscribe: () => () => {} } },
 }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));
 vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('header', null,
