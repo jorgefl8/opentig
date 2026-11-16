@@ -42,7 +42,7 @@
     "parse5": "8.1.1",
     "saxes": "6.0.0",
     "tailwindcss": "4.3.5",
-    "typescript": "6.0.3",
+    "typescript": "7.0.2",
     "vite": "8.3.7",
     "wrangler": "4.160.0"
   }
