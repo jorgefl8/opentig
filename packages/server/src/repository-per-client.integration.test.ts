@@ -230,6 +230,28 @@ describe('a repository per client', () => {
     expect(client.events.at(-1)?.watchId).toBe(watchId);
   });
 
+  it('tells of a watch that restarted while the answer to an open was on its way by a new id, never the old one', async () => {
+    const { connect, repository, services } = await startServer();
+    const work = await repository('alpha');
+    const client = await connect();
+    const alpha = await client.value<Repository>('repository:open-path', work);
+    const before = await client.watching(alpha.id);
+    const openRecent = services.repositories.openRecent.bind(services.repositories);
+    services.repositories.openRecent = async (id: string) => {
+      // The watch stops and starts again while the open is being answered.
+      await services.watcher.pause(work);
+      services.watcher.endPause(work);
+      return openRecent(id);
+    };
+    client.log.length = 0;
+    await client.value('repository:open-recent', alpha.id);
+    services.repositories.openRecent = openRecent;
+    const after = await client.watching(alpha.id);
+
+    expect(after).not.toBe(before);
+    expect(client.events.filter((event) => event.watch === 'watching' && event.watchId === before)).toHaveLength(1);
+  });
+
   it('asks for no read when joining a watch already running, and for one when the watch starts after the client read', async () => {
     const { connect, repository, services } = await startServer();
     const [pathA, pathB, pathC] = await Promise.all([repository('alpha'), repository('beta'), repository('gamma')]);
