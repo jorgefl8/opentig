@@ -71,4 +71,11 @@ export interface OpenTigServerIdentity {
   actionJobLogs?: true;
   /** Answers `commits:file-history`. Absent on servers older than it. */
   fileHistory?: true;
+  /**
+   * Each connection has its own open repository: opening one, in any way, changes it for that
+   * connection only, `bootstrap` opens the one a client asks for, and a repository's changes and
+   * watch announcements go only to the connections that have it open. Absent on servers older
+   * than it, where every client shares one repository.
+   */
+  repositoryPerClient?: true;
 }

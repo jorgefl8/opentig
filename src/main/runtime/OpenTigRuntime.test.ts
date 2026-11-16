@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { OpenTigRuntimeEvent } from '../../shared/runtime-events';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
 import { OpenTigRuntime } from './OpenTigRuntime';
 
@@ -17,9 +16,15 @@ function fixture(activeRepositoryId: string | null = 'repo-id') {
     activeRepositoryId,
     flush: vi.fn(async () => undefined),
   };
+  // Every repository's changes go to one connection, as if it had them all open.
+  const clients = {
+    changed: vi.fn(),
+    watchChanged: vi.fn(),
+  };
   const services = {
     repositories: { invalidateIfKnown: vi.fn() },
     watcher,
+    clients,
     prDrafts,
     fileHistory,
     ai,
@@ -30,51 +35,40 @@ function fixture(activeRepositoryId: string | null = 'repo-id') {
     github,
     settings,
   } as unknown as OpenTigRuntimeServices;
-  return { services, watcher, prDrafts, fileHistory, ai, cliRunner, git, aiLog, problems, github, settings };
+  return { services, watcher, clients, prDrafts, fileHistory, ai, cliRunner, git, aiLog, problems, github, settings };
 }
 
 describe('OpenTigRuntime', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('coalesces repository events without consulting window visibility', () => {
+  it('coalesces each repository’s changes on its own, so one repository never swallows another’s', () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
-    const events: OpenTigRuntimeEvent[] = [];
     const state = fixture();
-    const runtime = new OpenTigRuntime(state.services, (event) => events.push(event));
+    const runtime = new OpenTigRuntime(state.services, vi.fn());
 
-    runtime.publishRepositoryChange('repo-id', 'worktree');
+    runtime.publishRepositoryChange('repo-a', 'worktree');
+    runtime.publishRepositoryChange('repo-b', 'index');
     vi.setSystemTime(10_100);
-    runtime.publishRepositoryChange('repo-id', 'index');
-    runtime.publishRepositoryChange('repo-id', 'refs');
-    expect(state.services.repositories.invalidateIfKnown).toHaveBeenCalledTimes(3);
+    runtime.publishRepositoryChange('repo-a', 'index');
+    runtime.publishRepositoryChange('repo-b', 'refs');
+    runtime.publishRepositoryChange('repo-a', 'refs');
+    expect(state.services.repositories.invalidateIfKnown).toHaveBeenCalledTimes(5);
+    expect(state.clients.changed.mock.calls).toEqual([['repo-a', 'worktree'], ['repo-b', 'index']]);
 
-    expect(events).toEqual([{ type: 'repository.changed', repositoryId: 'repo-id', scope: 'worktree' }]);
     vi.advanceTimersByTime(900);
-    expect(events).toEqual([
-      { type: 'repository.changed', repositoryId: 'repo-id', scope: 'worktree' },
-      { type: 'repository.changed', repositoryId: 'repo-id', scope: 'unknown' },
+    expect(state.clients.changed.mock.calls).toEqual([
+      ['repo-a', 'worktree'], ['repo-b', 'index'],
+      ['repo-a', 'unknown'], ['repo-b', 'refs'],
     ]);
   });
 
-  it('refreshes the active repository only after the stale interval', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(10_000);
-    const sink = vi.fn();
-    const runtime = new OpenTigRuntime(fixture().services, sink);
-
-    runtime.publishRepositoryChange('repo-id', 'index');
-    vi.setSystemTime(11_000);
-    runtime.refreshActiveRepositoryIfStale();
-    vi.setSystemTime(12_001);
-    runtime.refreshActiveRepositoryIfStale();
-
-    expect(sink).toHaveBeenNthCalledWith(1, {
-      type: 'repository.changed', repositoryId: 'repo-id', scope: 'index',
-    });
-    expect(sink).toHaveBeenNthCalledWith(2, {
-      type: 'repository.changed', repositoryId: 'repo-id', scope: 'unknown',
-    });
+  it('hands a watch’s new state to the clients of that repository', () => {
+    const state = fixture();
+    const runtime = new OpenTigRuntime(state.services, vi.fn());
+    runtime.publishRepositoryWatch('repo-a', 'watching', 'watch-1');
+    expect(state.clients.watchChanged).toHaveBeenCalledExactlyOnceWith('repo-a', 'watching', 'watch-1', undefined);
+    expect(state.services.repositories.invalidateIfKnown).toHaveBeenCalledWith('repo-a');
   });
 
   it('closes every owned resource exactly once', async () => {

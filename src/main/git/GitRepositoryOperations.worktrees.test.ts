@@ -59,6 +59,25 @@ describe('GitRepositoryOperations worktree removal outcome', () => {
     }
   });
 
+  it('lets the caller stop what uses the folder before anything is deleted, and never removes the worktree the caller has open', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+
+    // The request names the main worktree, but the client that sent it is in review.
+    const own = await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, false, false, { currentPath: () => review });
+    expect(own).toEqual({ status: 'current' });
+    expect(await exists(review)).toBe(true);
+
+    const present: boolean[] = [];
+    const result = await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, false, false, {
+      beforeDelete: async () => { present.push(await exists(review)); },
+    });
+    expect(result).toMatchObject({ status: 'removed' });
+    expect(present).toEqual([true]);
+    expect(await exists(review)).toBe(false);
+  }, process.platform === 'win32' ? 60_000 : 20_000);
+
   it('reports files left behind even when Git says it succeeded', async () => {
     const fixture = await managementRepository({ worktreeDeletion: 'git' });
     const review = await addWorktree(fixture, 'review', 'review');

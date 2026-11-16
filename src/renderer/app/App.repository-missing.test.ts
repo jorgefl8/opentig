@@ -33,7 +33,7 @@ vi.mock('@/lib/opentig-api', () => ({
       onActiveRepositoryChanged: () => () => {}, onReconnected: () => () => {},
     },
   },
-  serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
+  serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' }, connection: { current: () => null, subscribe: () => () => {} } },
 }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));
 vi.mock('sileo', () => ({ sileo: { error: calls.error, success: calls.success, dismiss: () => {} } }));

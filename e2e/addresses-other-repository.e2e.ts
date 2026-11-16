@@ -1,44 +1,11 @@
-import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { promisify } from 'node:util';
 import type { Page } from '@playwright/test';
-import { openRepository } from './support/app';
+import { addRepository, addressRepositoryId as idOf, openRepository, otherRepository, repositoryPicker as picker } from './support/app';
 import { expect, test } from './support/fixtures';
 
-// The server has one open repository, shared by every page and device. Opening a page,
-// by its address or by a reload, never switches it: the page offers to.
+// Each page has its own open repository: an address or a reload opens its repository in that
+// page alone. Against a server older than that, where every page shares one, it offers to.
 
-const execFileAsync = promisify(execFile);
-const picker = (page: Page) => page.getByRole('combobox', { name: 'Select project or repository' });
 const section = (page: Page, name: string) => page.getByRole('navigation', { name: 'Repository views' }).getByRole('button', { name, exact: true });
-
-/** Another repository with one commit, in its own folder. */
-async function otherRepository(name: string): Promise<{ path: string; name: string; dispose(): Promise<void> }> {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-e2e-other-'));
-  const work = path.join(root, name);
-  await execFileAsync('git', ['init', '-q', '-b', 'main', work]);
-  await execFileAsync('git', ['-c', 'user.name=E2E Tester', '-c', 'user.email=e2e@example.com', '-c', 'commit.gpgsign=false',
-    'commit', '-q', '--allow-empty', '-m', `Start ${name}`], { cwd: work });
-  return { path: work, name, dispose: () => rm(root, { recursive: true, force: true, maxRetries: 3 }) };
-}
-
-/** Adds a repository with the open dialog once another one is open, and waits for it to show. */
-async function addRepository(page: Page, repository: { path: string; name: string }): Promise<void> {
-  await page.keyboard.press('Control+o');
-  const dialog = page.getByRole('dialog', { name: 'Open a repository' });
-  await dialog.getByRole('button', { name: 'Enter a folder path' }).click();
-  const folderPath = dialog.getByRole('textbox', { name: 'Folder path' });
-  await folderPath.fill(repository.path);
-  await folderPath.press('Enter');
-  await expect(dialog.getByText('This folder is a Git repository')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Add repository' }).click();
-  await expect(dialog).toBeHidden();
-  await expect(picker(page)).toContainText(repository.name);
-}
-
-const idOf = (page: Page) => new URL(page.url()).pathname.split('/')[2]!;
 
 /** Takes a notice's action. A notice opens up to show it when the pointer is on it. */
 async function takeOffer(page: Page, title: string): Promise<void> {
@@ -47,7 +14,25 @@ async function takeOffer(page: Page, title: string): Promise<void> {
   await notice.locator('[data-sileo-button]').filter({ hasText: /^Open$/ }).click();
 }
 
-test('an address for another repository leaves every page where it is until its offer is taken', async ({ pairedPage: page, repository }) => {
+/** Makes a page take the server for one that has a single repository for every client, as older servers do. */
+async function asOlderServer(page: Page): Promise<void> {
+  await page.routeWebSocket(/\/ws$/, (client) => {
+    const server = client.connectToServer();
+    // An older server ignores the repository the page asks for at start.
+    client.onMessage((message) => {
+      const request = JSON.parse(String(message)) as { type?: string; command?: string; args?: unknown[] };
+      server.send(request.type === 'request' && request.command === 'app:bootstrap' ? JSON.stringify({ ...request, args: [] }) : message);
+    });
+    server.onMessage((message) => {
+      const parsed = JSON.parse(String(message)) as { type?: string; result?: { ok?: boolean; value?: { server?: Record<string, unknown> } } };
+      if (parsed.type !== 'result' || !parsed.result?.value?.server) return client.send(message);
+      delete parsed.result.value.server.repositoryPerClient;
+      client.send(JSON.stringify(parsed));
+    });
+  });
+}
+
+test('an address for another repository opens it in that page alone', async ({ pairedPage: page, repository }) => {
   const second = await otherRepository('second-project');
   try {
     await openRepository(page, repository);
@@ -59,49 +44,71 @@ test('an address for another repository leaves every page where it is until its 
 
     const other = await page.context().newPage();
     await other.goto(`${new URL(page.url()).origin}/r/${secondId}/history`);
-    const offer = other.getByText('Open second-project?');
-    await expect(offer).toBeVisible();
-    // Nothing switched: this page shows the open repository, and so does the first one.
-    await expect(picker(other)).toContainText(repository.name);
-    await expect(other).not.toHaveURL(new RegExp(`/r/${secondId}/`));
-    await page.waitForTimeout(500);
-    await expect(picker(page)).toContainText(repository.name);
-
-    await takeOffer(other, 'Open second-project?');
     await expect(picker(other)).toContainText('second-project');
     await expect(other).toHaveURL(new RegExp(`/r/${secondId}/history$`));
     await expect(section(other, 'History')).toHaveAttribute('aria-current', 'page');
+    await expect(other.getByText('Open second-project?')).toHaveCount(0);
+    // The first page stays where it was, and so does what a new page opens: the one chosen last.
+    await other.waitForTimeout(500);
+    await expect(picker(page)).toContainText(repository.name);
+    await expect(page).not.toHaveURL(new RegExp(`/r/${secondId}/`));
     await other.close();
   } finally {
     await second.dispose();
   }
 });
 
-test('a page reopened on a repository that is no longer the open one stays on the open one and offers it', async ({ pairedPage: page, repository }) => {
+test('a page reloaded or reopened comes back to its own repository while another page has a different one', async ({ pairedPage: page, repository }) => {
   const second = await otherRepository('second-project');
   try {
     await openRepository(page, repository);
     await section(page, 'History').click();
     await expect(page).toHaveURL(/\/history$/);
     const firstAddress = page.url();
-    // The page goes away, as a discarded tab does, and another one opens a different repository.
-    await page.goto('about:blank');
     const other = await page.context().newPage();
     await other.goto(new URL(firstAddress).origin);
     await expect(picker(other)).toContainText(repository.name);
     await addRepository(other, second);
+    await expect(picker(page)).toContainText(repository.name);
 
-    // Back to the first page's entry: the page loads again with its step in the history.
-    await page.goBack();
-    await expect(page.getByText(`Open ${repository.name}?`)).toBeVisible();
-    await expect(picker(page)).toContainText('second-project');
-    await page.waitForTimeout(500);
-    await expect(picker(other)).toContainText('second-project');
-
-    await takeOffer(page, `Open ${repository.name}?`);
+    await page.reload();
     await expect(picker(page)).toContainText(repository.name);
     await expect(page).toHaveURL(firstAddress);
     await expect(section(page, 'History')).toHaveAttribute('aria-current', 'page');
+    await other.reload();
+    await expect(picker(other)).toContainText('second-project');
+
+    // The page goes away, as a discarded tab does, and comes back from its history entry.
+    await page.goto('about:blank');
+    await page.goBack();
+    await expect(picker(page)).toContainText(repository.name);
+    await expect(page).toHaveURL(firstAddress);
+    await expect(page.getByText(`Open ${repository.name}?`)).toHaveCount(0);
+    await page.waitForTimeout(500);
+    await expect(picker(other)).toContainText('second-project');
+    await other.close();
+  } finally {
+    await second.dispose();
+  }
+});
+
+test('against a server with one repository for every page, an address offers its repository instead of opening it', async ({ pairedPage: page, repository }) => {
+  const second = await otherRepository('second-project');
+  try {
+    await openRepository(page, repository);
+    await addRepository(page, second);
+    const secondId = idOf(page);
+    await addRepository(page, { path: repository.path, name: repository.name });
+
+    const other = await page.context().newPage();
+    await asOlderServer(other);
+    await other.goto(`${new URL(page.url()).origin}/r/${secondId}/history`);
+    // This server would have opened it; the page, told nothing, behaves as it does with an older one.
+    await expect(other.getByText('Open second-project?')).toBeVisible();
+    await expect(picker(other)).toContainText(repository.name);
+    await takeOffer(other, 'Open second-project?');
+    await expect(picker(other)).toContainText('second-project');
+    await expect(other).toHaveURL(new RegExp(`/r/${secondId}/history$`));
     await other.close();
   } finally {
     await second.dispose();

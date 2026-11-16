@@ -1,5 +1,12 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import type { GitRepository } from './fixtures';
+
+const execFileAsync = promisify(execFile);
 
 /** Adds a repository through the "Open a folder" dialog, as a user would. */
 export async function openRepository(page: Page, repository: GitRepository): Promise<void> {
@@ -15,6 +22,36 @@ export async function openRepository(page: Page, repository: GitRepository): Pro
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('combobox', { name: 'Select project or repository' })).toContainText(repository.name);
 }
+
+/** The repository selector in the top bar, which names the repository on screen. */
+export const repositoryPicker = (page: Page): Locator => page.getByRole('combobox', { name: 'Select project or repository' });
+
+/** Another repository with one commit, in its own folder. */
+export async function otherRepository(name: string): Promise<{ path: string; name: string; dispose(): Promise<void> }> {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-e2e-other-'));
+  const work = path.join(root, name);
+  await execFileAsync('git', ['init', '-q', '-b', 'main', work]);
+  await execFileAsync('git', ['-c', 'user.name=E2E Tester', '-c', 'user.email=e2e@example.com', '-c', 'commit.gpgsign=false',
+    'commit', '-q', '--allow-empty', '-m', `Start ${name}`], { cwd: work });
+  return { path: work, name, dispose: () => rm(root, { recursive: true, force: true, maxRetries: 3 }) };
+}
+
+/** Adds a repository with the open dialog once another one is open, and waits for it to show. */
+export async function addRepository(page: Page, repository: { path: string; name: string }): Promise<void> {
+  await page.keyboard.press('Control+o');
+  const dialog = page.getByRole('dialog', { name: 'Open a repository' });
+  await dialog.getByRole('button', { name: 'Enter a folder path' }).click();
+  const folderPath = dialog.getByRole('textbox', { name: 'Folder path' });
+  await folderPath.fill(repository.path);
+  await folderPath.press('Enter');
+  await expect(dialog.getByText('This folder is a Git repository')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Add repository' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(repositoryPicker(page)).toContainText(repository.name);
+}
+
+/** The repository id in a page's address. */
+export const addressRepositoryId = (page: Page): string => new URL(page.url()).pathname.split('/')[2]!;
 
 /**
  * The color swatches drawn before color values. They are decorative and

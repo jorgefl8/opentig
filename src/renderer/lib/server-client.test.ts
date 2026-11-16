@@ -107,7 +107,120 @@ describe('OpenTig server client', () => {
     expect(changed).toHaveBeenCalledWith('repo-id', 'unknown', 'degraded');
     expect(activeChanged).toHaveBeenCalledWith(expect.objectContaining({ id: 'repo-id' }));
     expect(changed).toHaveBeenCalledWith('repo-id', 'unknown');
-    expect(fixture.request).toHaveBeenCalledWith(IPC.bootstrap, []);
+    // The repository the server moved it to is the one it asks for again.
+    expect(fixture.request).toHaveBeenCalledWith(IPC.bootstrap, [{ repositoryId: 'repo-id' }]);
+  });
+
+  it('asks for the repository it last opened when the connection comes back, not for whatever another client chose', async () => {
+    const fixture = transportFixture();
+    const other = { id: 'other-id', name: 'other', repositoryName: 'other', path: '/other', commonDir: '/other/.git' };
+    fixture.request.mockImplementation(async (command: string) => command === IPC.bootstrap ? bootstrapData() : command === IPC.repositoryOpenRecent ? other as never : []);
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+
+    await api.app.bootstrap();
+    await api.repository.openRecent('other-id');
+    await fixture.reconnect();
+
+    expect(fixture.request).toHaveBeenLastCalledWith(IPC.bootstrap, [{ repositoryId: 'other-id' }]);
+  });
+
+  it('asks again for the repository of the open started last, whichever answer arrives last, as the server keeps it', async () => {
+    const fixture = transportFixture();
+    const repository = (id: string) => ({ id, name: id, repositoryName: id, path: `/${id}`, commonDir: `/${id}/.git` });
+    const answers = new Map<string, { resolve(value: unknown): void; reject(reason: unknown): void }>();
+    fixture.request.mockImplementation(async (command: string, args?: unknown[]) => {
+      if (command === IPC.bootstrap) return bootstrapData();
+      if (command !== IPC.repositoryOpenRecent) return [];
+      return new Promise((resolve, reject) => answers.set(String(args![0]), { resolve, reject })) as never;
+    });
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    await api.app.bootstrap();
+
+    const earlier = api.repository.openRecent('b');
+    const later = api.repository.openRecent('c');
+    answers.get('c')!.resolve(repository('c'));
+    await later;
+    answers.get('b')!.resolve(repository('b'));
+    await earlier;
+    await fixture.reconnect();
+    expect(fixture.request).toHaveBeenLastCalledWith(IPC.bootstrap, [{ repositoryId: 'c' }]);
+
+    // One started later that fails leaves the one before it.
+    const failing = api.repository.openRecent('d');
+    answers.get('d')!.reject(new Error('Not a repository.'));
+    await expect(failing).rejects.toThrow();
+    await fixture.reconnect();
+    expect(fixture.request).toHaveBeenLastCalledWith(IPC.bootstrap, [{ repositoryId: 'repo-id' }]);
+  });
+
+  it('follows where a server with a repository per client has it, by the highest numbered answer or move, and says when that changes', async () => {
+    const fixture = transportFixture();
+    const repository = (id: string) => ({ id, name: id, repositoryName: id, path: `/${id}`, commonDir: `/${id}/.git` });
+    const answers = new Map<string, (value: unknown) => void>();
+    const perClient = { ...bootstrapData(), attachment: { attached: true, repositoryId: 'repo-id', ticket: 1 } };
+    perClient.server = { ...perClient.server!, repositoryPerClient: true };
+    fixture.request.mockImplementation(async (command: string, args?: unknown[]) => {
+      if (command === IPC.bootstrap) return perClient;
+      if (command !== IPC.repositoryOpenRecent) return [];
+      return new Promise((resolve) => answers.set(String(args![0]), resolve)) as never;
+    });
+    const { api, connection } = createOpenTigServerClient({ transport: fixture.transport });
+    const changes = vi.fn();
+    connection.subscribe(changes);
+    await api.app.bootstrap();
+    expect(connection.current()).toEqual({ repositoryId: 'repo-id', repository: expect.objectContaining({ id: 'repo-id' }) });
+
+    // The server moved it to main; an open started before that answers late and did not take.
+    const late = api.repository.openRecent('z');
+    fixture.event({ type: 'repository.active-changed', repository: repository('main'), previousId: 'repo-id', reason: 'removed', ticket: 3 });
+    answers.get('z')!({ ...repository('z'), attachment: { attached: false, repositoryId: 'main', ticket: 3 } });
+    // The page gets the repository it asked for, without the server's note.
+    expect(await late).toEqual(repository('z'));
+    expect(connection.current()?.repositoryId).toBe('main');
+    expect(changes).toHaveBeenCalledTimes(2);
+
+    // A new connection numbers from the start again, and the page is told rather than moved.
+    const moved = vi.fn();
+    api.events.onActiveRepositoryChanged(moved);
+    await fixture.reconnect();
+    expect(fixture.request).toHaveBeenLastCalledWith(IPC.bootstrap, [{ repositoryId: 'main' }]);
+    expect(connection.current()?.repositoryId).toBe('repo-id');
+    expect(moved).not.toHaveBeenCalled();
+  });
+
+  it('passes on that news of a watch needs no read, and why and from where a client was moved', () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const changed = vi.fn();
+    const moved = vi.fn();
+    api.events.onRepositoryChanged(changed);
+    api.events.onActiveRepositoryChanged(moved);
+    fixture.event({ type: 'repository.changed', repositoryId: 'repo-id', scope: 'unknown', watch: 'watching', watchId: 'w1', refresh: false });
+    const main = { id: 'main', name: 'main', repositoryName: 'repo', path: '/repo', commonDir: '/repo/.git' };
+    fixture.event({ type: 'repository.active-changed', repository: main, previousId: 'tree', reason: 'removed', recentRepositories: [], ticket: 2 });
+    expect(changed).toHaveBeenCalledWith('repo-id', 'unknown', 'watching', 'w1', { refresh: false });
+    expect(moved).toHaveBeenCalledWith(main, { previousId: 'tree', reason: 'removed', recentRepositories: [] });
+  });
+
+  it('passes on a relocation made elsewhere, with the new repository and the saved list, and nothing that would read the old id', () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const changed = vi.fn();
+    api.events.onRepositoryChanged(changed);
+    const moved = { id: 'new-id', name: 'app', repositoryName: 'app', path: '/moved/app', commonDir: '/moved/app/.git' };
+    fixture.event({ type: 'repository.changed', repositoryId: 'old-id', scope: 'unknown', relocatedTo: moved, recentRepositories: [] });
+    expect(changed).toHaveBeenCalledExactlyOnceWith('old-id', 'unknown', undefined, undefined, { relocatedTo: moved, recentRepositories: [] });
+  });
+
+  it('hands the start-up answer of the new connection to whoever hears of the reconnect, with its saved list and relocations', async () => {
+    const fixture = transportFixture();
+    const answer = { ...bootstrapData(), relocatedRepositoryIds: { 'old-id': 'repo-id' } };
+    fixture.request.mockImplementation(async (command: string) => command === IPC.bootstrap ? answer : []);
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const reconnected = vi.fn();
+    api.events.onReconnected(reconnected);
+    await fixture.reconnect();
+    expect(reconnected).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ relocatedRepositoryIds: { 'old-id': 'repo-id' }, recentRepositories: [] }));
   });
 
   it('tells a reconnect apart from an account change, so what GitHub said is refreshed rather than emptied', async () => {

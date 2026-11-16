@@ -31,6 +31,8 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
   const [location, setLocation] = useState('');
   const [draftPath, setDraftPath] = useState('');
   const [editingPath, setEditingPath] = useState(false);
+  /** Read when a listing arrives: a path typed since the last browse is the user's, not the listing's. */
+  const typedPathRef = useRef(false);
   const [selected, setSelected] = useState<Folder | null>(null);
   const [filter, setFilter] = useState('');
   const [showHidden, setShowHidden] = useState(false);
@@ -57,6 +59,7 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
     if (opening.current) return;
     restoreFocus.current = document.activeElement === pathInput.current ? 'path' : list.current?.contains(document.activeElement) ? 'folders' : null;
     const current = ++request.current;
+    typedPathRef.current = false;
     setLoading(true);
     setSelected(null);
     setBrowseError(null);
@@ -70,7 +73,7 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
       if (current !== request.current) return;
       setListing(result);
       setLocation(result.path);
-      setDraftPath(result.path);
+      if (!typedPathRef.current) setDraftPath(result.path);
       if (directory || result.repository) setSelected({ name: folderName(result.path), path: result.path, repository: result.repository });
     } catch (reason) {
       if (current === request.current) setBrowseError(messageOf(reason, 'Could not browse this folder.'));
@@ -182,7 +185,7 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
           <div className="repository-browser-navigation">
             <FolderIconButton label="Go to parent folder" disabled={busy || !parentPath} onClick={() => { if (parentPath) void browse(parentPath); }}><IconArrowUp /></FolderIconButton>
             <form className="repository-browser-location" onSubmit={event => { event.preventDefault(); if (draftPath.trim() && !busy) void browse(draftPath.trim()); }}>
-              {editingPath ? <input ref={pathInput} id="repository-path" className="repository-browser-path-input" aria-label="Folder path" value={draftPath} onChange={event => setDraftPath(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelEditPath(); } }} placeholder="Paste an absolute folder path" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} disabled={busy} /> : <nav className="repository-browser-breadcrumbs" aria-label="Current folder">
+              {editingPath ? <input ref={pathInput} id="repository-path" className="repository-browser-path-input" aria-label="Folder path" value={draftPath} onChange={event => { typedPathRef.current = true; setDraftPath(event.target.value); }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelEditPath(); } }} placeholder="Paste an absolute folder path" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} disabled={busy} /> : <nav className="repository-browser-breadcrumbs" aria-label="Current folder">
                 {location ? folderBreadcrumbs(location).map((crumb, index, crumbs) => <span key={crumb.path} className={index > 0 && index < crumbs.length - 2 ? 'repository-breadcrumb-middle' : undefined}>{index > 0 && <IconChevronRight aria-hidden="true" />}{index === crumbs.length - 2 && crumbs.length > 3 && <button type="button" className="repository-breadcrumb-elision" aria-label="Enter full folder path" disabled={busy} onClick={editPath}>…</button>}{index === crumbs.length - 2 && crumbs.length > 3 && <IconChevronRight className="repository-breadcrumb-elision-icon" aria-hidden="true" />}<Tooltip><TooltipTrigger render={<button type="button" disabled={busy} aria-current={index === crumbs.length - 1 ? 'location' : undefined} onClick={() => void browse(crumb.path)} />}>{index === 0 && crumb.name === '/' ? <IconServer aria-label="Filesystem root" /> : crumb.name}</TooltipTrigger><TooltipContent>{crumb.path}</TooltipContent></Tooltip></span>) : <span className="repository-browser-home-label">Home</span>}
               </nav>}
               {!editingPath && <kbd className="repository-path-shortcut">Ctrl L</kbd>}

@@ -110,8 +110,8 @@ export class OpenTigServer {
     return this.startPromise;
   }
 
-  publish(event: OpenTigRuntimeEvent): void {
-    if (this.ready) this.webSockets.publish(event);
+  publish(event: OpenTigRuntimeEvent, connectionIds?: ReadonlySet<string>): void {
+    if (this.ready) this.webSockets.publish(event, connectionIds);
   }
 
   createPairingToken(): PairingToken {

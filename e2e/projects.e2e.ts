@@ -231,6 +231,55 @@ test('a moved repository folder can be located again', async ({ pairedPage: page
   await expect(page.getByRole('navigation', { name: 'Repository views' })).toBeVisible();
 });
 
+test('a repository located again stays in its project, on the page that located it and on another page', async ({ pairedPage: page, repository }) => {
+  const second = await createSecondRepository('second-project');
+  try {
+    await openRepository(page, repository);
+    await openAnotherRepository(page, second.path, second.name);
+    const dialog = await openProjectManagement(page);
+    await dialog.getByRole('textbox', { name: 'Project name' }).fill('Work');
+    await dialog.getByRole('button', { name: 'Create' }).click();
+    await dialog.getByRole('combobox', { name: 'Project for sample-project' }).click();
+    await page.getByRole('option', { name: 'Work' }).click();
+    await expect(dialog.getByRole('combobox', { name: 'Project for sample-project' })).toContainText('Work');
+    await dialog.getByRole('button', { name: 'Done' }).click();
+    await expect(dialog).toBeHidden();
+    // Another page on the second repository, which has sample-project in its list.
+    await expect(page).toHaveURL(/\/r\/[A-Za-z0-9_-]+\//);
+    const other = await page.context().newPage();
+    await other.goto(page.url());
+    await expect(repositoryPicker(other)).toContainText('second-project');
+    await repositoryPicker(page).click();
+    const secondAddress = page.url();
+    await page.getByRole('listbox', { name: 'Select project or repository' }).getByRole('option', { name: /^sample-project/ }).click();
+    await expect(repositoryPicker(page)).toContainText('sample-project');
+    // The picker shows a choice at once; the address follows once it is open.
+    await expect(page).not.toHaveURL(secondAddress);
+
+    const moved = path.join(path.dirname(repository.path), 'moved-project');
+    await rename(repository.path, moved);
+    await expect(page.getByRole('heading', { name: 'sample-project was not found', level: 1 })).toBeVisible();
+    await page.getByRole('button', { name: 'Locate folder…' }).click();
+    const locate = page.getByRole('dialog', { name: 'Locate sample-project' });
+    await locate.getByRole('button', { name: 'Enter a folder path' }).click();
+    await locate.getByRole('textbox', { name: 'Folder path' }).fill(moved);
+    await locate.getByRole('textbox', { name: 'Folder path' }).press('Enter');
+    await expect(locate.getByText('This folder is a Git repository')).toBeVisible();
+    await locate.getByRole('button', { name: 'Use this folder' }).click();
+    await expect(repositoryPicker(page)).toContainText('moved-project');
+
+    for (const target of [page, other]) {
+      await repositoryPicker(target).click();
+      const work = target.getByRole('listbox', { name: 'Select project or repository' }).getByRole('group', { name: 'Work' });
+      await expect(work.getByRole('option', { name: /^moved-project/ })).toBeVisible();
+      await target.keyboard.press('Escape');
+    }
+    await other.close();
+  } finally {
+    await second.dispose();
+  }
+});
+
 test('a missing repository can be removed from the not-found screen', async ({ pairedPage: page, repository }) => {
   await openRepository(page, repository);
   // Removed right away: the button waits for the opening refresh to finish.

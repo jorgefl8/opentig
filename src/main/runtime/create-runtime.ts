@@ -12,7 +12,8 @@ import { GrokProvider } from '../ai/providers/GrokProvider';
 import { OpenCodeProvider } from '../ai/providers/OpenCodeProvider';
 import { FileOperationHistory } from '../files/FileOperationHistory';
 import { FileService } from '../files/FileService';
-import { RepositoryWatcher } from '../files/RepositoryWatcher';
+import { RepositoryWatchPool } from '../files/RepositoryWatchPool';
+import { ClientRepositories } from './ClientRepositories';
 import { RepositoryGitAccess } from '../git/RepositoryGitAccess';
 import { GitProcess } from '../git/GitProcess';
 import { GitRepositoryOperations } from '../git/GitRepositoryOperations';
@@ -97,17 +98,14 @@ export async function createOpenTigRuntime(
     repositoryChanged: (repositoryId: string, scope: Parameters<OpenTigRuntime['publishRepositoryChange']>[1]) => {
       runtime?.publishRepositoryChange(repositoryId, scope);
     },
-    activeRepositoryChanged: (repository: Parameters<OpenTigRuntime['publishActiveRepositoryChange']>[0]) => {
-      runtime?.publishActiveRepositoryChange(repository);
-    },
   };
-  const watcher = new RepositoryWatcher(
+  const watcher = new RepositoryWatchPool(
     events.repositoryChanged,
     () => git.hasActiveProcess(),
     {
       platform: process.platform,
       ...(options.logger ? { logger: options.logger } : {}),
-      onState: (repositoryId, state, watchId) => runtime?.publishRepositoryWatch(repositoryId, state, watchId),
+      onState: (repositoryId, state, watchId, paused) => runtime?.publishRepositoryWatch(repositoryId, state, watchId, paused),
       // Folders Git ignores entirely, which Linux does not watch. Large outputs are cut off: watching more is safe.
       listIgnoredDirectories: async (repository) => {
         const output = await git.run(repository.path, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory', '--no-empty-directory'], {
@@ -117,6 +115,7 @@ export async function createOpenTigRuntime(
       },
     },
   );
+  const clients = new ClientRepositories(watcher, (event, connectionIds) => runtime?.publishTo(event, connectionIds));
   runtime = new OpenTigRuntime({
     runtimeMode: options.runtimeMode,
     platform: options.platform,
@@ -129,6 +128,7 @@ export async function createOpenTigRuntime(
     search,
     operations,
     watcher,
+    clients,
     ai,
     aiInstructions,
     cliRunner,
