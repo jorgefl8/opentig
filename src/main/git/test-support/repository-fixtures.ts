@@ -128,7 +128,7 @@ export async function standaloneRepository() {
   return createOperations(root, work);
 }
 
-async function createOperations(root: string, work: string, options: GitRepositoryOperationsOptions = {}) {
+export async function createOperations(root: string, work: string, options: GitRepositoryOperationsOptions = {}) {
   const settings = new SettingsStore(path.join(root, 'settings.json'));
   await settings.load();
   const process = new GitProcess();

@@ -37,6 +37,12 @@ export interface RunOptions {
    * legitimately present as incomplete, such as searching.
    */
   truncateOverflow?: boolean;
+  /**
+   * Read only what is in the clone: a partial clone does not fetch an object it is
+   * missing from its promisor remote. `GIT_NO_LAZY_FETCH` stops that on Git 2.44 and
+   * later; refusing every transport makes such a fetch fail on older Git too.
+   */
+  localOnly?: boolean;
 }
 
 /**
@@ -263,6 +269,10 @@ export class GitProcess {
         LC_ALL: 'C',
       }).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
+    if (options.localOnly) {
+      environment.GIT_NO_LAZY_FETCH = '1';
+      environment.GIT_ALLOW_PROTOCOL = 'none';
+    }
     if (this.refreshedPath) {
       for (const key of Object.keys(environment)) if (key.toUpperCase() === 'PATH') delete environment[key];
       environment.PATH = this.refreshedPath;
