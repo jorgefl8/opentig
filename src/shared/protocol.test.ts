@@ -25,7 +25,7 @@ type SplitApi = OpenTigServerApi & RendererDesktopSurface;
 const _TYPE_PROOF: readonly true[] = [
   true satisfies (OpenTigApi extends SplitApi ? true : false),
   true satisfies (SplitApi extends OpenTigApi ? true : false),
-  true satisfies Equal<OpenTigServerCommandMap[typeof IPC.bootstrap]['args'], []>,
+  true satisfies Equal<OpenTigServerCommandMap[typeof IPC.bootstrap]['args'], Parameters<OpenTigApi['app']['bootstrap']>>,
   true satisfies Equal<OpenTigServerCommandMap[typeof IPC.capabilities]['args'], []>,
   true satisfies Equal<OpenTigServerCommandMap[typeof IPC.repositoryOpenPath]['args'], [path: string]>,
   true satisfies Equal<OpenTigServerCommandMap[typeof IPC.repositoryRelocateRecent]['args'], [id: string, path: string]>,

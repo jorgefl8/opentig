@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 describe('authoritative HTTP server', () => {
-  it('does not add or broadcast a prepared repository until its reviewed account setup completes', async () => {
+  it('does not add a prepared repository until its reviewed account setup completes, and then opens it for the asking client alone', async () => {
     const fixture = await startFixture();
     const services = fixture.server.runtime.services;
     const activePath = path.join(fixture.directory, 'active');
@@ -66,9 +66,12 @@ describe('authoritative HTTP server', () => {
       expect(changes).toEqual([]);
       const added = await request('repository:complete-setup', [candidate.id, services.github.accounts.revisionFor(candidate)]);
       expect(added).toMatchObject({ ok: true, value: { id: candidate.id } });
+      // Remembered as the one opened last, for a client that starts without one, and open for this connection only.
       expect(services.settings.activeRepositoryId).toBe(candidate.id);
       expect(services.repositories.recents()).toHaveLength(2);
-      await vi.waitFor(() => expect(changes).toHaveLength(1));
+      expect(services.clients.connectionsOn(candidate.id).size).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(changes).toEqual([]);
     } finally { socket.close(); observer.close(); }
   });
 
@@ -601,10 +604,10 @@ describe('authenticated WebSocket protocol', () => {
     expect(await sendAndReceive(socket, { type: 'ping' })).toEqual({ type: 'pong' });
 
     const eventPromise = nextMessage(socket);
-    fixture.server.runtime.publishRepositoryChange('repository-id', 'unknown');
+    fixture.server.runtime.publishAiInstructionsChange('/no/such/repository/.git');
     expect(await eventPromise).toEqual({
       type: 'event',
-      event: { type: 'repository.changed', repositoryId: 'repository-id', scope: 'unknown' },
+      event: { type: 'ai.instructions-changed', repositoryIds: [] },
     });
 
     const logoutClosed = closed(socket);

@@ -5,7 +5,7 @@ import { githubAccountSelectionSchema } from '../../shared/github-accounts';
 import { commitAuthorshipInputSchema } from '../../shared/commit-authorship';
 import { lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import type { DiffRequest, Preferences } from '../../shared/contracts';
+import type { ClientAttachment, DiffRequest, Preferences, RepositoryInfo } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
 import { aiExecutablePathsKey } from '../../shared/ai-status';
 import { GitOperationError } from '../../shared/errors';
@@ -15,10 +15,11 @@ import { readRepositoryFavicon } from '../files/RepositoryFavicon';
 import { browseServerDirectories } from '../files/ServerDirectoryBrowser';
 import { planUntrackedTrash, readUntrackedTrashLayout, removeEmptyParents } from '../git/untracked-trash';
 import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry';
+import { PendingCuts } from './PendingCuts';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
 import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, prNumbersArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, githubIdArg, runPageArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
-import { createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
+import { bootstrapRequestArg, createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
   registry: CommandRegistry,
@@ -55,11 +56,22 @@ export function registerServerCommands(
     catch { /* Saving is best effort; the read itself succeeded. */ }
     return value;
   };
-  const openRepositoryPath = async (selectedPath: string, context: CommandExecutionContext) => {
-    const repository = await openRuntimeRepositoryPath(services, selectedPath);
-    fileClipboardState(context).pendingCut = null;
-    return repository;
+  /** Files cut and not pasted yet (see `PendingCuts`). */
+  const cuts = new PendingCuts();
+  /**
+   * Runs an open for the client that asked: the repository becomes the one its connection has open,
+   * and no other client's. Of two opens on one connection, the one asked for last wins.
+   */
+  const openForClient = async (context: CommandExecutionContext, open: () => Promise<RepositoryInfo>): Promise<RepositoryInfo & { attachment?: ClientAttachment }> => {
+    const ticket = services.clients.beginOpen(context.connectionId);
+    const repository = await open();
+    const attachment = services.clients.attach(context.connectionId, repository, ticket, { afterAnswer: (task) => context.afterAnswer(task) });
+    // Whether it took, and where the server has the connection (see `ClientAttachment`); older clients ignore it.
+    return context.connectionId ? { ...repository, attachment } : repository;
   };
+  const openRepositoryPath = (selectedPath: string, context: CommandExecutionContext) => openForClient(
+    context, () => openRuntimeRepositoryPath(services, selectedPath),
+  );
 
   handle(IPC.gitStatus, 'git-status', () => services.git.status());
   handle(IPC.completeOnboarding, 'complete-onboarding', () => services.settings.completeOnboarding());
@@ -81,16 +93,31 @@ export function registerServerCommands(
   handle(IPC.repositoryCloneStatus, 'clone-status', (id) => clones.get(stringArg(id, 'clone-status', 100)));
   handle(IPC.repositoryCancelClone, 'cancel-clone', (id) => clones.cancel(stringArg(id, 'cancel-clone', 100)));
 
-  handle(IPC.bootstrap, 'bootstrap', async () => {
-    const activeRepository = await services.repositories.restore();
-    if (activeRepository) services.watcher.start(activeRepository);
-    const watch = activeRepository ? services.watcher.status(activeRepository.id) : null;
-    const activeRepositoryWatch = watch ? { state: watch.state, ...(watch.watchId ? { watchId: watch.watchId } : {}) } : undefined;
+  handleWithContext(IPC.bootstrap, 'bootstrap', async (context, request) => {
+    const { repositoryId: requestedId } = bootstrapRequestArg(request);
+    const ticket = services.clients.beginOpen(context.connectionId);
+    // A client asks for the repository it was on, after a reload or a dropped connection: it opens
+    // for this client only, and changes nothing saved. One this server does not know, or cannot open,
+    // gives the repository opened last, as a client asking for none gets.
+    // A repository relocated since the client last saw it is asked for by its old id.
+    const wantedId = requestedId ? services.repositories.relocatedId(requestedId) : null;
+    let activeRepository: RepositoryInfo | null = null;
+    if (wantedId && context.connectionId && services.repositories.recent(wantedId)) {
+      activeRepository = await services.repositories.openKnown(wantedId).catch(() => null);
+    }
+    activeRepository ??= await services.repositories.restore();
+    const attachment = activeRepository ? services.clients.attach(context.connectionId, activeRepository, ticket, { afterAnswer: (task) => context.afterAnswer(task) }) : null;
     const unavailableRepositoryIds = await services.repositories.unavailableIds();
     const activeId = services.settings.activeRepositoryId;
+    const missingId = [wantedId, activeId].find((id) => id && unavailableRepositoryIds.includes(id));
+    // Last, with nothing awaited after it: no newer news of the watch can reach the client before this answer.
+    const activeRepositoryWatch = activeRepository ? services.clients.watch(context.connectionId, activeRepository.id) : undefined;
+    const relocatedRepositoryIds = services.repositories.relocatedIds();
     return {
+      ...(attachment && context.connectionId ? { attachment } : {}),
+      ...(Object.keys(relocatedRepositoryIds).length > 0 ? { relocatedRepositoryIds } : {}),
       unavailableRepositoryIds,
-      unavailableActiveRepositoryId: !activeRepository && activeId && unavailableRepositoryIds.includes(activeId) ? activeId : null,
+      unavailableActiveRepositoryId: !activeRepository && missingId ? missingId : null,
       onboardingVersion: services.settings.onboardingVersion,
       ...(activeRepositoryWatch ? { activeRepositoryWatch } : {}),
       recentRepositories: services.repositories.recents(),
@@ -141,15 +168,11 @@ export function registerServerCommands(
   handleWithContext(IPC.repositoryCompleteSetup, 'complete-setup', async (context, id, revision) => {
     const repositoryId = stringArg(id, 'complete-setup', 64);
     if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'complete-setup', message: 'Invalid account revision.' });
-    const repository = await services.repositories.completeSetup(repositoryId, () => {
+    return openForClient(context, () => services.repositories.completeSetup(repositoryId, () => {
       if (revision !== services.github.accounts.revisionFor(services.repositories.get(repositoryId))) {
         throw new Error('The repository account changed. Reload setup and review it again.');
       }
-    });
-    fileClipboardState(context).pendingCut = null;
-    services.watcher.start(repository);
-    services.events.activeRepositoryChanged(repository);
-    return repository;
+    }));
   });
   handleWithContext(IPC.repositoryOpenPath, 'open-path', (context, selectedPath) => openRepositoryPath(
     stringArg(selectedPath, 'open-path', 32_768), context,
@@ -160,28 +183,31 @@ export function registerServerCommands(
   ));
   handleWithContext(IPC.repositoryOpenRecent, 'open-recent', async (context, id) => {
     const repositoryId = stringArg(id, 'open-recent', 64);
-    const repository = await services.repositories.openRecent(repositoryId);
-    fileClipboardState(context).pendingCut = null;
-    services.watcher.start(repository);
-    services.events.activeRepositoryChanged(repository);
-    return repository;
+    return openForClient(context, () => services.repositories.openRecent(repositoryId));
   });
   handleWithContext(IPC.repositoryForget, 'forget-repository', async (context, repositoryKey) => {
-    const activeId = services.settings.activeRepositoryId;
+    const before = services.repositories.recents().map((item) => item.id);
     const organization = await services.repositories.forget(repositoryKeyArg(repositoryKey, 'forget-repository'));
-    fileClipboardState(context).pendingCut = null;
-    if (activeId && !services.settings.activeRepositoryId) services.watcher.stop();
+    const remaining = new Set(services.repositories.recents().map((item) => item.id));
+    services.clients.forget(before.filter((repositoryId) => !remaining.has(repositoryId)));
     services.snapshots?.forgetUnknown();
     return organization;
   });
+  /** A repository moved and has a new id: every client on the old one follows it there. */
+  const followRelocation = (previousId: string, repository: RepositoryInfo, except?: string) => {
+    if (previousId === repository.id) return;
+    const recentRepositories = services.repositories.recents();
+    const moved = services.clients.move([previousId], repository, { reason: 'relocated', recentRepositories, except });
+    services.clients.forget([previousId]);
+    // Every other client may hold tabs or drafts under the old id, or a step back to it. The one that
+    // relocated it learns from its answer, which the news would otherwise reach first.
+    services.clients.relocated(previousId, repository, recentRepositories, except ? new Set([...moved, except]) : moved);
+  };
   handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
-    const repository = await services.repositories.relocateRecent(
-      stringArg(id, 'relocate-recent', 64),
-      stringArg(selectedPath, 'relocate-recent', 32_768),
-    );
-    fileClipboardState(context).pendingCut = null;
-    services.watcher.start(repository);
-    services.events.activeRepositoryChanged(repository);
+    const repositoryId = stringArg(id, 'relocate-recent', 64);
+    const selected = stringArg(selectedPath, 'relocate-recent', 32_768);
+    const repository = await openForClient(context, () => services.repositories.relocateRecent(repositoryId, selected));
+    followRelocation(repositoryId, repository, context.connectionId);
     return repository;
   });
   handle(IPC.repositoryUnavailableRecent, 'unavailable-recent', () => services.repositories.unavailableIds());
@@ -189,12 +215,14 @@ export function registerServerCommands(
     stringArg(previousPath, 'find-relocations', 32_768),
     stringArg(selectedPath, 'find-relocations', 32_768),
   ));
-  handle(IPC.repositoryRelocateRecents, 'relocate-recents', (raw) => {
+  handle(IPC.repositoryRelocateRecents, 'relocate-recents', async (raw) => {
     if (!Array.isArray(raw) || raw.length > 500) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-recents', message: 'Invalid relocation list.' });
-    return services.repositories.relocateMany(raw.map((entry: unknown) => {
+    const result = await services.repositories.relocateMany(raw.map((entry: unknown) => {
       const value = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
       return { id: stringArg(value.id, 'relocate-recents', 64), path: stringArg(value.path, 'relocate-recents', 32_768) };
     }));
+    for (const { previousId, repository } of result.relocated) followRelocation(previousId, repository);
+    return result;
   });
   handle(IPC.repositoryStatus, 'status', (id, includeStats) => remember(stringArg(id, 'status', 64), 'status', services.repositories.status(
     stringArg(id, 'status', 64),
@@ -220,7 +248,7 @@ export function registerServerCommands(
     const relativePath = stringArg(filePath, 'read-file');
     // Asked before reading: a watch that started meanwhile may not have seen a change made before it.
     // A linked file is watched where the link is, not where its content is: its reads are never said to be covered.
-    const covered = services.watcher.covers(repositoryId, relativePath);
+    const covered = services.clients.covers(context.connectionId, repositoryId, relativePath);
     const watchId = covered && !(await services.files.isLinked(repositoryId, relativePath)) ? covered : null;
     return { ...await services.files.read(repositoryId, relativePath, allowLarge === true, context.signal), ...(watchId ? { watchId } : {}) };
   });
@@ -255,7 +283,6 @@ export function registerServerCommands(
     const validPaths = services.repositories.validatePaths(repositoryId, pathsArg(rawPaths, 'copy-entries'));
     const absolutePaths = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
     await Promise.all(absolutePaths.map((filePath) => lstat(filePath)));
-    fileClipboardState(context).pendingCut = null;
     return { copied: absolutePaths.length, paths: absolutePaths };
   });
   handleWithContext(IPC.repositoryCutEntries, 'cut-entries', async (context, id, rawPaths) => {
@@ -264,7 +291,7 @@ export function registerServerCommands(
     const absolutePaths = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
     await Promise.all(absolutePaths.map((filePath) => lstat(filePath)));
     const transferId = randomUUID();
-    fileClipboardState(context).pendingCut = { paths: absolutePaths, transferId };
+    cuts.add(context.sessionId, transferId, { repositoryId, paths: absolutePaths });
     return { cut: absolutePaths.length, paths: absolutePaths, transferId };
   });
   handleWithContext(IPC.repositoryPasteEntries, 'paste-entries', async (context, id, targetDirectory, rawSourcePaths, rawCutTransferId, rawImagePng) => {
@@ -275,22 +302,20 @@ export function registerServerCommands(
     const imagePng = clipboardImageArg(rawImagePng);
     return services.fileHistory.serialize(repositoryId, async () => {
       if (filePaths.length > 0) {
-        const clipboardState = fileClipboardState(context);
-        if (clipboardState.pendingCut?.transferId === cutTransferId && samePathSelection(filePaths, clipboardState.pendingCut.paths)) {
-          const sources = [...clipboardState.pendingCut.paths];
+        // A cut moves only within the repository it was made in; anywhere else it pastes a copy.
+        const cut = cuts.take(context.sessionId, cutTransferId, repositoryId, filePaths, (left, right) => samePathSelection([...left], [...right]));
+        if (cut) {
+          const sources = [...cut.paths];
           const repository = services.repositories.get(repositoryId);
           const created = await services.files.movePaths(repositoryId, sources, destination);
-          clipboardState.pendingCut = null;
           const pairs = created.map((to, index) => ({ from: sources[index]!.slice(repository.path.length + 1).replace(/\\/g, '/'), to }));
           services.fileHistory.recordMove(repositoryId, created.length === 1 ? 'Move item' : `Move ${created.length} items`, pairs);
           return { status: 'pasted', source: 'cut', created } as const;
         }
-        clipboardState.pendingCut = null;
         const created = await services.files.pastePaths(repositoryId, filePaths, destination);
         services.fileHistory.recordPaste(repositoryId, { label: created.length === 1 ? 'Paste item' : `Paste ${created.length} items`, created, sources: created.map((to, index) => ({ source: filePaths[index]!, destination: to })) });
         return { status: 'pasted', source: 'files', created } as const;
       }
-      fileClipboardState(context).pendingCut = null;
       if (imagePng) {
         const created = await services.files.pasteImage(repositoryId, destination, imagePng);
         const snapshot = await services.files.snapshot(repositoryId, created, 50_000_000);
@@ -385,7 +410,7 @@ export function registerServerCommands(
     const request = raw as Partial<DiffRequest>;
     const repositoryId = stringArg(request.repositoryId, 'diff', 64);
     const diffPath = stringArg(request.path, 'diff');
-    const watchId = services.watcher.covers(repositoryId, diffPath);
+    const watchId = services.clients.covers(context.connectionId, repositoryId, diffPath);
     return { ...await services.operations.diff({ repositoryId, path: diffPath, kind: request.kind === 'staged' ? 'staged' : 'unstaged' }, context.signal), ...(watchId ? { watchId } : {}) };
   });
   handleWithContext(IPC.diffCommit, 'commit-diff', (context, id, oid) => services.operations.commitDiff(stringArg(id, 'commit-diff', 64), stringArg(oid, 'commit-diff', 128), context.signal));
@@ -463,11 +488,10 @@ export function registerServerCommands(
   ));
   handle(IPC.worktreesList, 'worktrees', (id) => remember(stringArg(id, 'worktrees', 64), 'worktrees', services.operations.worktrees(stringArg(id, 'worktrees', 64))));
   handle(IPC.worktreeAgents, 'worktree-agents', (id) => services.operations.worktreeAgents(stringArg(id, 'worktree-agents', 64)));
-  handle(IPC.worktreeSelect, 'select-worktree', async (id, targetPath) => {
-    const repository = await services.operations.selectWorktree(stringArg(id, 'select-worktree', 64), stringArg(targetPath, 'select-worktree'));
-    services.watcher.start(repository);
-    services.events.activeRepositoryChanged(repository);
-    return repository;
+  handleWithContext(IPC.worktreeSelect, 'select-worktree', (context, id, targetPath) => {
+    const repositoryId = stringArg(id, 'select-worktree', 64);
+    const target = stringArg(targetPath, 'select-worktree');
+    return openForClient(context, () => services.operations.selectWorktree(repositoryId, target));
   });
   handle(IPC.localRefsSnapshot, 'local-refs-snapshot', (id) => services.operations.localRefsSnapshot(stringArg(id, 'local-refs-snapshot', 64)));
   handle(IPC.branchDetails, 'branch-details', (request) => {
@@ -493,9 +517,37 @@ export function registerServerCommands(
     const { repositoryId, path, expectedOid, force, deleteBranch, cleanupOnly } = removeWorktreeArg(request, 'remove-worktree');
     const { commonDir } = services.repositories.get(repositoryId);
     const siblingIds = new Set([repositoryId, ...services.repositories.recents().filter((item) => item.commonDir === commonDir).map((item) => item.id)]);
+    // The worktree the asking client has open, which may not be the one the request names.
+    const currentPath = () => {
+      const ownId = services.clients.repositoryOf(context.connectionId ?? '');
+      return ownId && services.repositories.isKnown(ownId) ? services.repositories.get(ownId).path : undefined;
+    };
+    // The folder is not watched from before it is deleted until the removal is over, whoever opens it
+    // meanwhile: on Windows a watched folder can't be deleted, or only later.
+    let pausedFolder: string | null = null;
     try {
-      return await services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch, { signal: context.signal, ...(cleanupOnly === undefined ? {} : { cleanupOnly }) });
+      return await services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch, {
+        signal: context.signal,
+        ...(cleanupOnly === undefined ? {} : { cleanupOnly }),
+        currentPath,
+        beforeDelete: async (worktreePath) => {
+          pausedFolder = await services.watcher.pause(worktreePath);
+        },
+      });
     } finally {
+      // The caller's own worktree is never removed. Another tab, window or device on the removed one moves to
+      // the main worktree, or to the caller's when that is not saved, once the removal is over, so one that
+      // opened it meanwhile is moved too, and no longer finds it among the saved repositories.
+      const remaining = new Set(services.repositories.recents().map((item) => item.id));
+      const removed = [...siblingIds].filter((siblingId) => !remaining.has(siblingId));
+      if (removed.length > 0) {
+        const main = services.settings.mainWorktree(commonDir);
+        const target = main && remaining.has(main.id) ? services.repositories.get(main.id) : remaining.has(repositoryId) ? services.repositories.get(repositoryId) : null;
+        if (target) services.clients.move(removed, target, { reason: 'removed', recentRepositories: services.repositories.recents(), except: context.connectionId });
+        services.clients.forget(removed);
+      }
+      // Not removed after all, or partly: whoever is still on it is watched again.
+      if (pausedFolder !== null) services.watcher.endPause(pausedFolder);
       // Whoever asked may have stopped waiting long ago, and siblings list the same worktrees.
       for (const siblingId of siblingIds) services.events.repositoryChanged(siblingId, 'worktrees');
     }
@@ -609,6 +661,12 @@ export function registerServerCommands(
     services.prDrafts.cancel(aiString(requestId, 'ai-pr-draft-cancel', 100, true));
   });
 
+  // What the server keeps per connection lives as long as the connection.
+  registry.setConnectionLifecycle({
+    opened: (connectionId) => { services.clients.connect(connectionId); },
+    closed: (connectionId) => services.clients.disconnect(connectionId),
+  });
+
   const registered = new Set(registry.registeredCommands());
   for (const definition of serverDefinitions.values()) {
     if (!registered.has(definition.command)) throw new Error(`Missing server handler: ${definition.command}`);
@@ -617,18 +675,9 @@ export function registerServerCommands(
 
 /** Shared repository-open lifecycle used by authenticated commands and CLI bootstrap. */
 export async function openRuntimeRepositoryPath(services: OpenTigRuntimeServices, selectedPath: string) {
-  const repository = await services.repositories.openPath(selectedPath);
-  services.watcher.start(repository);
-  services.events.activeRepositoryChanged(repository);
-  return repository;
+  return services.repositories.openPath(selectedPath);
 }
 
-export const FILE_CLIPBOARD_SESSION_STATE = 'file-clipboard';
-interface FileClipboardSessionState { pendingCut: { paths: string[]; transferId: string } | null }
-
-function fileClipboardState(context: CommandExecutionContext): FileClipboardSessionState {
-  return context.state(FILE_CLIPBOARD_SESSION_STATE, () => ({ pendingCut: null }));
-}
 
 function samePathSelection(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;

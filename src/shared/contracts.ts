@@ -920,6 +920,38 @@ export interface OpenTigCapabilities {
   aiProviders: AiHarnessStatus[];
 }
 
+/**
+ * Where a server with `repositoryPerClient` has the connection that asked, sent with the answer to
+ * the bootstrap and to every open. `attached` is false when the open did not take, because the
+ * connection was moved, reconnected or opened something else since it was asked. `ticket` orders
+ * these answers and moves: the highest is where the server has the connection.
+ */
+export interface ClientAttachment {
+  attached: boolean;
+  repositoryId: string | null;
+  ticket: number;
+}
+
+/** More about a `repository.changed` event, from a server with `repositoryPerClient`. */
+export interface RepositoryChangeDetails {
+  /** News of the watch that needs no read. */
+  refresh?: false;
+  /** The repository was relocated, to this id, with the saved repositories after it. */
+  relocatedTo?: RepositoryInfo;
+  recentRepositories?: RecentRepository[];
+}
+
+/** Why and from where a server moved a client (see the `repository.active-changed` event). */
+export interface RepositoryMove {
+  previousId: string;
+  reason: 'removed' | 'relocated';
+  recentRepositories?: RecentRepository[];
+}
+
+export interface BootstrapRequest {
+  repositoryId?: string;
+}
+
 export interface BootstrapData {
   onboardingVersion?: number;
   recentRepositories: RecentRepository[];
@@ -935,8 +967,15 @@ export interface BootstrapData {
   unavailableActiveRepositoryId?: string | null;
   /** Present when bootstrap arrived through the authoritative server transport. */
   server?: OpenTigServerIdentity;
-  /** How the active repository is watched for changes, with the watch's id while it reports every change. */
+  /**
+   * How the active repository is watched for changes, with the watch's id while it reports every change.
+   * Absent while the watch is being set up: an announcement follows.
+   */
   activeRepositoryWatch?: { state: RepositoryWatchState; watchId?: string };
+  /** See `ClientAttachment`. */
+  attachment?: ClientAttachment;
+  /** Saved repositories relocated during this server's run, by their old id: addresses and steps under one follow it. */
+  relocatedRepositoryIds?: Record<string, string>;
 }
 
 /** Another saved repository found in the folder a moved repository now lives in. */
@@ -974,7 +1013,11 @@ export interface ServerDirectoryListing {
  */
 export interface OpenTigApi {
   app: {
-    bootstrap(): Promise<BootstrapData>;
+    /**
+     * `repositoryId`: the repository this client was on, which a server with `repositoryPerClient`
+     * opens for it alone. Older servers ignore it.
+     */
+    bootstrap(request?: BootstrapRequest): Promise<BootstrapData>;
     gitStatus(): Promise<GitToolStatus>;
     /** Sets user.name/email globally; refuses to replace an existing global identity. */
     setGlobalGitIdentity(input: GitIdentityInput): Promise<void>;
@@ -1180,10 +1223,13 @@ export interface OpenTigApi {
     /** `detected` reports an account OpenTig chose for the listed repository because the default had no access. */
     onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void): () => void;
     /** The connection to the server came back, after events may have been missed. */
-    onReconnected(callback: () => void): () => void;
+    /** `data`: the start-up answer of the new connection, with the saved repositories and relocations as at start-up. */
+    onReconnected(callback: (data?: BootstrapData) => void): () => void;
     /** `watch` is set when the server's watch of the repository ran into trouble or recovered. */
-    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState, watchId?: string) => void): () => void;
-    onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
+    /** `details.refresh === false`: news of the watch that needs no read (see the `repository.changed` event). */
+    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState, watchId?: string, details?: RepositoryChangeDetails) => void): () => void;
+    /** `move`: a server with `repositoryPerClient` moved this client off a removed worktree or a relocated repository. */
+    onActiveRepositoryChanged(callback: (repository: RepositoryInfo, move?: RepositoryMove) => void): () => void;
   };
   projects: {
     create(name: string): Promise<RepositoryOrganization>;

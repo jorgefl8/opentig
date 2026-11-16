@@ -13,7 +13,9 @@ const calls = vi.hoisted(() => ({
   bootstrap: vi.fn(), snapshot: vi.fn(), getFiles: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), error: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(), getFavicon: vi.fn(), listWorktrees: vi.fn(),
   activeRepositoryChanged: null as ((repository: RepositoryInfo) => void) | null,
   repositoryChanged: null as ((repositoryId: string, scope: string, watch?: string, watchId?: string) => void) | null,
-  reconnected: [] as Array<() => void>,
+  reconnected: [] as Array<(data?: unknown) => void>,
+  connection: null as { repositoryId: string | null; repository: RepositoryInfo | null } | null,
+  connectionListeners: [] as Array<() => void>,
   accountsChanged: null as ((repositoryIds?: string[], inventoryChanged?: boolean, detected?: { login: string; previousLogin: string | null }) => void) | null,
 }));
 vi.mock('@/lib/opentig-api', () => ({
@@ -30,10 +32,13 @@ vi.mock('@/lib/opentig-api', () => ({
       onGitHubAccountsChanged: (callback: NonNullable<typeof calls.accountsChanged>) => { calls.accountsChanged = callback; return () => {}; },
       onRepositoryChanged: (callback: NonNullable<typeof calls.repositoryChanged>) => { calls.repositoryChanged = callback; return () => {}; },
       onActiveRepositoryChanged: (callback: (repository: RepositoryInfo) => void) => { calls.activeRepositoryChanged = callback; return () => {}; },
-      onReconnected: (callback: () => void) => { calls.reconnected.push(callback); return () => {}; },
+      onReconnected: (callback: (data?: unknown) => void) => { calls.reconnected.push(callback); return () => {}; },
     },
   },
-  serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
+  serverClient: {
+    transport: { subscribeState: () => () => {}, getState: () => 'connected' },
+    connection: { current: () => calls.connection, subscribe: (listener: () => void) => { calls.connectionListeners.push(listener); return () => {}; } },
+  },
 }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));
 vi.mock('sileo', () => ({ sileo: { error: calls.error, success: calls.success, dismiss: () => {} } }));
@@ -49,6 +54,7 @@ vi.mock('./Toolbar', async () => {
   createElement('button', { 'aria-label': 'Open D', onClick: () => props.onRecent('repo-d') }),
   createElement('button', { 'aria-label': 'Open E', onClick: () => props.onRecent('repo-e') }),
   createElement('output', { 'aria-label': 'Repository' }, props.repository.id),
+  createElement('output', { 'aria-label': 'Saved' }, props.recent.map((recent) => recent.id).join(' ')),
   createElement('output', { 'aria-label': 'Pending' }, props.pendingRepositoryId ?? ''),
   createElement('output', { 'aria-label': 'Phase' }, props.repositoryLoadPhase ?? 'ready'),
   createElement('output', { 'aria-label': 'Busy' }, props.busy ?? ''),
@@ -101,6 +107,8 @@ beforeEach(() => {
   opens.clear();
   statuses.clear();
   calls.reconnected.length = 0;
+  calls.connection = null;
+  calls.connectionListeners.length = 0;
   calls.openRecent.mockImplementation((id: string) => {
     const request = deferred<RepositoryInfo>();
     opens.set(id, request);
@@ -291,6 +299,22 @@ it('reads the repository on a timer while the server watches another one, until 
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
   await settle();
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  // The page's intervals from here on, with how often each fired and whether it was cleared: the timed read
+  // is the one set when the watch stops, which says so whatever other reads land meanwhile.
+  const intervals: { id: number; ms: number; fired: number; cleared: boolean }[] = [];
+  const setFake = window.setInterval.bind(window);
+  const clearFake = window.clearInterval.bind(window);
+  const setSpy = vi.spyOn(window, 'setInterval').mockImplementation(((callback: () => void, ms?: number) => {
+    const interval = { id: 0, ms: ms ?? 0, fired: 0, cleared: false };
+    interval.id = setFake(() => { interval.fired += 1; callback(); }, ms) as unknown as number;
+    intervals.push(interval);
+    return interval.id;
+  }) as typeof window.setInterval);
+  const clearSpy = vi.spyOn(window, 'clearInterval').mockImplementation(((id?: number) => {
+    const interval = intervals.find((item) => item.id === id);
+    if (interval) interval.cleared = true;
+    clearFake(id);
+  }) as typeof window.clearInterval);
   try {
     const reads = () => calls.getStatus.mock.calls.length;
     // An announcement starts a read of its own, which a slow machine may still be making after one
@@ -301,14 +325,22 @@ it('reads the repository on a timer while the server watches another one, until 
     // Watched: the server reports every change, so nothing is read on a timer.
     expect(reads()).toBe(before);
     // Another client opened another repository: this one's changes now go unreported.
+    const known = intervals.length;
     await act(async () => calls.repositoryChanged!('repo', 'unknown', 'stopped'));
     await quiet();
-    const told = reads();
-    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
-    await quiet();
-    expect(reads()).toBe(told + 2);
+    const timed = intervals.slice(known).filter((item) => item.ms === 10_000 && !item.cleared);
+    expect(timed).toHaveLength(1);
+    // Every ten seconds it reads the repository, however the reads it starts interleave with others.
+    for (const tick of [1, 2]) {
+      const ahead = reads();
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(timed[0]!.fired).toBe(tick);
+      await vi.waitFor(() => expect(reads()).toBeGreaterThan(ahead));
+    }
     await act(async () => calls.repositoryChanged!('repo', 'worktree', 'watching', 'second'));
     await quiet();
+    // Watched again: the timed read is gone.
+    expect(timed[0]!.cleared).toBe(true);
     const watched = reads();
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     await settle();
@@ -326,14 +358,70 @@ it('reads the repository on a timer while the server watches another one, until 
     await settle();
     expect(kept('after the reconnect')).toBe('after the reconnect');
     // The connection dropped, and the server's bootstrap afterwards named another repository as watched.
+    const beforeDrop = intervals.length;
     await act(async () => { for (const reconnected of calls.reconnected) reconnected(); });
     await act(async () => calls.repositoryChanged!('repo-b', 'unknown', 'watching', 'elsewhere'));
     await quiet();
+    // This one is read on a timer again.
+    const timedAgain = intervals.slice(beforeDrop).filter((item) => item.ms === 10_000 && !item.cleared);
+    expect(timedAgain).toHaveLength(1);
     const reconnected = reads();
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-    await quiet();
-    expect(reads()).toBe(reconnected + 1);
-  } finally { vi.useRealTimers(); }
+    expect(timedAgain[0]!.fired).toBe(1);
+    await vi.waitFor(() => expect(reads()).toBeGreaterThan(reconnected));
+  } finally {
+    setSpy.mockRestore();
+    clearSpy.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+describe('where each page has its own repository', () => {
+  const saved = (id: string) => ({ ...info(id), lastOpenedAt: '2026-01-01T00:00:00.000Z' });
+  const perClient = (id: string, recents: string[]) => ({
+    activeRepository: info(id), recentRepositories: recents.map(saved), repositoryProjects: [], filesTreeStates: [], openFilesStates: [],
+    preferences: { ...new SettingsStore('unused-settings.json').preferences, remoteFetchIntervalSeconds: 0 },
+    server: { protocolVersion: 4, appVersion: 'test', repositoryPerClient: true as const },
+    attachment: { attached: true, repositoryId: id, ticket: 1 },
+  });
+
+  it('lands on the new id of its repository when it comes back after the repository was relocated meanwhile', async () => {
+    calls.bootstrap.mockResolvedValue(perClient('repo', ['repo', 'repo-b']));
+    await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+    await settle();
+    expect(output('Repository')).toBe('repo');
+
+    // Offline while another client relocated it; the server follows the old id to the new one.
+    const back = { ...perClient('repo-moved', ['repo-moved', 'repo-b']), relocatedRepositoryIds: { repo: 'repo-moved' } };
+    calls.connection = { repositoryId: 'repo-moved', repository: info('repo-moved') };
+    await act(async () => { for (const reconnected of calls.reconnected) reconnected(back); for (const listener of calls.connectionListeners) listener(); });
+    await settle();
+
+    expect(output('Repository')).toBe('repo-moved');
+    expect(output('Saved')).toBe('repo-moved repo-b');
+    // Nothing is asked again under the old id, nor said to be gone.
+    expect(calls.openRecent).not.toHaveBeenCalled();
+    expect(calls.error).not.toHaveBeenCalled();
+  });
+
+  it('follows its repository to the new id an open to agree with the server answers by', async () => {
+    calls.bootstrap.mockResolvedValue(perClient('repo', ['repo', 'repo-b']));
+    await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+    await settle();
+    // The server has the page elsewhere: it opens what it shows again, and that was relocated meanwhile.
+    calls.connection = { repositoryId: 'repo-b', repository: info('repo-b') };
+    await act(async () => { for (const listener of calls.connectionListeners) listener(); });
+    await settle();
+    expect(calls.openRecent).toHaveBeenCalledExactlyOnceWith('repo');
+    calls.connection = { repositoryId: 'repo-moved', repository: info('repo-moved') };
+    await act(async () => opens.get('repo')!.resolve(info('repo-moved')));
+    await settle();
+
+    expect(output('Repository')).toBe('repo-moved');
+    expect(output('Saved')).toContain('repo-moved');
+    expect(output('Saved')).not.toMatch(/\brepo\b(?!-)/);
+    expect(calls.openRecent).toHaveBeenCalledOnce();
+  });
 });
 
 it('ends on the latest choice when an earlier open and its activation event arrive late', async () => {

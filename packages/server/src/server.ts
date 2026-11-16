@@ -85,9 +85,9 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
         : config.trashModulePath
           ? { trash: new SystemTrash(undefined, process.platform, config.trashModulePath) }
           : {}),
-      onEvent: (event) => {
-        config.onEvent?.(event);
-        transport?.publish(event);
+      onEvent: (event, connectionIds) => {
+        config.onEvent?.(event, connectionIds);
+        transport?.publish(event, connectionIds);
       },
       ...(config.logger === undefined ? {} : { logger: config.logger }),
     });

@@ -473,4 +473,9 @@ export const serverClient = {
     getState: () => "connected" as const,
     subscribeState: () => () => {},
   },
+  // The demo has no server: one repository, which every place shares.
+  connection: {
+    current: () => null,
+    subscribe: () => () => {},
+  },
 };

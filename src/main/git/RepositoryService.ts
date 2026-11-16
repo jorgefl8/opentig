@@ -9,9 +9,14 @@ import type { SettingsStore } from '../persistence/SettingsStore';
 import type { GitProcess } from './GitProcess';
 import { parseStatus } from './StatusParser';
 
+/** Relocations remembered per run, for addresses and steps still naming a repository's old id. */
+const MAX_RELOCATIONS = 100;
+
 export class RepositoryService {
   private readonly repositories = new Map<string, RepositoryInfo>();
   private untrackedLineCache = new Map<string, { size: number; mtimeMs: number; lines: number }>();
+  /** Saved repositories relocated during this run, from their old id to the new one; the oldest give way. */
+  private readonly relocations = new Map<string, string>();
 
   constructor(private readonly git: GitProcess, private readonly settings: SettingsStore) {}
 
@@ -21,15 +26,31 @@ export class RepositoryService {
     try { return await this.openRecent(id); } catch { return null; }
   }
 
-  async openRecent(id: string): Promise<RepositoryInfo> {
+  async openRecent(requestedId: string): Promise<RepositoryInfo> {
+    // A client that has not heard of a relocation yet asks by the old id.
+    const id = this.relocatedId(requestedId);
     const recent = this.settings.recentRepositories.find((item) => item.id === id);
     if (!recent) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-recent', message: 'The recent repository no longer exists.' });
     return this.openPath(recent.path);
   }
 
+  /**
+   * Opens a saved repository without saving anything: not its place among the recent ones, nor
+   * as the repository opened last. For a client going back to the repository it was on.
+   */
+  async openKnown(id: string): Promise<RepositoryInfo> {
+    const recent = this.settings.recentRepositories.find((item) => item.id === id);
+    if (!recent) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-recent', message: 'The recent repository no longer exists.' });
+    const repository = await this.preparePath(recent.path);
+    if (repository.id !== id) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-recent', message: 'The repository location changed.' });
+    return repository;
+  }
+
   async openPath(selectedPath: string): Promise<RepositoryInfo> {
     const repository = await this.preparePath(selectedPath);
     await this.settings.touchRepository(repository);
+    // Its id is in use again: it no longer leads to where a repository it once named went.
+    this.relocations.delete(repository.id);
     return repository;
   }
 
@@ -49,6 +70,7 @@ export class RepositoryService {
     }
     validate();
     await this.settings.touchRepository(repository);
+    this.relocations.delete(repository.id);
     return repository;
   }
 
@@ -62,6 +84,12 @@ export class RepositoryService {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'That folder is already in OpenTig. Remove the old entry instead, or choose a different location.' });
     }
     await this.settings.relocateRepository(id, repository, activate);
+    if (repository.id !== id) {
+      this.relocations.delete(id);
+      this.relocations.delete(repository.id);
+      this.relocations.set(id, repository.id);
+      if (this.relocations.size > MAX_RELOCATIONS) this.relocations.delete(this.relocations.keys().next().value!);
+    }
     this.git.unregisterRepository(previous.path);
     this.repositories.delete(id);
     this.repositories.set(repository.id, repository);
@@ -144,6 +172,28 @@ export class RepositoryService {
     return organization;
   }
 
+  /** The id a repository relocated during this run has now, following each move; `id` itself otherwise. */
+  relocatedId(id: string): string {
+    let current = id;
+    const seen = new Set<string>();
+    // An id in use, saved or being set up, is never sent elsewhere.
+    while (this.relocations.has(current) && !this.recent(current) && !this.repositories.has(current) && !seen.has(current)) {
+      seen.add(current);
+      current = this.relocations.get(current)!;
+    }
+    return current;
+  }
+
+  /** Every relocation of this run still saved, from the old id to the current one. */
+  relocatedIds(): Record<string, string> {
+    const ids: Record<string, string> = {};
+    for (const previousId of this.relocations.keys()) {
+      const current = this.relocatedId(previousId);
+      if (current !== previousId && this.recent(current)) ids[previousId] = current;
+    }
+    return ids;
+  }
+
   recent(id: string): RecentRepository | null {
     return this.settings.recentRepositories.find((item) => item.id === id) ?? null;
   }
@@ -169,13 +219,16 @@ export class RepositoryService {
       this.git.registerRepository(hydrated.path, hydrated.commonDir);
       return hydrated;
     }
+    // A command from a client that has not heard of a relocation yet names the old id.
+    const moved = this.relocatedId(id);
+    if (moved !== id) return this.get(moved);
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'repository', message: 'Unknown repository.' });
   }
 
   recents(): RecentRepository[] { return this.settings.recentRepositories; }
 
   /** Opened in this run or saved among the recent repositories. */
-  isKnown(id: string): boolean { return this.repositories.has(id) || Boolean(this.recent(id)); }
+  isKnown(id: string): boolean { return this.repositories.has(id) || Boolean(this.recent(id)) || this.relocatedId(id) !== id; }
 
   async status(id: string, includeStats = true): Promise<RepositoryStatus> {
     const repository = this.get(id);
@@ -208,7 +261,7 @@ export class RepositoryService {
    * entries and its recent-repository rows. Sibling worktrees and the
    * repository's project assignment, keyed by `commonDir`, are left intact.
    */
-  async forgetWorktree(worktreePath: string): Promise<RecentRepository[]> {
+  async forgetWorktree(worktreePath: string, fallbackId?: string): Promise<RecentRepository[]> {
     const target = normalizeWorktreePath(worktreePath);
     for (const [id, repository] of this.repositories) {
       if (normalizeWorktreePath(repository.path) === target) {
@@ -216,7 +269,7 @@ export class RepositoryService {
         this.repositories.delete(id);
       }
     }
-    return this.settings.forgetWorktreePath(worktreePath);
+    return this.settings.forgetWorktreePath(worktreePath, fallbackId);
   }
 
   /**

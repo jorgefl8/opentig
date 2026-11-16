@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { IPC, type IpcResult } from '../../../src/shared/contracts';
@@ -31,6 +32,8 @@ const UNAUTHENTICATED_CONNECTION_LIMIT = 4;
 
 interface ClientState {
   sessionId: string;
+  /** Named here, never by the client: what the server keeps per connection is found by it. */
+  connectionId: string;
   alive: boolean;
   requests: Map<string, RunningRequest>;
   requestTimes: number[];
@@ -81,6 +84,7 @@ export class OpenTigWebSocketTransport {
     },
   });
   private readonly clients = new Map<WebSocket, ClientState>();
+  private readonly connections = new Map<string, WebSocket>();
   /** Connections without a session, upgraded only to be closed, until they are cut. They have their own bound. */
   private readonly rejected = new Set<WebSocket>();
   /** Every connection `reject` has refused: it is refused once, and nothing it still emits is acted on. */
@@ -120,8 +124,15 @@ export class OpenTigWebSocketTransport {
     return count;
   }
 
-  publish(event: OpenTigRuntimeEvent): void {
-    this.broadcast({ type: 'event', event });
+  /** Sends an event to these connections, or to every connection without them. */
+  publish(event: OpenTigRuntimeEvent, connectionIds?: ReadonlySet<string>): void {
+    if (!connectionIds) return this.broadcast({ type: 'event', event });
+    const sockets: WebSocket[] = [];
+    for (const connectionId of connectionIds) {
+      const socket = this.connections.get(connectionId);
+      if (socket) sockets.push(socket);
+    }
+    this.sendTo(sockets, { type: 'event', event });
   }
 
   revokeSessions(sessionIds: readonly string[]): void {
@@ -169,8 +180,10 @@ export class OpenTigWebSocketTransport {
       this.reject(socket, 1008, 'Unauthorized');
       return;
     }
-    const state: ClientState = { sessionId, alive: true, requests: new Map(), requestTimes: [] };
+    const state: ClientState = { sessionId, connectionId: randomUUID(), alive: true, requests: new Map(), requestTimes: [] };
     this.clients.set(socket, state);
+    this.connections.set(state.connectionId, socket);
+    this.options.registry.connectionOpened(state.connectionId);
     void this.options.auth.recordConnection(sessionId).catch(() => {
       this.options.logger('warn', 'Could not update owner session activity.');
     });
@@ -183,6 +196,9 @@ export class OpenTigWebSocketTransport {
       }
       for (const request of state.requests.values()) request.controller.abort();
       this.clients.delete(socket);
+      // Also when it died without a close frame: the heartbeat ends it, and `ws` reports the close.
+      this.connections.delete(state.connectionId);
+      this.options.registry.connectionClosed(state.connectionId);
       if (![...this.clients.values()].some((client) => client.sessionId === sessionId)) {
         this.options.registry.clearSession(sessionId);
       }
@@ -243,8 +259,15 @@ export class OpenTigWebSocketTransport {
     const read = commandDefinition(input.command)?.mutation === false;
     state.requests.set(input.id, { controller, cancellable: read });
     let kept: KeptAnswer | undefined;
+    // What the handler leaves for after the answer, which runs at once once the answer has gone.
+    const afterAnswer: { sent: boolean; tasks: (() => void)[] } = { sent: false, tasks: [] };
+    const runAfterAnswer = (task: () => void) => {
+      try { task(); } catch { this.options.logger('warn', 'A follow-up to a WebSocket answer failed.'); }
+    };
     const execution = this.options.registry.execute(state.sessionId, input.command, input.args, {
       signal: controller.signal,
+      connectionId: state.connectionId,
+      afterAnswer: (task) => { if (afterAnswer.sent) runAfterAnswer(task); else afterAnswer.tasks.push(task); },
       ...(read && input.acceptKept === true ? { kept: (answer: KeptAnswer) => { kept ??= answer; } } : {}),
     });
     this.pendingOperations.add(execution);
@@ -267,7 +290,7 @@ export class OpenTigWebSocketTransport {
       }));
       if (input.command === IPC.bootstrap && result.ok && isRecord(result.value)) {
         // This transport understands `cancel` and `acceptKept`; a client only sends them to a server that says so.
-        result.value = { ...result.value, server: { ...this.options.identity, requestCancellation: true, keptReads: true, repositorySnapshots: true, actionJobLogs: true, fileHistory: true } satisfies OpenTigServerIdentity };
+        result.value = { ...result.value, server: { ...this.options.identity, requestCancellation: true, keptReads: true, repositorySnapshots: true, actionJobLogs: true, fileHistory: true, repositoryPerClient: true } satisfies OpenTigServerIdentity };
       }
       if (result.ok && kept && !timedOut) {
         this.send(socket, { type: 'result', id: input.id, result, kept: { readAt: kept.readAt } });
@@ -281,6 +304,8 @@ export class OpenTigWebSocketTransport {
         }, () => undefined);
       } else this.send(socket, { type: 'result', id: input.id, result });
     } finally {
+      afterAnswer.sent = true;
+      for (const task of afterAnswer.tasks.splice(0)) runAfterAnswer(task);
       state.requests.delete(input.id);
       if (startedAt !== undefined) this.measure('request', startedAt, {
         requestBytes: bytes.byteLength,
@@ -307,10 +332,13 @@ export class OpenTigWebSocketTransport {
   }
 
   private broadcast(message: OpenTigServerMessage): void {
-    // Events are owner-wide invalidations. Share only the encoding; admission,
-    // session authentication, and queued bytes remain per connection.
+    this.sendTo(this.clients.keys(), message);
+  }
+
+  private sendTo(sockets: Iterable<WebSocket>, message: OpenTigServerMessage): void {
+    // Share only the encoding; admission, session authentication, and queued bytes remain per connection.
     let serialized: ReturnType<typeof stringifyBounded> | null | undefined;
-    for (const socket of this.clients.keys()) {
+    for (const socket of sockets) {
       if (!this.canSend(socket)) continue;
       if (serialized === undefined) serialized = this.serialize(message);
       this.sendSerialized(socket, serialized);
@@ -414,7 +442,9 @@ export class OpenTigWebSocketTransport {
       new Promise((resolve) => setTimeout(resolve, 1_000)),
     ]);
     for (const socket of this.clients.keys()) socket.terminate();
+    for (const state of this.clients.values()) this.options.registry.connectionClosed(state.connectionId);
     this.clients.clear();
+    this.connections.clear();
     await Promise.all([this.webSocketServer, this.compressingWebSocketServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   }
 }
