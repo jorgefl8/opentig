@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { announce, arrive, confirmedWatch, NO_WATCH_TRUST, reconnected, startedUp, suspend } from './watch-trust';
+import { announce, arrive, confirmedWatch, needsRead, NO_WATCH_TRUST, reconnected, startedUp, suspend } from './watch-trust';
 
 describe('watch trust where each page has its own repository', () => {
   const onX = () => announce(arrive(NO_WATCH_TRUST, 'x', true), 'x', 'watching', 'c1');
@@ -51,6 +51,40 @@ describe('watch trust where each page has its own repository', () => {
     state = announce(state, 'x', 'stopped', undefined);
     state = suspend(state, false);
     expect(confirmedWatch(state, 'x')).toBeNull();
+  });
+
+  it('reads nothing more on arriving from another repository, all of whose reads follow the answer', () => {
+    const state = arrive(onX(), 'y');
+    expect(needsRead(state, 'y', 'watching', 'c9', false)).toBe(false);
+  });
+
+  it('reads again when the repository it shows is opened again and its watch has another id, as after picking another and coming back before its answer', () => {
+    // On x under c1; another repository is picked, then x again, and the server had the page elsewhere meanwhile.
+    let state = suspend(onX(), true);
+    state = arrive(state, 'x');
+    expect(needsRead(state, 'x', 'watching', 'c2', false)).toBe(true);
+    state = announce(state, 'x', 'watching', 'c2');
+    expect(confirmedWatch(state, 'x')).toBe('c2');
+    // Told the same watch again, as after opening what it shows while the server never moved it: nothing to read.
+    state = arrive(state, 'x');
+    expect(needsRead(state, 'x', 'watching', 'c2', false)).toBe(false);
+  });
+
+  it('reads again after opening what it shows again to settle with the server, as after a choice given up', () => {
+    const state = arrive(suspend(onX(), true), 'x');
+    expect(needsRead(state, 'x', 'watching', 'c3', false)).toBe(true);
+  });
+
+  it('reads again when it arrived on a repository whose open did not take and opens it again before any news of its watch', () => {
+    // Reads of z started as it arrived, possibly before the server had the page there.
+    let state = arrive(onX(), 'z');
+    state = arrive(state, 'z');
+    expect(needsRead(state, 'z', 'watching', 'cz', false)).toBe(true);
+  });
+
+  it('reads nothing for a watch that stopped, which the page relies on for nothing, and always reads without the mark', () => {
+    expect(needsRead(arrive(onX(), 'x'), 'x', 'stopped', undefined, false)).toBe(false);
+    expect(needsRead(onX(), 'x', 'watching', 'c1', undefined)).toBe(true);
   });
 
   it('forgets every announcement when the connection comes back', () => {

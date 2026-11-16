@@ -102,6 +102,7 @@ test('two pages on the same repository both see a commit made in one of them', a
 
 test('removing a worktree another page shows takes that page to the main worktree', async ({ pairedPage: page, repository }) => {
   const worktreePath = `${repository.path}-spike`;
+  await repository.commit('notes.txt', 'First line\n', 'Add notes');
   await repository.git('worktree', 'add', '-q', '-b', 'spike', worktreePath);
   await openRepository(page, repository);
   const branchPicker = (target: Page) => target.getByRole('combobox', { name: 'Select branch' });
@@ -115,6 +116,15 @@ test('removing a worktree another page shows takes that page to the main worktre
   const other = await page.context().newPage();
   await other.goto(page.url());
   await expect(branchPicker(other)).toContainText('spike');
+  // An edit there, not saved yet, which goes with the worktree.
+  await other.getByRole('navigation', { name: 'Repository views' }).getByRole('button', { name: 'Files', exact: true }).click();
+  await other.getByRole('tree', { name: 'Files' }).getByRole('treeitem', { name: 'notes.txt' }).click();
+  const editor = other.getByRole('textbox', { name: 'notes.txt' });
+  await expect(editor).toContainText('First line');
+  await editor.click();
+  await other.keyboard.press('Control+End');
+  await other.keyboard.type('Not saved\n');
+  await expect(other.getByRole('tablist', { name: 'Open files' }).getByRole('tab', { name: 'notes.txt, unsaved changes' })).toBeVisible();
   await openBranch(page, 'main');
 
   await branchPicker(page).click();
@@ -130,6 +140,13 @@ test('removing a worktree another page shows takes that page to the main worktre
   await expect(branchPicker(other)).toContainText('main');
   await expect(other.getByRole('button', { name: 'Locate folder…' })).toHaveCount(0);
   await expect(other.getByText('sample-project-spike was removed')).toBeVisible();
+  await expect(other.getByText(/Unsaved changes in one file were lost with it/)).toBeVisible();
+  // Nothing of it is left to hold up closing the page or installing an update.
+  expect(await other.evaluate(() => {
+    const update = new Event('opentig:before-update', { cancelable: true });
+    window.dispatchEvent(update);
+    return update.defaultPrevented;
+  })).toBe(false);
 
   // Back to where it was: the worktree is gone, which a notice says, and the page stays; nothing asks for a folder.
   const prompts: string[] = [];
@@ -140,3 +157,62 @@ test('removing a worktree another page shows takes that page to the main worktre
   expect(prompts).toEqual([]);
   await other.close();
 });
+
+test('going Back while another repository is opening still shows what changed on disk in the one on screen meanwhile', async ({ pairedPage: page, repository }) => {
+  const second = await otherRepository('second-project');
+  try {
+    await openRepository(page, repository);
+    await addRepository(page, second);
+    await choose(page, repository.name);
+    const address = page.url();
+
+    // A page whose answer to opening the second repository is held back until it picks the first again.
+    const other = await page.context().newPage();
+    let release: (() => void) | null = null;
+    const opening = new Set<string>();
+    await other.routeWebSocket(/\/ws$/, (client) => {
+      const server = client.connectToServer();
+      client.onMessage((message) => {
+        const request = JSON.parse(String(message)) as { type?: string; id?: string; command?: string; args?: unknown[] };
+        if (request.type === 'request' && request.command === 'repository:open-recent' && request.id && JSON.stringify(request.args).includes(addressRepositoryIdOf(address)) === false) opening.add(request.id);
+        server.send(message);
+      });
+      server.onMessage((message) => {
+        const answer = JSON.parse(String(message)) as { type?: string; id?: string };
+        if (answer.type === 'result' && answer.id && opening.has(answer.id) && !release) {
+          opening.delete(answer.id);
+          new Promise<void>((resolve) => { release = resolve; }).then(() => client.send(message), () => undefined);
+          return;
+        }
+        client.send(message);
+      });
+    });
+    await other.goto(address);
+    await expect(picker(other)).toContainText(repository.name);
+    await views(other).getByRole('button', { name: /^Changes/ }).click();
+    await expect(other.getByText('No changes')).toBeVisible();
+
+    await picker(other).click();
+    await other.getByRole('listbox', { name: 'Select project or repository' }).getByRole('option', { name: /^second-project/ }).click();
+    await expect.poll(() => release !== null).toBe(true);
+    // The server has the page on the second repository now: this change does not reach it.
+    await writeFile(path.join(repository.path, 'edited-meanwhile.txt'), 'Changed while away.\n');
+    await other.waitForTimeout(1_000);
+    // Back, to a step in the repository on screen, gives up the choice; the server opened it all the same.
+    await other.getByRole('banner').getByRole('button', { name: 'Back', exact: true }).click();
+    release!();
+
+    await expect(picker(other)).toContainText(repository.name);
+    // Told of its watch again by a new id, the page reads what it missed, well before any timed read.
+    await expect(views(other).getByRole('button', { name: 'Changes 1' })).toBeVisible();
+    await other.close();
+  } finally {
+    await second.dispose();
+  }
+});
+
+/** The repository id in an address. */
+function addressRepositoryIdOf(address: string): string {
+  return new URL(address).pathname.split('/')[2]!;
+}
+

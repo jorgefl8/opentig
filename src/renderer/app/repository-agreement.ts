@@ -21,9 +21,50 @@ export function repositoryAgreement(input: {
   return known(serverId) ? 'follow' : 'none';
 }
 
-/** The id a repository has now, following each relocation the page heard of; `id` itself otherwise. */
-export function relocatedId(relocations: ReadonlyMap<string, string>, id: string): string {
+/**
+ * The id a repository has now, following each relocation the page heard of; `id` itself otherwise.
+ * An id that names a saved repository (`saved`) is its own, even if a repository it once named moved.
+ */
+export function relocatedId(relocations: ReadonlyMap<string, string>, id: string, saved: (repositoryId: string) => boolean): string {
   let current = id;
-  for (let step = 0; step < 100 && relocations.has(current); step += 1) current = relocations.get(current)!;
+  const seen = new Set<string>();
+  while (relocations.has(current) && !saved(current) && !seen.has(current)) {
+    seen.add(current);
+    current = relocations.get(current)!;
+  }
   return current;
+}
+
+/** Drops the relocations whose old id names a saved repository again. */
+export function forgetReusedIds(relocations: Map<string, string>, saved: (repositoryId: string) => boolean): void {
+  for (const previousId of [...relocations.keys()]) if (saved(previousId)) relocations.delete(previousId);
+}
+
+/** Times the page opens again what it shows to agree with the server before it gives up. */
+export const MAX_REOPENS = 3;
+
+/**
+ * Counts the page's attempts to open again what it shows while the server has it elsewhere, so a
+ * repository that can't be opened is not asked for without end: `try` while attempts remain, then
+ * `give-up` once, then `stop`. A new pair of repositories, or agreeing, starts over.
+ */
+export class ReopenAttempts {
+  private key = '';
+  private count = 0;
+
+  next(shownId: string, serverId: string): 'try' | 'give-up' | 'stop' {
+    const key = `${shownId}\0${serverId}`;
+    if (key !== this.key) {
+      this.key = key;
+      this.count = 0;
+    }
+    this.count += 1;
+    if (this.count <= MAX_REOPENS) return 'try';
+    return this.count === MAX_REOPENS + 1 ? 'give-up' : 'stop';
+  }
+
+  reset(): void {
+    this.key = '';
+    this.count = 0;
+  }
 }

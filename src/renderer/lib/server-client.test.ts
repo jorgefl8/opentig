@@ -202,6 +202,16 @@ describe('OpenTig server client', () => {
     expect(moved).toHaveBeenCalledWith(main, { previousId: 'tree', reason: 'removed', recentRepositories: [] });
   });
 
+  it('passes on a relocation made elsewhere, with the new repository and the saved list, and nothing that would read the old id', () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const changed = vi.fn();
+    api.events.onRepositoryChanged(changed);
+    const moved = { id: 'new-id', name: 'app', repositoryName: 'app', path: '/moved/app', commonDir: '/moved/app/.git' };
+    fixture.event({ type: 'repository.changed', repositoryId: 'old-id', scope: 'unknown', relocatedTo: moved, recentRepositories: [] });
+    expect(changed).toHaveBeenCalledExactlyOnceWith('old-id', 'unknown', undefined, undefined, { relocatedTo: moved, recentRepositories: [] });
+  });
+
   it('tells a reconnect apart from an account change, so what GitHub said is refreshed rather than emptied', async () => {
     const fixture = transportFixture();
     const { api } = createOpenTigServerClient({ transport: fixture.transport });
