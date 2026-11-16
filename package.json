@@ -82,7 +82,7 @@
     "marked-footnote": "^1.4.0",
     "marked-katex-extension": "^5.1.13",
     "mermaid": "^12.3.0",
-    "motion": "^14.13.0",
+    "motion": "^14.14.0",
     "parse5": "^8.1.1",
     "pdfjs-dist": "^6.5.438",
     "react": "19.3.1",

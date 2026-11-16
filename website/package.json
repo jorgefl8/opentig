@@ -17,14 +17,14 @@
     "precheck": "node scripts/build-demo.mjs"
   },
   "dependencies": {
-    "@astrojs/markdown-remark": "7.3.8",
-    "@astrojs/react": "7.1.8",
-    "astro": "7.4.11",
+    "@astrojs/markdown-remark": "7.3.9",
+    "@astrojs/react": "7.1.9",
+    "astro": "7.4.12",
     "cookie": "2.0.2",
     "diff": "9.0.0",
     "fumadocs-core": "16.19.0",
     "fumadocs-ui": "16.19.0",
-    "motion": "14.13.0",
+    "motion": "14.14.0",
     "ogl": "1.0.11",
     "react": "19.3.1",
     "react-dom": "19.3.1",
