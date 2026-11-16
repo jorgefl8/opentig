@@ -3,8 +3,8 @@ import { useIntentPrefetch } from '@/lib/use-intent-prefetch';
 import { commitFiles, prefetchCommitFiles } from '@/features/viewer/viewer-prefetch';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconArrowDown, IconChevronRight, IconFilter, IconRestore, IconSearch } from '@tabler/icons-react';
-import type { CommitFile, CommitInfo } from '../../../shared/git-types';
+import { IconArrowDown, IconArrowLeft, IconChevronRight, IconFilter, IconRestore, IconSearch, IconX } from '@tabler/icons-react';
+import type { CommitFile, CommitInfo, FileHistoryEntry } from '../../../shared/git-types';
 import { Button } from '@/components/ui/button';
 import { MobileSwitchRow } from '@/components/MobileChrome';
 import { MobileSheet } from '@/components/MobileSheet';
@@ -23,10 +23,25 @@ import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { Spinner } from '@/components/ui/spinner';
 
+/** History narrowed to the commits that changed one file. */
+export interface HistoryFileFilter {
+  path: string;
+  /** How each listed commit changed the file, by commit. */
+  entries: ReadonlyMap<string, FileHistoryEntry>;
+  /** The file has more commits than are listed. */
+  limited: boolean;
+  /** Names where `onBack` returns to; null when there is nowhere else to go back to. */
+  backLabel: string | null;
+  onBack(): void;
+  onClear(): void;
+}
+
 interface HistoryViewProps {
   repositoryId: string; upstream: string | null; readOnly: boolean; operation: string | null;
   commits: CommitInfo[] | null; nextCursor: string | null; loading: boolean; undoing: boolean;
   baseRef?: string | null | undefined; activeOid?: string | null;
+  /** Lists only the commits that changed this file, each opening on its diff of the file. */
+  fileFilter?: HistoryFileFilter | null;
   onSelectCommit(commit: CommitInfo): void; onSelectFile(oid: string, file: CommitFile): void; onUndo(commit: CommitInfo): void; onMore(): void;
 }
 
@@ -34,7 +49,7 @@ interface HistoryViewProps {
 const LOAD_MORE_HEIGHT = 36;
 const MOBILE_LOAD_MORE_HEIGHT = 48;
 
-export function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, baseRef, activeOid, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
+export function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, baseRef, activeOid, fileFilter = null, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
   const mobile = useMobileLayout();
   const scrollRef = useRef<HTMLDivElement>(null);
   // A commit the pointer rests on is read then, so clicking it shows it.
@@ -50,11 +65,15 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   const loadMoreHeight = mobile ? MOBILE_LOAD_MORE_HEIGHT : LOAD_MORE_HEIGHT;
   const searching = search.trim().length > 0;
   // Search temporarily reveals grouped commits; it never removes graph context.
-  const rows = useMemo(() => historyRows(commits ?? [], grouped && !searching), [commits, grouped, searching]);
-  const branchLine = showsBranchLine(upstream, baseRef);
-  const graph = useMemo(() => buildCommitGraph(rows.map(({ commit, parentOids }) => ({ oid: commit.oid, parentOids, branch: branchLine && commit.baseState === 'outside' }))), [rows, branchLine]);
+  // A file's commits are not a connected history: no lanes, and no merges to group.
+  const rows = useMemo(() => historyRows(commits ?? [], grouped && !searching && !fileFilter), [commits, fileFilter, grouped, searching]);
+  const branchLine = !fileFilter && showsBranchLine(upstream, baseRef);
+  // A file's commits are drawn as one line, whatever their parents: each follows the one before it.
+  const graph = useMemo(() => buildCommitGraph(rows.map(({ commit, parentOids }, index) => ({
+    oid: commit.oid, parentOids: fileFilter ? rows.slice(index + 1, index + 2).map((next) => next.commit.oid) : parentOids, branch: branchLine && commit.baseState === 'outside',
+  }))), [rows, branchLine, fileFilter]);
   // One plain lane says nothing, but a branch line marks where the base starts.
-  const showGraph = graph.laneCount > 1 || graph.hasBranch;
+  const showGraph = !fileFilter && (graph.laneCount > 1 || graph.hasBranch);
   const matches = useMemo(() => rows.flatMap(({ commit }, index) => matchesHistory(commit, search) ? [index] : []), [rows, search]);
   const graphWidth = graphWidthForLanes(graph.laneCount);
   // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
@@ -76,10 +95,16 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
     setMatchIndex(next);
     commitVirtualizer.scrollToIndex(matches[next]!, { align: 'center' });
   };
-  if (commits === null) return <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading history…" /></div>;
+  const filterBar = fileFilter && <FileFilterBar filter={fileFilter} />;
+  if (commits === null) return <div className="history-list">
+    {filterBar}
+    <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text={fileFilter ? 'Loading the file’s history…' : 'Loading history…'} /></div>
+  </div>;
   const canGroup = grouped || commits.some((commit) => commit.parentCount > 1);
+  const endNote = fileFilter?.limited && !nextCursor;
   return (
     <div className="history-list" data-searching={searching || undefined} style={{ '--history-row-height': `${rowHeight}px` } as CSSProperties}>
+      {filterBar}
       <div className="history-toolbar">
         <label className="search-input history-search">
           <IconSearch aria-hidden="true" />
@@ -90,7 +115,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
           </Tooltip>}
         </label>
         {searching && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={nextMatch} disabled={!matches.length} aria-label="Next matching commit" />}><IconArrowDown /></TooltipTrigger><TooltipContent>Next match in loaded history (Enter)</TooltipContent></Tooltip>}
-        {mobile ? <>
+        {fileFilter ? null : mobile ? <>
           <Button variant={grouped ? 'secondary' : 'ghost'} size="icon" className="mobile-bar-button" aria-label="History options" aria-haspopup="dialog" onClick={() => setOptionsOpen(true)}><IconFilter /></Button>
           <MobileSheet open={optionsOpen} onOpenChange={setOptionsOpen} title="History">
             <MobileSwitchRow label="Group merges" checked={grouped} disabled={!canGroup} onChange={setGrouped} />
@@ -106,9 +131,11 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
           </DropdownMenuContent>
         </DropdownMenu>}
       </div>
-      <div ref={scrollRef} className="history-scroll" role="list" aria-label="Commit history">
-        {rows.length === 0 ? <p className="empty-list">This repository has no commits yet.</p> : (
-          <div className="virtual-list" style={{ height: commitVirtualizer.getTotalSize() + (nextCursor ? loadMoreHeight : 0) }}>
+      <div ref={scrollRef} className="history-scroll" role="list" aria-label={fileFilter ? `Commits that changed ${fileFilter.path}` : 'Commit history'}>
+        {rows.length === 0 ? <p className="empty-list">{fileFilter
+          ? 'Git has no commits for this file: it hasn’t been committed yet, or it is in a folder Git ignores.'
+          : 'This repository has no commits yet.'}</p> : (
+          <div className="virtual-list" style={{ height: commitVirtualizer.getTotalSize() + (nextCursor || endNote ? loadMoreHeight : 0) }}>
             {commitVirtualizer.getVirtualItems().map((virtualRow) => {
               const { commit, grouped: groupedCommits } = rows[virtualRow.index]!;
               return (
@@ -118,6 +145,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
                     graphRow={graph.rows[virtualRow.index]!} showGraph={showGraph} branchRefs={graph.hasBranch} graphWidth={graphWidth} rowHeight={rowHeight}
                     active={activeOid === commit.oid || groupedCommits.some((item) => item.oid === activeOid)} match={matchesHistory(commit, search)} currentMatch={matches[currentMatch] === virtualRow.index}
                     groupedCount={groupedCommits.length} onRevealGroup={() => setGrouped(false)}
+                    fileEntry={fileFilter?.entries.get(commit.oid) ?? null} filterPath={fileFilter?.path ?? null}
                     expanded={expandedCommits.has(commit.oid)}
                     onExpandedChange={(expanded) => setExpandedCommits((current) => { const next = new Set(current); if (expanded) next.add(commit.oid); else next.delete(commit.oid); return next; })}
                     canUndo={!readOnly && !operation && !undoing && canUndoCommit(commit)}
@@ -127,6 +155,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
               );
             })}
             {nextCursor && <button className="history-more" style={{ top: commitVirtualizer.getTotalSize() }} disabled={loading} onClick={onMore}>{loading ? <ShimmeringText text="Loading…" /> : 'Load more'}</button>}
+            {endNote && <p className="history-more history-end-note" style={{ top: commitVirtualizer.getTotalSize() }}>OpenTig lists this file’s newest {commits.length.toLocaleString()} commits.</p>}
           </div>
         )}
       </div>
@@ -134,7 +163,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   );
 }
 
-function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, showGraph, branchRefs, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
+function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, showGraph, branchRefs, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, fileEntry, filterPath, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
   /** The whole row is the target there: what's on the row elsewhere is in the commit viewer. */
   phone: boolean;
   repositoryId: string; upstream: string | null; baseRef?: string | null | undefined; commit: CommitInfo; expanded: boolean; canUndo: boolean;
@@ -143,6 +172,9 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
   branchRefs: boolean;
   graphWidth: number; rowHeight: number; active: boolean; match: boolean; currentMatch: boolean; groupedCount: number;
   onRevealGroup(): void;
+  /** In a file's history: how this commit changed the file, which the row shows instead of its files. */
+  fileEntry: FileHistoryEntry | null;
+  filterPath: string | null;
   onExpandedChange(expanded: boolean): void;
   onSelectCommit(commit: CommitInfo): void; onSelectFile(oid: string, file: CommitFile): void; onUndo(commit: CommitInfo): void;
 }) {
@@ -151,14 +183,14 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
   const [filesError, setFilesError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (phone || !expanded || files || filesError) return;
+    if (phone || !expanded || files || filesError || fileEntry) return;
     let active = true;
     // Shared with the commit viewer and the read ahead of a click, and kept for both.
     commitFiles(repositoryId, commit.oid).then((value) => {
       if (active) setFiles(value);
     }).catch((reason) => { if (active) setFilesError(messageOf(reason)); });
     return () => { active = false; };
-  }, [cacheKey, commit.oid, expanded, files, filesError, phone, repositoryId]);
+  }, [cacheKey, commit.oid, expanded, fileEntry, files, filesError, phone, repositoryId]);
 
   const reference = commitReference(commit);
   const refs = commit.decorations.map((decoration) => ({ name: decoration.replace(/^(tag: |HEAD -> )/, ''), current: decoration.startsWith('HEAD -> ') }));
@@ -168,7 +200,8 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
   const nodeY = graphNodeY(rowHeight);
   const additions = files?.reduce((total, file) => total + file.additions, 0) ?? 0;
   const deletions = files?.reduce((total, file) => total + file.deletions, 0) ?? 0;
-  const open = expanded && !phone;
+  const open = expanded && !phone && !fileEntry;
+  const fileNote = fileEntry && <FileChangeNote entry={fileEntry} filterPath={filterPath} />;
   const className = ['commit-item', active && 'active', open && 'expanded', match && 'commit-search-match', currentMatch && 'commit-current-match'].filter(Boolean).join(' ');
 
   return (
@@ -186,13 +219,14 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
           <button className="commit-subject" aria-pressed={active} onClick={() => onSelectCommit(commit)}>{commit.subject || '(no subject)'}</button>
           {phone ? <span className="commit-meta">
             <time dateTime={commit.date}>{formatDate(commit.date)}</time>
-            <MetaSeparator />
-            <span className="commit-author">{commit.author}</span>
+            {!fileNote && <><MetaSeparator /><span className="commit-author">{commit.author}</span></>}
             <MetaSeparator />
             <span className="commit-oid">{commit.shortOid}</span>
             {commit.upstreamState === 'local-only' && <><MetaSeparator /><span className="commit-local-label">Not published</span></>}
             {reference && <><MetaSeparator /><span className="commit-pr">#{reference.number}</span></>}
             {groupedCount > 0 && <><MetaSeparator /><span>{groupedCount} grouped</span></>}
+            {fileNote}
+            {fileNote && <><MetaSeparator /><span className="commit-author">{commit.author}</span></>}
             {refs.length > 0 && <span className="commit-refs">{refLabels}</span>}
           </span> : <span className="commit-meta">
             <Tooltip>
@@ -200,8 +234,10 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
               <TooltipContent>{formatDateTime(commit.date)}</TooltipContent>
             </Tooltip>
             <MetaSeparator />
-            <Tooltip><TooltipTrigger render={<span className="commit-author" />}>{commit.author}</TooltipTrigger><TooltipContent>{commit.email ? `${commit.author} <${commit.email}>` : commit.author}</TooltipContent></Tooltip>
-            <MetaSeparator />
+            {!fileNote && <>
+              <Tooltip><TooltipTrigger render={<span className="commit-author" />}>{commit.author}</TooltipTrigger><TooltipContent>{commit.email ? `${commit.author} <${commit.email}>` : commit.author}</TooltipContent></Tooltip>
+              <MetaSeparator />
+            </>}
             <Tooltip>
               <TooltipTrigger render={<button className="commit-oid" onClick={() => void copyCommitHash(commit.oid)} aria-label={`Copy hash ${commit.shortOid}`} />}>{commit.shortOid}</TooltipTrigger>
               <TooltipContent>Copy full hash</TooltipContent>
@@ -220,6 +256,11 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
               <MetaSeparator />
               <Tooltip><TooltipTrigger render={<button className="commit-group-count" onClick={onRevealGroup} />}>{groupedCount} grouped</TooltipTrigger><TooltipContent>Show the {groupedCount} commits in this merge branch</TooltipContent></Tooltip>
             </>}
+            {fileNote}
+            {fileNote && <>
+              <MetaSeparator />
+              <Tooltip><TooltipTrigger render={<span className="commit-author" />}>{commit.author}</TooltipTrigger><TooltipContent>{commit.email ? `${commit.author} <${commit.email}>` : commit.author}</TooltipContent></Tooltip>
+            </>}
             {refs.length > 0 && <Tooltip><TooltipTrigger render={<span className="commit-refs" />}>{refLabels}</TooltipTrigger><TooltipContent>{refNames.join(' · ')}</TooltipContent></Tooltip>}
           </span>}
         </div>
@@ -230,10 +271,10 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
               <TooltipContent>Undo commit and keep its changes staged</TooltipContent>
             </Tooltip>
           )}
-          <Tooltip>
+          {!fileEntry && <Tooltip>
             <TooltipTrigger render={<button className="commit-expand" aria-expanded={expanded} aria-label={expanded ? 'Collapse commit' : 'Expand commit'} onClick={() => onExpandedChange(!expanded)} />}><IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''}`} /></TooltipTrigger>
             <TooltipContent>{expanded ? 'Hide files' : 'Show files'}</TooltipContent>
-          </Tooltip>
+          </Tooltip>}
         </div>}
       </div>
       {/* Sized by the item's height, so the lanes follow the files as they open and close. */}
@@ -255,6 +296,50 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
           </>
         )}
       </Reveal>
+    </div>
+  );
+}
+
+/** What a commit did to the file whose history is listed: its lines, and its name when that differed. */
+function FileChangeNote({ entry, filterPath }: { entry: FileHistoryEntry; filterPath: string | null }) {
+  // As a diff's header says it: a rename is `from` its old path.
+  const name = entry.oldPath && entry.kind === 'renamed' ? `from ${entry.oldPath}`
+    : entry.oldPath && entry.kind === 'copied' ? `copied from ${entry.oldPath}`
+      : entry.path !== filterPath ? `as ${entry.path}` : null;
+  return <>
+    {entry.kind === 'deleted' && <><MetaSeparator /><span className="commit-file-change deleted">deleted</span></>}
+    {entry.binary ? <><MetaSeparator /><span className="commit-file-stats"><span className="binary">bin</span></span></>
+      : (entry.additions > 0 || entry.deletions > 0) && <><MetaSeparator /><span className="commit-file-stats">
+        {entry.additions > 0 && <span className="add">+{entry.additions}</span>}
+        {entry.deletions > 0 && <span className="del">−{entry.deletions}</span>}
+      </span></>}
+    {name && <><MetaSeparator /><span className="commit-file-name">{name}</span></>}
+  </>;
+}
+
+function FileFilterBar({ filter }: { filter: HistoryFileFilter }) {
+  const slash = filter.path.lastIndexOf('/');
+  const name = filter.path.slice(slash + 1);
+  const folder = slash > 0 ? filter.path.slice(0, slash) : '';
+  const pathRef = useRef<HTMLSpanElement>(null);
+  return (
+    <div className="history-file-filter" role="group" aria-label="File history">
+      {filter.backLabel && <Tooltip>
+        <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" aria-label={`Back to ${filter.backLabel}`} onClick={filter.onBack} />}><IconArrowLeft /></TooltipTrigger>
+        <TooltipContent>Back to {filter.backLabel}</TooltipContent>
+      </Tooltip>}
+      <VsCodeTreeIcon path={filter.path} type="file" />
+      <Tooltip>
+        <TooltipTrigger render={<span ref={pathRef} className="history-file-filter-path" tabIndex={0} />}>
+          <span className="history-file-filter-label">History of</span> <span className="history-file-filter-name">{name}</span>
+          {folder && <span className="history-file-filter-folder"> in {folder}</span>}
+        </TooltipTrigger>
+        <TooltipContent>{filter.path}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" aria-label="Show every commit" onClick={filter.onClear} />}><IconX /></TooltipTrigger>
+        <TooltipContent>Show every commit</TooltipContent>
+      </Tooltip>
     </div>
   );
 }

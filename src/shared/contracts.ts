@@ -3,7 +3,7 @@ import type { CloneJob, CloneRepositoryInput, GitIdentityInput, GitToolStatus } 
 import type { RemoteAccessProblem } from './repository-access';
 import type { CommitAuthorship, SetCommitAuthorshipInput } from './commit-authorship';
 import type { SerializedOperationError } from './errors';
-import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
+import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileHistoryPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
 import type { OpenTigServerIdentity } from './server-protocol';
 import type { RepositoryWatchState } from './runtime-events';
@@ -784,6 +784,70 @@ export interface ActionRunDetails extends ActionRunSummary {
   graphSource: 'workflow' | 'jobs';
 }
 
+/** What a line of a job's log is, from GitHub's own markers (`##[error]`, `##[group]`, ...). */
+export type ActionJobLogLineKind = 'output' | 'error' | 'warning' | 'notice' | 'debug' | 'command' | 'group' | 'endgroup';
+
+export interface ActionJobLogLine {
+  /** Its line number in the whole log, as GitHub numbers it. */
+  number: number;
+  /** When the runner wrote it, in milliseconds since the epoch; null when the line carried no time. */
+  time: number | null;
+  kind: ActionJobLogLineKind;
+  /**
+   * The text without its time or GitHub marker. It may hold ANSI color codes (SGR), and nothing
+   * else that is not printable: it is shown as styled text, never as markup.
+   */
+  text: string;
+  /** Longer than OpenTig shows: the rest is on GitHub. */
+  clipped?: true;
+}
+
+export interface ActionJobLogStep {
+  /** GitHub's step number; null for lines OpenTig could not place in a step. */
+  number: number | null;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  lines: ActionJobLogLine[];
+  /** Lines of this step left out from its start because the log is larger than OpenTig shows. */
+  omittedLines: number;
+}
+
+export type ActionJobLog =
+  | {
+    state: 'ready';
+    jobId: number;
+    steps: ActionJobLogStep[];
+    /** Lines in what OpenTig read of the log. */
+    totalLines: number;
+    /** OpenTig read only the start of the log: it is larger than `ACTION_JOB_LOG_LIMITS.readBytes` or `readLines`. */
+    readCut: boolean;
+    /** Some lines were left out, or cut short, to stay within what OpenTig shows. */
+    displayCut: boolean;
+    /** OpenTig couldn't tell which lines belong to which step: `steps` holds the whole log as one. */
+    unsplit?: true;
+    /** Some steps were placed by their times, or among lines that fit as well: they may not line up exactly. */
+    uncertain?: true;
+  }
+  /** GitHub serves a job's log once the job has finished. */
+  | { state: 'pending'; jobId: number }
+  /** GitHub has no log for it: the job never ran, or its log has expired. */
+  | { state: 'unavailable'; jobId: number; reason: 'not-run' | 'expired' };
+
+/** How much of a job's log OpenTig reads and shows. */
+export const ACTION_JOB_LOG_LIMITS = {
+  /** Read from GitHub; past this, only the start is shown. */
+  readBytes: 16 * 1024 * 1024,
+  /** Lines read, of a log of very short lines; past this, too, only the start is shown. */
+  readLines: 500_000,
+  /** Lines shown, of all steps; failed steps keep their last lines first. */
+  lines: 20_000,
+  /** UTF-8 bytes shown, of all lines as they are sent, well within what one answer may carry. */
+  bytes: 2_400_000,
+  /** Characters of one line. */
+  lineCharacters: 2_000,
+} as const;
+
 export interface CreatePullRequestInput {
   expectedAccount?: { login: string; revision: number };
   repositoryId: string;
@@ -1006,6 +1070,11 @@ export interface OpenTigApi {
     undoLatest(repositoryId: string, expectedOid: string): Promise<UndoLatestCommitResult>;
     list(repositoryId: string, cursor?: string): Promise<CommitPage>;
     files(repositoryId: string, oid: string): Promise<CommitFile[]>;
+    /**
+     * The commits that changed a file, newest first, following its renames, a page at a time from
+     * `cursor`. Only on a server whose identity has `fileHistory`.
+     */
+    fileHistory(repositoryId: string, path: string, cursor?: string): Promise<FileHistoryPage>;
     /** Whether a full hash names a commit in the local repository, so a link to it can open the commit viewer. */
     recognize(repositoryId: string, oid: string): Promise<boolean>;
     /** Commits on HEAD that `oid` does not reach, such as those made after a merged pull request's head. Null when `oid` is not a commit in the local repository. */
@@ -1095,6 +1164,8 @@ export interface OpenTigApi {
     listActionRuns(repositoryId: string, workflowId: number | null, page?: number): Promise<ActionRunPage>;
     /** A run with its jobs, steps and the dependency graph of its workflow. */
     getActionRun(repositoryId: string, runId: number): Promise<ActionRunDetails>;
+    /** A finished job's log, by step. Only on a server whose identity has `actionJobLogs`. */
+    getActionJobLog(repositoryId: string, jobId: number): Promise<ActionJobLog>;
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
     cancelDraft(requestId: string): Promise<void>;
   };
@@ -1137,7 +1208,7 @@ export const IPC = {
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
-  commitsList: 'commits:list', commitsFiles: 'commits:files', commitsRecognize: 'commits:recognize', commitsCountAfter: 'commits:count-after', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
+  commitsList: 'commits:list', commitsFiles: 'commits:files', commitsFileHistory: 'commits:file-history', commitsRecognize: 'commits:recognize', commitsCountAfter: 'commits:count-after', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
@@ -1147,5 +1218,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review', githubPrEntryEdit: 'github:pr-entry-edit', githubPrEntryDelete: 'github:pr-entry-delete',
-  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrListLineCounts: 'github:pr-list-line-counts', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrListLineCounts: 'github:pr-list-line-counts', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubActionJobLog: 'github:action-job-log', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

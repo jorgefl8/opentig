@@ -37,9 +37,12 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 
 /** GitHub is slow to answer again, so what it said stays available this long after it was last on screen, instead of five minutes. */
 export const GITHUB_DATA_GC_MS = 30 * 60_000;
-const GITHUB_RESOURCES = new Set(['push-context', 'github-account', 'pulls', 'pull-stacks', 'pull-line-counts', 'pull-request', 'pull-request-state', 'pull-request-conversation', 'pull-request-stack', 'pull-request-diff', 'pull-request-commits', 'pull-request-commit-diff', 'branch-pull-request', 'releases', 'release', 'release-tag', 'workflows', 'workflows-runnable', 'workflow-triggers', 'action-runs', 'action-run']);
-/** A pull request's code can be megabytes, and Git reads it again from the clone: it keeps the usual five minutes. */
-const GITHUB_CODE = new Set(['pull-request-diff', 'pull-request-commit-diff']);
+const GITHUB_RESOURCES = new Set(['push-context', 'github-account', 'pulls', 'pull-stacks', 'pull-line-counts', 'pull-request', 'pull-request-state', 'pull-request-conversation', 'pull-request-stack', 'pull-request-diff', 'pull-request-commits', 'pull-request-commit-diff', 'branch-pull-request', 'releases', 'release', 'release-tag', 'workflows', 'workflows-runnable', 'workflow-triggers', 'action-runs', 'action-run', 'action-job-log']);
+/**
+ * A pull request's code can be megabytes, and Git reads it again from the clone: it keeps the usual five minutes.
+ * A job's log is large and may hold what a workflow printed: it sets its own, shorter life (see `JOB_LOG_GC_MS`).
+ */
+const GITHUB_CODE = new Set(['pull-request-diff', 'pull-request-commit-diff', 'action-job-log']);
 
 /** Gives every GitHub read made through `client` the longer life of `GITHUB_DATA_GC_MS`. A query's lifetime only ever grows, so later options don't shorten it. */
 export function keepGitHubData(client: QueryClient): () => void {
@@ -89,6 +92,7 @@ export const queryKeys = {
   workflowTriggers: (repositoryId: string, path: string, ref: string) => ['repository', repositoryId, 'workflow-triggers', path, ref] as const,
   actionRuns: (repositoryId: string, workflowId: number | null) => ['repository', repositoryId, 'action-runs', workflowId] as const,
   actionRun: (repositoryId: string, runId: number) => ['repository', repositoryId, 'action-run', runId] as const,
+  actionJobLog: (repositoryId: string, jobId: number) => ['repository', repositoryId, 'action-job-log', jobId] as const,
   search: (repositoryId: string, input: object) => ['repository', repositoryId, 'search', input] as const,
   localRefs: (repositoryId: string) => ['repository', repositoryId, 'local-refs'] as const,
   branchDetails: (repositoryId: string, fullName: string) => ['repository', repositoryId, 'branch-details', fullName] as const,

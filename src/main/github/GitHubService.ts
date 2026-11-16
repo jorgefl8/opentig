@@ -5,7 +5,7 @@ import type { CliDetection } from '../ai/cli-selection';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLineCounts, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { ActionJobLog, ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLineCounts, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError, serializeError } from '../../shared/errors';
 import type { KeptAnswerSink, KeptRefreshOutcome } from '../../shared/kept-reads';
 import { GitHubReadCache, remoteFingerprint, type GitHubReadScope } from './GitHubReadCache';
@@ -148,6 +148,7 @@ export class GitHubService {
       requireGitHub: (repositoryId: string, operation: string, fresh?: boolean) => this.requireGitHub(repositoryId, operation, fresh),
       run: (executable: CliCandidate, args: string[], options: GhRunOptions) => this.run(executable, args, options),
       runRead: (args: string[], options: GhRunOptions) => this.runGh(args, options),
+      failure: (result: CliRunResult, options: GhRunOptions) => this.failure({ ...result, stdout: redactCommandToken(result.stdout, options.auth) }, options.auth, options.operation),
       invalidate: (repositoryId: string, change?: GitHubChange) => this.invalidate(repositoryId, change),
       // What decides an action waits for the whole state, however long the stack takes.
       readLiveState: (repositoryId: string, number: number) => this.readGetPullRequestLiveState(repositoryId, number, true),
@@ -686,6 +687,20 @@ export class GitHubService {
       () => this.actionRuns.viewRun(repositoryId, runId), { kept });
   }
 
+  /**
+   * A finished job's log. Not kept here, nor written with the other answers: a log can hold what a
+   * workflow printed, which GitHub masks only where it knew a secret. Each request reads it, and the
+   * request's signal stops the read.
+   */
+  async getActionJobLog(repositoryId: string, jobId: number, signal?: AbortSignal): Promise<ActionJobLog> {
+    const repository = this.repositories.get(repositoryId);
+    try {
+      return await this.actionRuns.jobLog(repositoryId, jobId, signal);
+    } catch (error) {
+      throw this.namingAccount(error, repository);
+    }
+  }
+
   runWorkflow(input: RunWorkflowInput): Promise<void> {
     return this.releases.runWorkflow(input);
   }
@@ -913,6 +928,8 @@ export class GitHubService {
         ...(options.auth?.removeEnv ? { removeEnv: options.auth.removeEnv } : {}),
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
         ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
+        ...(options.allowTruncatedOutput ? { allowTruncatedOutput: true } : {}),
+        ...(options.signal ? { signal: options.signal } : {}),
         ...(options.stdin !== undefined ? { stdin: options.stdin } : {}),
       });
     } catch (error) {

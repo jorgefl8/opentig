@@ -445,6 +445,12 @@ export function registerServerCommands(
     oidArg(expectedOid, 'undo-latest-commit'),
   ));
   handle(IPC.commitsList, 'history', (id, cursor) => services.operations.listCommits(stringArg(id, 'history', 64), cursor === undefined ? undefined : stringArg(cursor, 'history', 128)));
+  handleWithContext(IPC.commitsFileHistory, 'file-history', (context, id, filePath, cursor) => services.operations.fileHistory(
+    stringArg(id, 'file-history', 64),
+    stringArg(filePath, 'file-history'),
+    cursor === undefined ? undefined : stringArg(cursor, 'file-history', 160),
+    context.signal,
+  ));
   handleWithContext(IPC.commitsFiles, 'commit-files', (context, id, oid) => services.operations.commitFiles(stringArg(id, 'commit-files', 64), stringArg(oid, 'commit-files', 128), context.signal));
   handle(IPC.commitsRecognize, 'commit-recognize', (id, oid) => services.operations.recognizeCommit(stringArg(id, 'commit-recognize', 64), stringArg(oid, 'commit-recognize', 128)));
   handle(IPC.commitsCountAfter, 'commits-after', (id, oid) => services.operations.commitsAfter(stringArg(id, 'commits-after', 64), oidArg(oid, 'commits-after')));
@@ -598,6 +604,7 @@ export function registerServerCommands(
     context.kept,
   ));
   handleWithContext(IPC.githubActionRunView, 'gh-action-run-view', (context, id, runId) => services.github.getActionRun(stringArg(id, 'gh-action-run-view', 64), githubIdArg(runId, 'gh-action-run-view'), context.kept));
+  handleWithContext(IPC.githubActionJobLog, 'gh-action-job-log', (context, id, jobId) => services.github.getActionJobLog(stringArg(id, 'gh-action-job-log', 64), githubIdArg(jobId, 'gh-action-job-log'), context.signal));
   handle(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', (requestId) => {
     services.prDrafts.cancel(aiString(requestId, 'ai-pr-draft-cancel', 100, true));
   });

@@ -4,6 +4,7 @@ import { createTwoFilesPatch, diffLines } from "diff";
 import { findSearchMatches, type SearchReplaceRequest } from "../../src/shared/search.ts";
 import type {
   CommitFile,
+  FileHistoryEntry,
   CommitInfo,
   FileTreeEntry,
   RepositoryStatus,
@@ -765,6 +766,18 @@ export class DemoRepository {
   commitFiles(oid: string): CommitFile[] {
     const { before, after, renames } = this.getCommit(oid);
     return changedFiles(before, after, renames);
+  }
+  /** The sample commits that changed a file, newest first, following its renames as `git log --follow` does. */
+  historyOfFile(path: string): FileHistoryEntry[] {
+    const entries: FileHistoryEntry[] = [];
+    let current = path;
+    for (const commit of this.commits) {
+      const file = this.commitFiles(commit.info.oid).find((item) => item.path === current);
+      if (!file) continue;
+      entries.push({ commit: { ...commit.info }, path: file.path, oldPath: file.oldPath, kind: file.kind, additions: file.additions, deletions: file.deletions, binary: file.binary });
+      current = file.oldPath ?? current;
+    }
+    return entries;
   }
   commitDiff(oid: string, path?: string): DiffResult {
     const { before, after } = this.getCommit(oid);
