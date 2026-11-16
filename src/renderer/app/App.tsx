@@ -1434,6 +1434,21 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     forgetReusedIds(relocatedIdsRef.current, (id) => saved.has(id));
   }, []);
 
+  // Back after the connection dropped: relocations made meanwhile are taken as at start-up, and a page
+  // whose repository was relocated lands on its new id with what it held, as one told at the time does.
+  useEffect(() => opentig.events.onReconnected((data) => {
+    if (!data?.attachment) return;
+    const relocations = data.relocatedRepositoryIds ?? {};
+    for (const [previousId, id] of Object.entries(relocations)) {
+      const relocated = data.recentRepositories.find((item) => item.id === id);
+      // While the page's list still has the old entry (see `rebindBootstrapRepository`).
+      if (relocated) rebindRelocatedRepository(previousId, relocated);
+    }
+    takeRecentRepositories(data.recentRepositories);
+    const shownId = watchTrustRef.current.repositoryId;
+    if (shownId && data.activeRepository && relocations[shownId] === data.activeRepository.id) recordOpenedRepository(data.activeRepository, shownId);
+  }), [rebindRelocatedRepository, recordOpenedRepository, takeRecentRepositories]);
+
   // A repository relocated from another window: whatever the page has open, what it holds under the old id follows it.
   useEffect(() => opentig.events.onRepositoryChanged((previousId, _scope, _watch, _watchId, details) => {
     if (!details?.relocatedTo) return;
@@ -1559,7 +1574,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     // Arriving on it again: only what the server announces once it has the page back counts.
     updateWatchTrust((state) => arrive(state, shownId));
     dropFilesAhead(shownId!);
-    void opentig.repository.openRecent(shownId!).then(settled, () => {
+    void opentig.repository.openRecent(shownId!).then((answered) => {
+      // Relocated meanwhile: the server answers by the new id, and the page follows it there with what it holds.
+      if (answered.id !== shownId) recordOpenedRepository(answered, shownId!);
+      settled();
+    }, () => {
       // It can't be opened any more: the page goes where the server has it.
       if (known(serverId)) follow();
       else settled();

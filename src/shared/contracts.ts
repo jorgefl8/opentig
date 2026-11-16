@@ -1223,7 +1223,8 @@ export interface OpenTigApi {
     /** `detected` reports an account OpenTig chose for the listed repository because the default had no access. */
     onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void): () => void;
     /** The connection to the server came back, after events may have been missed. */
-    onReconnected(callback: () => void): () => void;
+    /** `data`: the start-up answer of the new connection, with the saved repositories and relocations as at start-up. */
+    onReconnected(callback: (data?: BootstrapData) => void): () => void;
     /** `watch` is set when the server's watch of the repository ran into trouble or recovered. */
     /** `details.refresh === false`: news of the watch that needs no read (see the `repository.changed` event). */
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState, watchId?: string, details?: RepositoryChangeDetails) => void): () => void;

@@ -212,6 +212,17 @@ describe('OpenTig server client', () => {
     expect(changed).toHaveBeenCalledExactlyOnceWith('old-id', 'unknown', undefined, undefined, { relocatedTo: moved, recentRepositories: [] });
   });
 
+  it('hands the start-up answer of the new connection to whoever hears of the reconnect, with its saved list and relocations', async () => {
+    const fixture = transportFixture();
+    const answer = { ...bootstrapData(), relocatedRepositoryIds: { 'old-id': 'repo-id' } };
+    fixture.request.mockImplementation(async (command: string) => command === IPC.bootstrap ? answer : []);
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const reconnected = vi.fn();
+    api.events.onReconnected(reconnected);
+    await fixture.reconnect();
+    expect(reconnected).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ relocatedRepositoryIds: { 'old-id': 'repo-id' }, recentRepositories: [] }));
+  });
+
   it('tells a reconnect apart from an account change, so what GitHub said is refreshed rather than emptied', async () => {
     const fixture = transportFixture();
     const { api } = createOpenTigServerClient({ transport: fixture.transport });
