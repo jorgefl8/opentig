@@ -53,10 +53,18 @@ export async function serveStatic(clientRoot: string, rawUrl: string, response: 
   const rawPath = rawUrl.split(/[?#]/, 1)[0] ?? '/';
   // File icons carry the fingerprint of the icon set in their address (`?v=`), so they can be kept for good.
   const versioned = /[?&]v=[0-9a-f]{6,64}(?:&|#|$)/.test(rawUrl.slice(rawPath.length));
+  const root = await realpath(clientRoot);
+  // The app's own addresses (`/r/<repository>/…`, see the renderer's `navigation/address.ts`) all
+  // open the app, which reads and checks them; no file is ever served from under them, so a path
+  // that looks like a file there (`/r/x/file/src/app.ts`) or does not decode is still the app.
+  if (rawPath === '/r' || rawPath.startsWith('/r/')) {
+    const appIndex = await safeExistingFile(root, '/index.html');
+    if (!appIndex) return sendText(response, 404, 'Not found.');
+    return serveFile(appIndex, '/index.html', response, dev, encoding, false);
+  }
   const decodedPath = decodePath(rawPath);
   if (!decodedPath) return sendText(response, 400, 'Bad request.');
 
-  const root = await realpath(clientRoot);
   const requested = decodedPath === '/' ? '/index.html' : decodedPath;
   const requestedFile = await safeExistingFile(root, requested);
   if (requestedFile) return serveFile(requestedFile, requested, response, dev, encoding, versioned);

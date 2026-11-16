@@ -458,6 +458,7 @@ These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Sho
 | `Ctrl+P` | Quick-open a file |
 | `Ctrl+R` | Refresh repository state |
 | `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, GitHub, or Search |
+| `Alt+←`, `Alt+→` (fixed, desktop app) | Go [back or forward](interface.md#back-and-forward) through the places you visited; the mouse's back and forward buttons do the same. In a browser, its own keys do it: `Cmd+[` and `Cmd+]` on a Mac |
 | `Ctrl+B` | Collapse or expand the desktop sidebar |
 | `Ctrl+S` | Save the open editable file |
 | `Ctrl+W` | Close the active file tab |

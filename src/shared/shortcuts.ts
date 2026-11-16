@@ -67,11 +67,33 @@ export interface FixedShortcutReference {
   category: string;
   /** Global desktop shortcuts that a browser page cannot provide. */
   desktopOnly?: boolean;
+  /** Back and Forward, whose keys depend on where the app runs (see `navigationKeys`). */
+  navigation?: boolean;
+}
+
+export interface NavigationKeys {
+  back: string;
+  forward: string;
+  /** For `aria-keyshortcuts`. */
+  backAria: string;
+  forwardAria: string;
+}
+
+/**
+ * The keys that go back and forward where the app runs. Where OpenTig keeps the
+ * trail itself (the desktop app) they are its own Alt+arrows; where the browser's
+ * history is the trail, they are the browser's, which on a Mac are Cmd+[ and Cmd+].
+ */
+export function navigationKeys(browserHistory: boolean, mac: boolean): NavigationKeys {
+  return browserHistory && mac
+    ? { back: 'Cmd+[', forward: 'Cmd+]', backAria: 'Meta+[', forwardAria: 'Meta+]' }
+    : { back: 'Alt+←', forward: 'Alt+→', backAria: 'Alt+ArrowLeft', forwardAria: 'Alt+ArrowRight' };
 }
 
 /** Shown in Settings as read-only reference: structural or OS-convention keys that stay fixed. */
 export const FIXED_SHORTCUTS: readonly FixedShortcutReference[] = [
   { combo: 'Ctrl + 1..5', label: 'Jump to a sidebar section', category: 'General' },
+  { combo: 'Alt + ← / Alt + →', label: 'Go back or forward through the places you visited', category: 'General', navigation: true },
   { combo: 'Ctrl + Ctrl', label: 'Show and focus OpenTig from anywhere (double-tap Control)', category: 'General', desktopOnly: true },
   { combo: 'Ctrl + A', label: 'Select all files', category: 'Files' },
   { combo: 'Ctrl + C', label: 'Copy selected files', category: 'Files' },

@@ -1,9 +1,13 @@
+import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import path from 'node:path';
 import { getSingularPatch } from '@pierre/diffs';
 import { describe, expect, it } from 'vitest';
 import { buildDiffFileEntries, diffChangeKind } from '../../renderer/features/viewer/patch-utils';
-import { standaloneRepository, git } from './test-support/repository-fixtures';
+import { createOperations, standaloneRepository, git } from './test-support/repository-fixtures';
+
+const execFileAsync = promisify(execFile);
 
 describe('GitRepositoryOperations commit diffs', () => {
   it('renders merge resolution files as unified first-parent diffs without inherited files', async () => {
@@ -149,5 +153,26 @@ describe('GitRepositoryOperations linked commits', () => {
     expect(await fixture.operations.recognizeCommit(fixture.repositoryId, tree)).toBe(false);
     expect(await fixture.operations.recognizeCommit(fixture.repositoryId, 'f'.repeat(40))).toBe(false);
     expect(await fixture.operations.recognizeCommit(fixture.repositoryId, '--all')).toBe(false);
+  });
+
+  it('looks a commit up in the clone alone when asked, never fetching it from a partial clone’s remote', async () => {
+    const origin = await standaloneRepository();
+    await git(origin.work, ['config', 'uploadpack.allowFilter', 'true']);
+    await git(origin.work, ['config', 'uploadpack.allowAnySHA1InWant', 'true']);
+    const root = path.dirname(origin.work);
+    const clone = path.join(root, 'partial');
+    await git(root, ['clone', '-q', '--filter=blob:none', `file://${origin.work}`, clone]);
+    // A commit made after the clone: only the remote has it.
+    await writeFile(path.join(origin.work, 'later.txt'), 'later\n');
+    await git(origin.work, ['add', 'later.txt']);
+    await git(origin.work, ['commit', '-q', '-m', 'Later']);
+    const later = await git(origin.work, ['rev-parse', 'HEAD']);
+    const partial = await createOperations(root, clone);
+
+    expect(await partial.operations.recognizeCommit(partial.repositoryId, later, { localOnly: true })).toBe(false);
+    // Still not in the clone (looking, here too, without fetching).
+    await expect(execFileAsync('git', ['cat-file', '-e', later], { cwd: clone, env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } })).rejects.toThrow();
+    // Without it, as for a link the user follows, Git may bring the commit in.
+    expect(await partial.operations.recognizeCommit(partial.repositoryId, later)).toBe(true);
   });
 });

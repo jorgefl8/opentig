@@ -17,7 +17,8 @@ import {
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
-import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
+import { matchesCombo, navigationKeys, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
+import { NavigationKeysProvider, isMacPlatform } from './navigation-keys';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { Toolbar, type ToolbarProps } from './Toolbar';
 import { SidebarCollapseButton, SidebarRail, type SidebarRailSection } from './SidebarRail';
@@ -76,6 +77,14 @@ import {
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
+import { SIDEBAR_VIEWS, isStep, sameLocation, viewerDocumentPrefix, type NavigationEntry, type NavigationLocation, type SidebarView } from './navigation/location';
+import { createMemoryTrail, type NavigationTrail } from './navigation/trail';
+import { createBrowserTrail, type BrowserTrail } from './navigation/browser-trail';
+import { currentAddressOf } from './navigation/address';
+import { createScrollKeeper, type ScrollKeeper } from './navigation/scroll-keeper';
+import { listenForTrailInput } from './navigation/trail-input';
+import { noticePath } from './navigation/notice-path';
+import { forgetRestoredViewStates, onRememberedTab, restoreViewerMemory, snapshotViewerMemory } from '@/features/viewer/viewer-memory';
 import { historyHead, queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
 import { keptReads } from '@/lib/kept-reads';
 import { listAgents } from '@/features/refs/local-refs-model';
@@ -117,7 +126,6 @@ installZoomAwarePositioning();
 const sidebarFallback = <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading…" /></div>;
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
-const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 const VIEW_STORAGE_KEY = 'opentig.lastView';
 const BACKGROUND_REFRESH_RETRY_MS = 1_000;
 const WORKTREE_AGENTS_REFRESH_MS = 10_000;
@@ -126,7 +134,6 @@ const HISTORY_STALE_MS = 30_000;
 const UNWATCHED_REFRESH_MS = 10_000;
 /** A branch switch Git refused over local changes; `allowAgents` keeps a confirmed agent warning confirmed. */
 interface BlockedBranchSwitch { ref: string; label: string; files: string[]; allowAgents?: boolean }
-type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 /** Matches `.sidebar[data-collapsed]` in index.css. */
 const SIDEBAR_RAIL_WIDTH = 44;
 interface AppRefreshOptions {
@@ -166,13 +173,29 @@ const NO_BRANCHES: BranchInfo[] = [];
 const NO_WORKTREES: WorktreeInfo[] = [];
 const NO_WORKTREE_AGENTS: Awaited<ReturnType<typeof opentig.refs.worktreeAgents>> = [];
 
-export default function App({ initialView, initialSelection, pullRequestCreationDisabledReason }: { initialView?: SidebarView; initialSelection?: ViewerSelection; pullRequestCreationDisabledReason?: string } = {}) {
+/**
+ * `addresses` keeps the trail in the browser's history, with an address for each place (the web
+ * build); without it the trail is kept in memory (the desktop app and the website demo).
+ */
+export default function App({ initialView, initialSelection, pullRequestCreationDisabledReason, addresses = false }: { initialView?: SidebarView; initialSelection?: ViewerSelection; pullRequestCreationDisabledReason?: string; addresses?: boolean } = {}) {
   const appQueryClient = useQueryClient();
   const branchPush = useBranchPush();
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const addingRepository = useRef(false);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer'>('list');
+  // Where the user has been, for Back and Forward (see `navigation/`).
+  const [trail] = useState<NavigationTrail | BrowserTrail>(() => addresses ? createBrowserTrail(currentAddressOf) : createMemoryTrail());
+  useEffect(() => {
+    trail.attach();
+    return () => trail.detach();
+  }, [trail]);
+  /** The step the page was opened on, from its address or, after a reload, its history entry. */
+  const [opening] = useState(() => 'initial' in trail ? trail.initial() : { entry: null, malformed: false });
+  const openingEntryRef = useRef<NavigationEntry | null>(opening.entry);
+  const trailState = useSyncExternalStore(trail.subscribe, trail.state, trail.state);
+  /** A step being put back on screen: the change it makes is not a step of its own. */
+  const restoringRef = useRef<NavigationEntry | null>(null);
   // Long lines wrap on a phone unless turned off for the session; the saved desktop choice stays as it is.
   const [mobileWrapLines, setMobileWrapLines] = useState(true);
   const [viewerTitleHost, setViewerTitleHost] = useState<HTMLElement | null>(null);
@@ -202,6 +225,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
   // Saved repositories whose folder is gone, and the active one when that happened to it.
   const [unavailableRepositoryIds, setUnavailableRepositoryIds] = useState<ReadonlySet<string>>(() => new Set());
+  const unavailableRepositoryIdsRef = useRef(unavailableRepositoryIds);
+  unavailableRepositoryIdsRef.current = unavailableRepositoryIds;
   const [unavailableRepository, setUnavailableRepository] = useState<RecentRepository | null>(null);
   // The server folder browser for locating a moved repository (the desktop app uses its native picker).
   const [relocatingRepository, setRelocatingRepository] = useState<RecentRepository | null>(null);
@@ -292,7 +317,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // watch's id. Null after a reconnect, until the server says it again.
   const [announcedWatch, setAnnouncedWatch] = useState<{ repositoryId: string; watchId: string } | null>(null);
   /** Shown instead of the section's own selection once a requested section switch lands. */
-  const pendingSectionSelectionRef = useRef<ViewerSelection>(null);
+  const pendingSectionSelectionRef = useRef<{ selection: ViewerSelection } | null>(null);
   // What each section last showed, per repository; and which section of which repository the viewer shows now.
   const [sectionSelections] = useState(() => new SectionSelections());
   const shownSelectionKeyRef = useRef<{ repositoryId: string; view: SidebarView } | null>(null);
@@ -479,8 +504,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   );
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
-  useEffect(() => { setMobilePane('list'); }, [repository?.id]);
-  const mobileViewerBar = useMemo(() => ({ onBack: () => setMobilePane('list'), setTitleHost: setViewerTitleHost, setActionsHost: setViewerActionsHost }), []);
+  useEffect(() => { if (!restoringRef.current) setMobilePane('list'); }, [repository?.id]);
+  // The phone's arrow walks the whole trail; only at its start does it go back to the list.
+  const mobileViewerBar = useMemo(() => ({
+    onBack: () => { if (trail.state().canGoBack) trail.back(); else setMobilePane('list'); },
+    setTitleHost: setViewerTitleHost, setActionsHost: setViewerActionsHost,
+  }), [trail]);
   const mobileChrome = useMemo(() => !mobile ? null
     : mobilePane === 'viewer' ? { title: viewerTitleHost, actions: viewerActionsHost, float: mobileFloatHost } : NO_MOBILE_CHROME_HOSTS,
   [mobile, mobileFloatHost, mobilePane, viewerActionsHost, viewerTitleHost]);
@@ -563,6 +592,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const uiFont = bootstrap?.preferences.uiFont ?? 'plus-jakarta-sans';
   const monoFont = bootstrap?.preferences.monoFont ?? 'jetbrains-mono';
   const shortcuts = useMemo(() => resolveShortcuts(bootstrap?.preferences.shortcutOverrides), [bootstrap?.preferences.shortcutOverrides]);
+  // Back and Forward answer the browser's own keys where its history is the trail, and the app's otherwise.
+  const navigationKeyLabels = useMemo(() => navigationKeys(addresses, isMacPlatform()), [addresses]);
   const features = useMemo(() => serverFeatures(bootstrap?.server), [bootstrap?.server]);
 
   useEffect(() => {
@@ -578,6 +609,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
       setBootstrap(data);
       setRepository(data.activeRepository);
+      // An address opens where it says once the app is up; the step it names waits for its repository.
+      const opened = openingEntryRef.current;
+      if (opened && 'adopt' in trail) trail.adopt(opened);
+      if (opening.malformed) sileo.info({ title: 'That address doesn’t lead anywhere', description: 'OpenTig opened where you last were.' });
       setAnnouncedWatch(data.activeRepository && data.activeRepositoryWatch?.state === 'watching' && data.activeRepositoryWatch.watchId
         ? { repositoryId: data.activeRepository.id, watchId: data.activeRepositoryWatch.watchId } : null);
       setUnavailableRepositoryIds(new Set(data.unavailableRepositoryIds ?? []));
@@ -592,7 +627,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (active) setCapabilities(available);
     }).catch(() => undefined);
     return () => { active = false; };
-  }, [appQueryClient, filesTreeStates]);
+  }, [appQueryClient, filesTreeStates, opening.malformed, trail]);
 
   useLayoutEffect(() => {
     const overlay = (navigator as Navigator & {
@@ -700,11 +735,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     filesRef.current = files;
   }, [files]);
 
-  useEffect(() => {
+  // Before the trail's layout effect, which reads them to bring a step back in the render that shows the repository.
+  useLayoutEffect(() => {
     repositoryRef.current = repository;
   }, [repository]);
   const bootstrapRef = useRef(bootstrap);
-  useEffect(() => { bootstrapRef.current = bootstrap; }, [bootstrap]);
+  useLayoutEffect(() => { bootstrapRef.current = bootstrap; }, [bootstrap]);
 
   /**
    * Replaces one worktree's tab session and persists its metadata. Only
@@ -1194,7 +1230,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       viewerSelectionRef.current = initialSelection;
       setViewerSelection(initialSelection);
     } else if (pendingSectionSelectionRef.current) {
-      const selection = pendingSectionSelectionRef.current;
+      const { selection } = pendingSectionSelectionRef.current;
       pendingSectionSelectionRef.current = null;
       viewerSelectionRef.current = selection;
       setViewerSelection(selection);
@@ -1304,7 +1340,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     setBootstrap((current) => current ? rebindBootstrapRepository(current, previousId, selected) : current);
   }, [filesTreeStates]);
 
+  /** The repository last opened, known at once, before the render that shows it. */
+  const openedRepositoryIdRef = useRef<string | null>(null);
   const recordOpenedRepository = useCallback((selected: RepositoryInfo, previousId?: string) => {
+    openedRepositoryIdRef.current = selected.id;
     if (previousId) rebindRelocatedRepository(previousId, selected);
     setRepository(selected);
     setBootstrap((current) => current ? {
@@ -1429,8 +1468,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    */
   /** Counts what the user chose to show, so something read meanwhile never replaces it. */
   const viewerChoiceRef = useRef(0);
-  const selectViewer = useCallback((selection: ViewerSelection): boolean => {
+  /** What the user last asked to open: when the viewer shows exactly that, it is a step of its own. */
+  const askedSelectionRef = useRef<ViewerSelection | undefined>(undefined);
+  /** The same for opening or leaving a file's history. */
+  const askedFileHistoryRef = useRef<{ path: string | null } | null>(null);
+  const selectViewer = useCallback((selection: ViewerSelection, asked = true): boolean => {
     viewerChoiceRef.current++;
+    if (asked) askedSelectionRef.current = selection;
     viewerSelectionRef.current = selection;
     setViewerSelection(selection);
     if (selection) setMobilePane('viewer');
@@ -1478,7 +1522,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const selection: ViewerSelection = { type: 'commit', oid, subject };
       // Changing section resets the viewer, so the commit is shown once History is.
       if (view === 'history') selectViewer(selection);
-      else pendingSectionSelectionRef.current = selection;
+      else pendingSectionSelectionRef.current = { selection };
       showSidebarView('history');
     } catch (reason) {
       reportError('Could not open the commit', reason);
@@ -1491,6 +1535,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (!repositoryId) return;
     const from = viewRef.current;
     const shown = viewerSelectionRef.current;
+    askedFileHistoryRef.current = { path };
     setFileHistory((current) => ({
       repositoryId, path,
       // Opened again from within History, it keeps where the first one came from.
@@ -1502,7 +1547,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     firstFileCommitRef.current = fromCommit ? null : { repositoryId, path, choice: viewerChoiceRef.current };
     if (from !== 'history') {
       sectionSelections.remember(repositoryId, 'history', null);
-      pendingSectionSelectionRef.current = fromCommit;
+      pendingSectionSelectionRef.current = fromCommit ? { selection: fromCommit } : null;
       showSidebarView('history');
     } else if (fromCommit && fromCommit !== shown) {
       viewerSelectionRef.current = fromCommit;
@@ -1513,6 +1558,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [sectionSelections, showSidebarView]);
   const closeFileHistory = useCallback((back: boolean) => {
     const current = fileHistory;
+    askedFileHistoryRef.current = { path: null };
     setFileHistory(null);
     firstFileCommitRef.current = null;
     if (!back || !current || current.repositoryId !== repositoryRef.current?.id) return;
@@ -1522,7 +1568,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       setViewerSelection(selection);
       return;
     }
-    pendingSectionSelectionRef.current = selection;
+    pendingSectionSelectionRef.current = selection ? { selection } : null;
     showSidebarView(to);
     if (selection) setMobilePane('viewer');
   }, [fileHistory, showSidebarView]);
@@ -1537,7 +1583,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     firstFileCommitRef.current = null;
     // On a phone the list is what shows; the commit opens when one is chosen. Whatever the user opened meanwhile stays.
     if (!first || mobile || viewRef.current !== 'history' || viewerChoiceRef.current !== wanted.choice) return;
-    selectViewer({ type: 'commit-file', oid: first.commit.oid, path: first.path, oldPath: first.oldPath ?? undefined });
+    selectViewer({ type: 'commit-file', oid: first.commit.oid, path: first.path, oldPath: first.oldPath ?? undefined }, false);
   }, [activeFileHistory, fileHistoryEntries, mobile, selectViewer]);
   const fileHistoryFilter = useMemo<HistoryFileFilter | null>(() => {
     if (!activeFileHistory) return null;
@@ -1554,6 +1600,294 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     };
   }, [activeFileHistory, closeFileHistory, fileHistoryEntries, fileHistoryQuery.data]);
   const fileHistoryOpener = bootstrap?.server?.fileHistory === true ? openFileHistory : null;
+
+  // ── Back and Forward ──────────────────────────────────────────────────────────────
+  // Another repository or section is a step, and so is what the user opens; anything else that
+  // changes (a file's newest commit chosen for it, a tab closed under it, a pane on a phone) only
+  // updates the step it happens in. Scroll positions and the viewer's memory are kept with each
+  // step as they change. Bringing a step back is navigation only: nothing is read that is still
+  // known, and nothing is staged, saved, discarded or switched.
+  const shownLine = viewerSelection?.type === 'file' && fileLineTarget?.path === viewerSelection.path ? fileLineTarget.line : null;
+  const shownLocation = useMemo<NavigationLocation | null>(() => repository ? {
+    repositoryId: repository.id,
+    view,
+    selection: viewerSelection,
+    fileHistory: activeFileHistory ? { path: activeFileHistory.path, returnTo: activeFileHistory.returnTo } : null,
+    line: shownLine,
+    pane: mobilePane,
+  } : null, [activeFileHistory, mobilePane, repository, shownLine, view, viewerSelection]);
+  /** The location on screen as the trail last recorded it, and the step it belongs to. */
+  const shownLocationRef = useRef<NavigationLocation | null>(null);
+  const shownEntryKeyRef = useRef<string | null>(null);
+  /** A file an address opened before the file tree was read: shown, and given a tab once the tree has it. */
+  const unconfirmedFileRef = useRef<{ repositoryId: string; path: string } | null>(null);
+  const treeConfirmedRef = useRef(treeConfirmedRepositoryId);
+  treeConfirmedRef.current = treeConfirmedRepositoryId;
+  /** Commits shown since the server last answered, which it can read without a look-up. Cleared on reconnecting. */
+  const seenCommitsRef = useRef(new Set<string>());
+  useEffect(() => opentig.events.onReconnected(() => seenCommitsRef.current.clear()), []);
+  /** Set while a step's viewer memory is put back, which is not the user changing a tab. */
+  const puttingBackTabsRef = useRef(false);
+  /** Counts restores and steps, so a look-up that answers late knows whether its restore still stands. */
+  const restoreTokenRef = useRef(0);
+  /** A step in another repository, waiting for that repository to open, and whether an address asked for it. */
+  const pendingRestoreRef = useRef<NavigationEntry | null>(null);
+  const pendingSourceRef = useRef<'trail' | 'address'>('trail');
+  const [restoreTick, setRestoreTick] = useState(0);
+  const scrollKeeperRef = useRef<ScrollKeeper | null>(null);
+  useEffect(() => {
+    const keeper = createScrollKeeper({
+      list: () => sidebarElement.current?.querySelector<HTMLElement>('.sidebar-body > .view-fade') ?? null,
+      viewer: () => document.querySelector<HTMLElement>('.viewer-pane-body'),
+    }, (marks) => {
+      const key = shownEntryKeyRef.current;
+      if (key) trail.remember(key, { scroll: marks });
+    });
+    scrollKeeperRef.current = keeper;
+    return () => { keeper.dispose(); scrollKeeperRef.current = null; };
+  }, [trail]);
+  /** Keeps with the step on screen how its documents were left, before another takes its place. */
+  const keepShownEntry = useCallback((shown = shownLocationRef.current) => {
+    const key = shownEntryKeyRef.current;
+    if (key && shown) trail.remember(key, { viewer: snapshotViewerMemory(viewerDocumentPrefix(shown)) });
+  }, [trail]);
+
+  /** The offer to open the repository a page was opened on, while it stands. */
+  const repositoryOfferRef = useRef<string | null>(null);
+  const withdrawRepositoryOffer = () => {
+    if (repositoryOfferRef.current) sileo.dismiss(repositoryOfferRef.current);
+    repositoryOfferRef.current = null;
+  };
+
+  /**
+   * Puts a step back on screen, in its repository once that is open. A step the page was opened
+   * on (`address`: a pasted link, a bookmark or a reload) never switches the repository the server
+   * has open, which every page and device shares: it offers to, and `accepted` is that offer taken.
+   */
+  const applyRestore = (entry: NavigationEntry, source: 'trail' | 'address' = 'trail', { recognized = false, accepted = false } = {}) => {
+    const target = entry.location;
+    if (!recognized) restoreTokenRef.current += 1;
+    const current = repositoryRef.current;
+    scrollKeeperRef.current?.cancel();
+    puttingBackTabsRef.current = true;
+    try { restoreViewerMemory(entry.memory.viewer); } finally { puttingBackTabsRef.current = false; }
+    if (!current || target.repositoryId !== current.id) {
+      const known = bootstrapRef.current?.recentRepositories.find((item) => item.id === target.repositoryId);
+      // The page opened on another repository: it shows the one open, and its step says so.
+      const openedHere = () => {
+        const shown = shownLocationRef.current;
+        if (source === 'address' && shown && trail.current()?.key === entry.key) trail.replace(shown);
+      };
+      if (!known) {
+        sileo.info(source === 'address'
+          ? { title: 'OpenTig here doesn’t know that repository', description: 'The address names a repository that isn’t among this server’s repositories.' }
+          : { title: 'That repository is no longer available', description: 'It was removed from OpenTig.' });
+        openedHere();
+        return;
+      }
+      if (unavailableRepositoryIdsRef.current.has(target.repositoryId)) {
+        sileo.info({ title: 'That repository’s folder is missing', description: 'Locate it from the repository picker to open it again.' });
+        openedHere();
+        return;
+      }
+      if (source === 'address' && !accepted) {
+        openedHere();
+        withdrawRepositoryOffer();
+        repositoryOfferRef.current = sileo.action({
+          title: `Open ${known.name}?`,
+          description: current
+            ? `This page was on ${known.name}. ${current.name} is the repository open on this server, for every page and device.`
+            : `This page was on ${known.name}.`,
+          duration: 30_000,
+          button: { title: 'Open', onClick: () => {
+            repositoryOfferRef.current = null;
+            applyRestoreRef.current(entry, 'address', { accepted: true });
+          } },
+        });
+        return;
+      }
+      pendingRestoreRef.current = entry;
+      pendingSourceRef.current = source;
+      void repositorySwitcher.select(target.repositoryId, current?.id ?? null).then((outcome) => {
+        // Opened, the step lands where it waited; replaced by a later choice, that choice owns what follows.
+        // Otherwise it stays where it is: the trail is not rewritten for a step that never showed.
+        if (outcome !== 'opened' && outcome !== 'superseded' && pendingRestoreRef.current === entry) pendingRestoreRef.current = null;
+      });
+      return;
+    }
+    // A switch still on its way, for another step or a repository picked meanwhile, would replace this step once it lands.
+    repositorySwitcher.cancel();
+    pendingRestoreRef.current = null;
+    const repositoryId = current.id;
+    let selection = target.selection;
+    if (selection?.type === 'file') {
+      const path = selection.path;
+      const session = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+      // Only a tree read since the repository opened counts: one saved earlier may be out of date.
+      const presence = filesRef.current && treeConfirmedRef.current === repositoryId ? snapshotPathPresence(filesRef.current, path) : null;
+      unconfirmedFileRef.current = null;
+      if (presence === 'missing') {
+        sileo.info({ title: 'That file no longer exists', description: noticePath(path, 'isn’t in this repository.') });
+        selection = null;
+      } else if (session.tabs.some((tab) => tab.path === path)) {
+        // Which tab is active is saved for every device: opening an address leaves it as it was.
+        if (source === 'trail') updateFileSession(repositoryId, (value) => activateTab(value, path));
+      } else if (presence === 'present') {
+        // Its tab was closed since, or an address names it: it opens again, as a click in the tree would.
+        const result = openTab(session, path, 'preview');
+        if (result.evictedPath) dropFileDraft(repositoryId, result.evictedPath);
+        commitFileSession(repositoryId, result.session);
+      } else {
+        // Shown at once, but no tab is saved for it until the file tree says it is there.
+        unconfirmedFileRef.current = { repositoryId, path };
+      }
+    } else if ((selection?.type === 'commit' || selection?.type === 'commit-file') && !recognized
+      && (source === 'address' || !seenCommitsRef.current.has(`${repositoryId}:${selection.oid}`))) {
+      // A commit from an address, or one not shown since the server last answered (it may have restarted),
+      // is looked up first, as a linked one is: it may not be in this clone, and the server only reads commits
+      // it has listed or looked up. The look-up stays in the clone, so opening a step never fetches.
+      const commit = selection;
+      const token = restoreTokenRef.current;
+      void opentig.commits.recognize(repositoryId, commit.oid, true).then((exists) => exists, () => false).then((exists) => {
+        // The user went somewhere else meanwhile, or another repository opened.
+        if (token !== restoreTokenRef.current || repositoryRef.current?.id !== repositoryId) return;
+        if (!exists) sileo.info({ title: 'That commit isn’t in this repository', description: `${commit.oid.slice(0, 7)} isn’t in this clone. It may be on a branch you haven’t fetched.` });
+        applyRestoreRef.current(exists ? entry : { ...entry, location: { ...target, selection: null, pane: 'list' } }, source, { recognized: true });
+      });
+      return;
+    } else if (selection?.type === 'diff' || selection?.type === 'conflict') {
+      const known = knownStatusRef.current;
+      if (!stillShowable(selection, { status: known?.repositoryId === repositoryId ? known.status : null, openTabs: new Set() })) {
+        sileo.info({ title: 'That change is no longer there', description: noticePath(selection.path, 'was committed, staged or discarded since.') });
+        selection = null;
+      }
+    }
+    const location: NavigationLocation = { ...target, selection, pane: selection ? target.pane : 'list' };
+    restoringRef.current = { ...entry, location };
+    askedSelectionRef.current = undefined;
+    askedFileHistoryRef.current = null;
+    firstFileCommitRef.current = null;
+    viewerChoiceRef.current++;
+    setFileHistory(location.fileHistory ? { repositoryId, ...location.fileHistory } : null);
+    viewerSelectionRef.current = selection;
+    setViewerSelection(selection);
+    // A section opened anew shows what it remembers; this tells it to show the step's selection instead.
+    const shownSection = shownSelectionKeyRef.current;
+    if (location.view !== viewRef.current || shownSection?.repositoryId !== repositoryId || shownSection.view !== location.view) {
+      pendingSectionSelectionRef.current = { selection };
+    }
+    if (location.view !== viewRef.current) setView(location.view);
+    setMobilePane(location.pane);
+    // A kept scroll position says where the file was read; the line it was opened on only counts without one.
+    const keptViewerScroll = entry.memory.scroll.some((mark) => mark.area === 'viewer');
+    setFileLineTarget(selection?.type === 'file' && location.line !== null ? { path: selection.path, line: location.line, reached: keptViewerScroll } : null);
+    setRestoreTick((tick) => tick + 1);
+  };
+  const applyRestoreRef = useRef(applyRestore);
+  applyRestoreRef.current = applyRestore;
+  useEffect(() => trail.onRestore((entry) => {
+    keepShownEntry(shownLocationRef.current);
+    applyRestoreRef.current(entry);
+  }), [keepShownEntry, trail]);
+
+  useLayoutEffect(() => {
+    const location = shownLocation;
+    if (!location) return;
+    if (location.selection?.type === 'commit' || location.selection?.type === 'commit-file') {
+      const seen = seenCommitsRef.current;
+      if (seen.size >= 1_000) seen.clear();
+      seen.add(`${location.repositoryId}:${location.selection.oid}`);
+    }
+    const restoring = restoringRef.current;
+    const pending = pendingRestoreRef.current;
+    if (!restoring && pending && pending.location.repositoryId === location.repositoryId && shownLocationRef.current?.repositoryId !== location.repositoryId) {
+      // The repository a step was waiting for is open: the rest of the step follows.
+      pendingRestoreRef.current = null;
+      applyRestoreRef.current(pending, pendingSourceRef.current);
+      return;
+    }
+    if (restoring) {
+      restoringRef.current = null;
+      shownLocationRef.current = location;
+      shownEntryKeyRef.current = restoring.key;
+      if (trail.current()?.key === restoring.key) trail.replace(location);
+      scrollKeeperRef.current?.reset(restoring.memory.scroll);
+      scrollKeeperRef.current?.restore(restoring.memory.scroll);
+      return;
+    }
+    const previous = shownLocationRef.current;
+    shownLocationRef.current = location;
+    const opened = openingEntryRef.current;
+    if (!previous && opened) {
+      // The page opened on an address or a reload: its step is the current one, shown once its repository is.
+      openingEntryRef.current = null;
+      shownEntryKeyRef.current = opened.key;
+      applyRestoreRef.current(opened, 'address');
+      return;
+    }
+    if (!previous || !trail.current()) {
+      shownEntryKeyRef.current = trail.start(location).key;
+      scrollKeeperRef.current?.reset([]);
+      return;
+    }
+    if (sameLocation(previous, location)) return;
+    const askedSelection = askedSelectionRef.current;
+    const askedFileHistory = askedFileHistoryRef.current;
+    const asked = (askedSelection !== undefined && location.selection === askedSelection)
+      || (askedFileHistory !== null && askedFileHistory.path === (location.fileHistory?.path ?? null));
+    askedSelectionRef.current = undefined;
+    askedFileHistoryRef.current = null;
+    if (isStep(previous, location, asked)) {
+      keepShownEntry(previous);
+      // Going somewhere new gives up a step still waiting for its repository, and the offer of another.
+      if (pendingRestoreRef.current) repositorySwitcher.cancel();
+      pendingRestoreRef.current = null;
+      withdrawRepositoryOffer();
+      restoreTokenRef.current += 1;
+      forgetRestoredViewStates();
+      shownEntryKeyRef.current = trail.push(location).key;
+      scrollKeeperRef.current?.reset([]);
+    } else trail.replace(location);
+  }, [keepShownEntry, repositorySwitcher, restoreTick, shownLocation, trail]);
+
+  useEffect(() => {
+    // In a browser, its own Back and Forward (keys, mouse buttons, swipe) walk the trail through its history.
+    if (addresses) return;
+    return listenForTrailInput(trail, isMacPlatform());
+  }, [addresses, trail]);
+  // A pull request's tab is part of its address.
+  useEffect(() => onRememberedTab(() => {
+    const shown = shownLocationRef.current;
+    // A step being brought back puts its tabs back first; its own address follows once it shows.
+    if (!shown || shown.selection?.type !== 'pull-request' || puttingBackTabsRef.current || restoringRef.current || pendingRestoreRef.current) return;
+    trail.replace(shown);
+  }), [trail]);
+  // A file an address opened before the tree was read gets its tab once the tree has it, and only then.
+  useEffect(() => {
+    const unconfirmed = unconfirmedFileRef.current;
+    if (!unconfirmed || !files || repository?.id !== unconfirmed.repositoryId || treeConfirmedRepositoryId !== unconfirmed.repositoryId) return;
+    unconfirmedFileRef.current = null;
+    const presence = snapshotPathPresence(files, unconfirmed.path);
+    const shown = viewerSelectionRef.current;
+    const stillShown = shown?.type === 'file' && shown.path === unconfirmed.path;
+    if (presence === 'missing') {
+      sileo.info({ title: 'That file no longer exists', description: noticePath(unconfirmed.path, 'isn’t in this repository.') });
+      if (stillShown) selectFilePath(null);
+      return;
+    }
+    // Inside a folder the tree has not read, it stays shown without a tab.
+    if (presence !== 'present' || !stillShown) return;
+    const result = openTab(fileSessionsRef.current.get(unconfirmed.repositoryId) ?? emptyFileSession, unconfirmed.path, 'preview');
+    if (result.evictedPath) dropFileDraft(unconfirmed.repositoryId, result.evictedPath);
+    commitFileSession(unconfirmed.repositoryId, result.session);
+  }, [commitFileSession, dropFileDraft, files, repository?.id, selectFilePath, treeConfirmedRepositoryId]);
+  // With no repository open there is no first location to wait for: an address opens its own.
+  useEffect(() => {
+    const opened = openingEntryRef.current;
+    if (!bootstrap || repository || !opened) return;
+    openingEntryRef.current = null;
+    applyRestoreRef.current(opened, 'address');
+  }, [bootstrap, repository]);
   const lineBlameSettings = useMemo<LineBlameSettings | null>(() => repository ? {
     repositoryId: repository.id,
     revision: refreshVersion,
@@ -1668,7 +2002,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (result.session === session) return;
     commitFileSession(repositoryId, result.session);
     if (result.session.activePath !== session.activePath) {
+      askedSelectionRef.current = undefined;
       selectFilePath(result.session.activePath);
+      askedSelectionRef.current = viewerSelectionRef.current;
       setMobilePane('viewer');
       setView('files');
     }
@@ -2854,6 +3190,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     onBranch: switchBranch,
     onWorktree: switchWorktree,
     onRefresh: () => void refresh({ manual: true }),
+    onBack: () => trail.back(),
+    onForward: () => trail.forward(),
     onPull: () => void pullUpdates(),
     onPush: () => void pushUpdates(),
     onRepositorySync: syncRepository,
@@ -2976,6 +3314,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   return (
     <ShortcutsProvider shortcuts={shortcuts}>
+    <NavigationKeysProvider value={navigationKeyLabels}>
     <ServerFeaturesContext.Provider value={features}>
     <TooltipProvider>
       {browserRepositoryDialog}
@@ -3125,6 +3464,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <Toolbar
           {...toolbarHandlers}
           mobileViewer={mobile && mobilePane === 'viewer' ? mobileViewerBar : undefined}
+          canGoBack={trailState.canGoBack}
+          canGoForward={trailState.canGoForward}
           repository={repository}
           recent={bootstrap.recentRepositories}
           repositoryProjects={bootstrap.repositoryProjects}
@@ -3445,6 +3786,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       </MobileChromeContext.Provider>
     </TooltipProvider>
     </ServerFeaturesContext.Provider>
+    </NavigationKeysProvider>
     </ShortcutsProvider>
   );
 }
