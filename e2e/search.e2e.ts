@@ -20,7 +20,7 @@ async function openLoadedRepository(page: Page, repository: GitRepository): Prom
 
 async function openQuickOpen(page: Page) {
   await page.keyboard.press('Control+p');
-  const dialog = page.getByRole('dialog', { name: 'Open file' });
+  const dialog = page.getByRole('dialog', { name: 'Command palette' });
   await expect(dialog).toBeVisible();
   return dialog;
 }
@@ -76,16 +76,25 @@ test('quick open results are chosen with the arrow keys', async ({ pairedPage: p
   await expect(page.getByRole('tablist', { name: 'Open files' }).getByRole('tab', { name: target })).toBeVisible();
 });
 
-test('quick open reports when no file matches', async ({ pairedPage: page, repository }) => {
+test('quick open reports when no file matches, and offers to search inside files instead', async ({ pairedPage: page, repository }) => {
+  await addSearchableFiles(repository);
   await openLoadedRepository(page, repository);
 
   const dialog = await openQuickOpen(page);
   await dialog.getByRole('combobox', { name: 'Search files by name or path' }).fill('does-not-exist');
 
-  await expect(dialog.getByRole('status')).toContainText('Nothing matches does-not-exist in this repository.');
-  await expect(dialog.getByRole('option')).toHaveCount(0);
+  await expect(dialog.getByRole('status')).toContainText('No files match “does-not-exist”');
+  await expect(dialog.getByRole('option')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
+
+  // Text no file is named after may be inside one: the palette hands it to Search.
+  const again = await openQuickOpen(page);
+  await again.getByRole('combobox', { name: 'Search files by name or path' }).fill('Needle again');
+  await again.getByRole('option', { name: /Search for “Needle again” inside files/ }).click();
+  await expect(again).toBeHidden();
+  await expect(page.getByRole('textbox', { name: 'Search in repository' })).toHaveValue('Needle again');
+  await expect(page.getByRole('button', { name: '2:5 and Needle again' })).toBeVisible();
 });
 
 test('Search finds text across files, grouped by file with line numbers', async ({ pairedPage: page, repository }) => {

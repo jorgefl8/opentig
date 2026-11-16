@@ -77,7 +77,7 @@ import {
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
-import { SIDEBAR_VIEWS, isStep, sameLocation, viewerDocumentPrefix, type NavigationEntry, type NavigationLocation, type SidebarView } from './navigation/location';
+import { SIDEBAR_VIEWS, isStep, sameLocation, sameSelection, viewerDocumentPrefix, type NavigationEntry, type NavigationLocation, type SidebarView } from './navigation/location';
 import { createMemoryTrail, type NavigationTrail } from './navigation/trail';
 import { createBrowserTrail, type BrowserTrail } from './navigation/browser-trail';
 import { currentAddressOf } from './navigation/address';
@@ -110,6 +110,9 @@ import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDialog';
 import { RepositoryLinksContext, repositoryLinkUrl, type RepositoryLinks } from '@/components/repository-links';
 import { Spinner } from '@/components/ui/spinner';
+import type { PaletteActions, PaletteMode, PaletteRequest, PaletteState } from '@/features/palette/palette-types';
+import { useKeyboardMap } from './keyboard/useKeyboardMap';
+import { isTypingTarget } from './keyboard/keys';
 
 // The sections and the viewer are downloaded on first use, or while the app is idle if that comes first (see `preloadWhenIdle`).
 const Viewer = lazyWithPreload(() => import('@/features/viewer/Viewer'));
@@ -118,7 +121,7 @@ const HistoryView = lazyWithPreload(() => import('@/features/history/HistoryView
 const SearchView = lazyWithPreload(() => import('@/features/search/SearchView').then((module) => ({ default: module.SearchView })));
 const IDLE_SECTIONS = [Viewer, FilesView, HistoryView, SearchView];
 const PullRequestsView = lazyWithPreload(() => import('@/features/pulls/PullRequestsView').then((module) => ({ default: module.PullRequestsView })));
-const QuickOpenDialog = lazyWithRetry(() => import('@/features/files/QuickOpenDialog').then((module) => ({ default: module.QuickOpenDialog })));
+const CommandPalette = lazyWithRetry(() => import('@/features/palette/CommandPalette').then((module) => ({ default: module.CommandPalette })));
 const CreatePullRequestDialog = lazyWithRetry(() => import('@/features/pulls/CreatePullRequestDialog').then((module) => ({ default: module.CreatePullRequestDialog })));
 // Tooltips and menus must land on their anchors under the browser's Interface size zoom.
 installZoomAwarePositioning();
@@ -293,7 +296,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [createPrOpen, setCreatePrOpen] = useState(false);
   // Repository whose commit authorship editor is open, so a stale toast cannot open it for another repository.
   const [authorshipRepositoryId, setAuthorshipRepositoryId] = useState<string | null>(null);
-  const [quickOpen, setQuickOpen] = useState(false);
+  /** The command palette while it is open, and the mode it was opened in. */
+  const [palette, setPalette] = useState<PaletteRequest | null>(null);
+  const openPalette = useCallback((mode: PaletteMode) => setPalette((current) => ({ mode, id: (current?.id ?? 0) + 1 })), []);
+  /**
+   * The palette's Commits tab asked for History's first page, which is otherwise read when History opens.
+   * Only while the palette is open: the page read stays known, and History reads nothing more because of it.
+   */
+  const [paletteWantsCommits, setPaletteWantsCommits] = useState(false);
+  /** Text the palette found no file for, handed to Search. */
+  const [searchSeed, setSearchSeed] = useState<{ repositoryId: string; text: string } | null>(null);
+  const takeSearchSeed = useCallback(() => setSearchSeed(null), []);
   const [fileLineTarget, setFileLineTarget] = useState<FileLineTarget | null>(null);
   // Open-file tabs, one session per worktree. Structural metadata only: the
   // draft text of a dirty tab lives in a ref-backed map, never in React state.
@@ -379,7 +392,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     queryFn: ({ pageParam }) => opentig.commits.list(repository!.id, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    enabled: repository !== null && currentHistoryHead !== null && view === 'history' && !(fileHistory && fileHistory.repositoryId === repository.id),
+    enabled: repository !== null && currentHistoryHead !== null
+      && ((view === 'history' && !(fileHistory && fileHistory.repositoryId === repository.id)) || paletteWantsCommits),
     // A change to the branches marks it outdated (see `performRefresh`), so coming back to History only reads it again after that.
     staleTime: HISTORY_STALE_MS,
   });
@@ -1161,7 +1175,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     setBranches(known?.branches ?? []);
     setWorktrees(known?.worktrees ?? []);
     setCreatePrOpen(false);
-    setQuickOpen(false);
+    setPalette(null);
+    setPaletteWantsCommits(false);
   }, [appQueryClient, filesComparer, repository?.id]);
 
   const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
@@ -1616,6 +1631,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     line: shownLine,
     pane: mobilePane,
   } : null, [activeFileHistory, mobilePane, repository, shownLine, view, viewerSelection]);
+  /** Places left for another, newest first, which the palette offers again. Kept for the session only. */
+  const recentPlacesRef = useRef<NavigationLocation[]>([]);
   /** The location on screen as the trail last recorded it, and the step it belongs to. */
   const shownLocationRef = useRef<NavigationLocation | null>(null);
   const shownEntryKeyRef = useRef<string | null>(null);
@@ -1839,6 +1856,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     askedFileHistoryRef.current = null;
     if (isStep(previous, location, asked)) {
       keepShownEntry(previous);
+      rememberPlace(recentPlacesRef.current, previous);
       // Going somewhere new gives up a step still waiting for its repository, and the offer of another.
       if (pendingRestoreRef.current) repositorySwitcher.cancel();
       pendingRestoreRef.current = null;
@@ -2034,16 +2052,21 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         event.preventDefault();
         if (!event.repeat) runTabKeyboardAction(tabAction);
       }
-      if (repository && !event.repeat && matchesCombo(event, shortcuts.quickOpen)) {
-        if (!quickOpen && document.querySelector('[data-slot="dialog-popup"], .mobile-sheet, .confirm-popover')) return;
+      // The palette, on files or on commands. Pressed again while it is open, it starts afresh in that mode.
+      const paletteMode = !repository || event.repeat ? null
+        : matchesCombo(event, shortcuts.quickOpen) ? 'files' : matchesCombo(event, shortcuts.commandPalette) ? 'commands' : null;
+      // On a Mac, Ctrl+K and Ctrl+P in a text field delete to the end of the line and go up one; the palette there is Cmd.
+      const macLineKill = paletteMode !== null && event.ctrlKey && !event.metaKey && isMacPlatform() && isTypingTarget(event.target);
+      if (paletteMode && !macLineKill) {
+        if (!palette && document.querySelector('[data-slot="dialog-popup"], .mobile-sheet, .confirm-popover')) return;
         event.preventDefault();
-        setQuickOpen(true);
-        void refreshFilesOnly();
+        openPalette(paletteMode);
+        if (paletteMode === 'files') void refreshFilesOnly();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [welcomeReplay, openRepository, quickOpen, refresh, refreshFilesOnly, repository, runTabKeyboardAction, shortcuts, mobile, sidebarCollapsed, setSidebarLayout, showSidebarView]);
+  }, [welcomeReplay, openRepository, palette, openPalette, refresh, refreshFilesOnly, repository, runTabKeyboardAction, shortcuts, mobile, sidebarCollapsed, setSidebarLayout, showSidebarView]);
 
   // One guard for every worktree's drafts. Per-editor listeners could only see
   // the file currently on screen, so switching tabs would drop the warning.
@@ -3202,6 +3225,66 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     onOrganizationChange: (organization: Parameters<ToolbarProps['onOrganizationChange']>[0]) => setBootstrap((current) => current ? { ...current, ...organization } : current),
     onRefsManaged: handleRefsManaged,
   });
+  /** Opens something in a section: in place when that section shows, otherwise once it does. */
+  const openInSection = (section: SidebarView, selection: ViewerSelection) => {
+    if (viewRef.current === section) { selectViewer(selection); return; }
+    pendingSectionSelectionRef.current = { selection };
+    showSidebarView(section);
+    if (selection) setMobilePane('viewer');
+  };
+  const openFileAt = (path: string, line: number | null): boolean => {
+    setFileLineTarget(line ? { path, line, reached: false } : null);
+    return openFile(path);
+  };
+  // What the palette's rows do: the same functions the app's own buttons and menus call, with their guards.
+  const paletteActions = useStableHandlers({
+    showSection: showSidebarView,
+    openFile: openFileAt,
+    openCommit: (oid, subject) => openInSection('history', { type: 'commit', oid, subject }),
+    openPullRequest: (number) => { setPullRequestsSection('pulls'); openInSection('prs', { type: 'pull-request', number }); },
+    openRun: (runId) => { setPullRequestsSection('actions'); openInSection('prs', { type: 'workflow-run', runId }); },
+    openPlace: (location) => {
+      if (location.repositoryId !== repositoryRef.current?.id) return;
+      const selection = location.selection;
+      if (!selection) showSidebarView(location.view);
+      // A file opens where the user is, as the palette's files do.
+      else if (selection.type === 'file') openFileAt(selection.path, location.line);
+      else openInSection(location.view, selection);
+    },
+    switchBranch: (name) => void switchBranch(name),
+    openWorktree: (path) => void switchWorktree(path),
+    openRepository: (id) => void selectRecent(id),
+    pull: () => void pullUpdates(),
+    push: () => void pushUpdates(),
+    refresh: () => {
+      if (!busyRef.current && !repositorySyncOperationsRef.current.has(repositoryRef.current?.id ?? '')) void refresh({ manual: true });
+    },
+    discardUnstaged: () => discardChanges(changeLists.changed.map((change) => change.path)),
+    createPullRequest: () => setCreatePrOpen(true),
+    addRepository: () => void openRepository(),
+    openSettings,
+    openOnGitHub: () => { if (githubNameWithOwner) openOnGitHub(`https://github.com/${githubNameWithOwner}`); },
+    searchInFiles: (text) => { const open = repositoryRef.current; if (open) setSearchSeed({ repositoryId: open.id, text }); showSidebarView('search'); },
+    loadCommits: () => setPaletteWantsCommits(true),
+    recentPlaces: () => {
+      const shown = shownLocationRef.current;
+      return recentPlacesRef.current.filter((place) => place.repositoryId === repositoryRef.current?.id
+        && !(shown && place.view === shown.view && sameSelection(place.selection, shown.selection) && place.line === shown.line));
+    },
+  } satisfies PaletteActions);
+  useKeyboardMap({
+    enabled: repository !== null && !welcomeReplay,
+    mobile,
+    viewer: () => {
+      const shown = viewerSelectionRef.current;
+      return !shown ? 'none' : shown.type === 'file' ? 'file' : 'other';
+    },
+    changes: () => viewRef.current === 'changes',
+    showSection: (section) => { showSidebarView(section); if (mobile) setMobilePane('list'); },
+    showShortcuts: () => openSettings('shortcuts'),
+    closeViewer: () => { selectViewer(null); },
+    phoneBack: mobileViewerBar.onBack,
+  });
   const mobilePreferences = useMemo(() => mobile && bootstrap ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : null, [bootstrap, mobile, mobileWrapLines]);
   const viewerHandlers = useStableHandlers({
     onUndoCommit: setUndoCommit,
@@ -3259,6 +3342,35 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }
 
   const pendingDestructiveCopy = destructiveAction ? destructiveActionCopy(destructiveAction) : null;
+  /** What the palette searches, from what the app has already read. Built only while it is open. */
+  const paletteState: PaletteState | null = palette && {
+    repositoryId: repository.id,
+    repositoryName: repository.name,
+    view,
+    mobile,
+    desktop: Boolean(window.opentigDesktop),
+    files,
+    includeIgnored: bootstrap.preferences.showDotEnvFiles,
+    activePath: viewerSelection?.type === 'file' ? viewerSelection.path : null,
+    status,
+    unconfirmed,
+    busy,
+    syncBusy: repositorySyncOperations.has(repository.id),
+    publishBranch: needsBranchPublication(status),
+    branches,
+    worktrees,
+    commits,
+    github: githubNameWithOwner ? { nameWithOwner: githubNameWithOwner } : null,
+    githubReady: ghStatus?.installed === true,
+    pulls,
+    pullsLoading,
+    pullsError,
+    createPullRequestBlocked: pullRequestCreationDisabledReason ?? (!status ? 'Loading repository status…'
+      : status.detached || status.unborn || !status.branch ? 'Check out a branch first' : null),
+    repositories: bootstrap.recentRepositories,
+    unavailableRepositories: unavailableRepositoryIds,
+    keys: { refresh: shortcuts.refresh, openRepository: shortcuts.openRepository },
+  };
   // File tabs only show with files, so this is what still says something is unsaved elsewhere.
   const hasUnsavedFiles = (fileSessions.get(repository.id) ?? emptyFileSession).tabs.some((tab) => tab.dirty);
   const { conflicts, staged, changed } = changeLists;
@@ -3321,16 +3433,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       {relocationDialogs}
       {onboardingDialogs}
       {welcomeReplay && <div className="welcome-overlay">{welcome}</div>}
-      {quickOpen && (
+      {palette && paletteState && (
         <Suspense fallback={null}>
-          <QuickOpenDialog
-            open={quickOpen}
-            files={files}
-            includeIgnored={bootstrap.preferences.showDotEnvFiles}
-            activePath={viewerSelection?.type === 'file' ? viewerSelection.path : null}
-            onOpenChange={setQuickOpen}
-            onOpenFile={openFile}
-          />
+          <CommandPalette request={palette} state={paletteState} actions={paletteActions} onClose={() => { setPalette(null); setPaletteWantsCommits(false); }} />
         </Suspense>
       )}
       <Dialog
@@ -3580,7 +3685,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     readOnly={Boolean(status?.readOnly || busy) || unconfirmed || treeUnconfirmed}
                     fileClipboardAvailable={capabilities?.fileClipboard === true}
                     revealAvailable={capabilities?.revealInFileManager === true}
-                    onQuickOpen={() => setQuickOpen(true)}
+                    onQuickOpen={() => openPalette('files')}
                     onFileIntent={(path) => prefetchFile(repository.id, path, fileStamp(path))}
                     historyState={fileHistoryState}
                     openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
@@ -3640,6 +3745,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   onOpenFile={(path, line) => { setFileLineTarget(line ? { path, line, reached: false } : null); openFile(path); }}
                   unsavedPathsAmong={unsavedTabsUnder}
                   onReplaced={() => { void refresh({ background: true }); }}
+                  seed={searchSeed?.repositoryId === repository.id ? searchSeed : null}
+                  onSeedTaken={takeSearchSeed}
                 />
                 </Suspense>
               </Activity>}
@@ -3711,7 +3818,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                 trailing={fileHistoryOpener && viewerSelection?.type === 'file' ? <FileHistoryButton path={viewerSelection.path} onOpen={fileHistoryOpener} /> : null}
               />
             )}
-            <div className="viewer-pane-body">
+            {/* Focusable, so the keys of the viewer reach it after a list's Enter (see `useKeyboardMap`). */}
+            <div className="viewer-pane-body" tabIndex={-1}>
               <ErrorBoundary
                 resetKey={viewerSelection}
                 fallback={(err) => isModuleLoadError(err) ? (
@@ -3789,6 +3897,18 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     </NavigationKeysProvider>
     </ShortcutsProvider>
   );
+}
+
+/** The most places the palette remembers; it shows the few newest of the open repository. */
+const RECENT_PLACES_KEPT = 20;
+
+function rememberPlace(places: NavigationLocation[], location: NavigationLocation): void {
+  const same = (place: NavigationLocation) => place.repositoryId === location.repositoryId && place.view === location.view
+    && sameSelection(place.selection, location.selection) && place.line === location.line;
+  const index = places.findIndex(same);
+  if (index >= 0) places.splice(index, 1);
+  places.unshift(location);
+  places.length = Math.min(places.length, RECENT_PLACES_KEPT);
 }
 
 function indexSnapshot(entries: FileTreeEntry[]): { paths: Set<string>; deferred: string[] } {

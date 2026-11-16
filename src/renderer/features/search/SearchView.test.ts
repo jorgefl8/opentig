@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { Activity, act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,16 +13,21 @@ let root: Root;
 let container: HTMLDivElement;
 let mobile = false;
 const onOpenFile = vi.fn();
+const seedTaken = vi.fn();
 
-function mount() {
-  act(() => root.render(createElement(QueryClientProvider, { client: new QueryClient() },
+let queryClient = new QueryClient();
+function mount(extra: { seed?: { text: string } | null; shown?: boolean } = {}) {
+  const view = createElement(SearchView, { repositoryId: 'sample', active: extra.shown !== false, revision: 0, onOpenFile, unsavedPathsAmong: () => [], onReplaced: () => {}, seed: extra.seed ?? null, onSeedTaken: seedTaken });
+  act(() => root.render(createElement(QueryClientProvider, { client: queryClient },
     createElement(TooltipProvider, null,
-      createElement(SearchView, { repositoryId: 'sample', active: true, revision: 0, onOpenFile, unsavedPathsAmong: () => [], onReplaced: () => {} })))));
+      // As the app keeps a section it is not showing.
+      createElement(Activity, { mode: extra.shown === false ? 'hidden' : 'visible', children: view })))));
 }
 
 beforeEach(() => {
   mobile = false;
   onOpenFile.mockReset();
+  seedTaken.mockReset();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('matchMedia', () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }));
@@ -30,6 +35,7 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
+  queryClient = new QueryClient();
   mount();
 });
 
@@ -134,4 +140,18 @@ describe('on a phone', () => {
     expect((sheetRow('Hide replace') as HTMLButtonElement).disabled).toBe(true);
     expect(sheetRow('Hide replace')?.textContent).toContain('Clear it first');
   });
+});
+
+it('takes the text the palette sent once, as plain text, and keeps what is typed after it when the section is shown again', () => {
+  const field = () => container.querySelector<HTMLInputElement>('input[aria-label="Search in repository"]')!;
+  act(() => button('Use regular expression').click());
+  const seed = { text: 'needle (x' };
+  mount({ seed });
+  expect(field().value).toBe('needle (x');
+  expect(button('Use regular expression').getAttribute('aria-pressed')).toBe('false');
+  type(field(), 'other');
+  mount({ seed, shown: false });
+  mount({ seed });
+  expect(field().value).toBe('other');
+  expect(seedTaken).toHaveBeenCalledTimes(1);
 });

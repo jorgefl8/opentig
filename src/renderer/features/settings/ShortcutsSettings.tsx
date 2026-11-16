@@ -124,10 +124,14 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
         <SettingGroup title={category} key={category}>
           {items.map((item) => (
             <div className="settings-row" key={item.combo + item.label}>
-              <div className="settings-field-label"><strong>{item.label}</strong></div>
+              <div className="settings-field-label">
+                <strong>{item.label}</strong>
+                {inBrowser && item.browserNote && <span>{item.browserNote}</span>}
+              </div>
               <KbdGroup>{item.combo.split(' / ').flatMap((variant, variantIndex) => [
                 ...(variantIndex > 0 ? [<span key={`sep-${variant}`} className="shortcuts-fixed-sep"> / </span>] : []),
-                ...variant.split(' + ').map((token, tokenIndex) => <Kbd key={`${variant}-${tokenIndex}`}>{token}</Kbd>),
+                // A sequence is pressed key after key, each its own key cap; a combination is held together.
+                ...variant.split(item.sequence ? ' ' : ' + ').map((token, tokenIndex) => <Kbd key={`${variant}-${tokenIndex}`}>{token}</Kbd>),
               ])}</KbdGroup>
             </div>
           ))}
@@ -171,7 +175,7 @@ function ShortcutRecorder({ combo, allowBare, isCustom, error, onCapture, onRese
         onClick={() => setListening(true)}
         onBlur={() => setListening(false)}
       >
-        {listening ? 'Press a key…' : <KbdGroup>{combo.split('+').map((token) => <Kbd key={token}>{token}</Kbd>)}</KbdGroup>}
+        {listening ? 'Press a key…' : combo ? <KbdGroup>{combo.split('+').map((token) => <Kbd key={token}>{token}</Kbd>)}</KbdGroup> : 'Not set'}
       </button>
       {isCustom && (
         <Tooltip>
