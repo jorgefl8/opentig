@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 interface Repository { id: string; name: string; path: string; commonDir: string }
-interface WatchEvent { type: 'repository.changed'; repositoryId: string; scope: string; watch?: string; watchId?: string; refresh?: false }
+interface WatchEvent { type: 'repository.changed'; repositoryId: string; scope: string; watch?: string; watchId?: string; refresh?: false; relocatedTo?: Repository; recentRepositories?: Repository[] }
 
 /** One connection, as a client sees it: what it asked and what it was sent. */
 class Client {
@@ -230,8 +230,8 @@ describe('a repository per client', () => {
     expect(client.events.at(-1)?.watchId).toBe(watchId);
   });
 
-  it('asks for no read when joining a watch already running, and for one when the watch starts after the answer', async () => {
-    const { connect, repository } = await startServer();
+  it('asks for no read when joining a watch already running, and for one when the watch starts after the client read', async () => {
+    const { connect, repository, services } = await startServer();
     const [pathA, pathB, pathC] = await Promise.all([repository('alpha'), repository('beta'), repository('gamma')]);
     const first = await connect();
     const second = await connect();
@@ -245,10 +245,12 @@ describe('a repository per client', () => {
     await second.watching(alpha.id);
     expect(second.log).toContain(`${alpha.id}:watching:no-read`);
 
-    // Opened moments after another, gamma's watch is set up after the answer: whatever changed in between is read.
+    // A watch that starts after the client read, here gamma's after a pause, is told with a read.
     const gamma = await second.value<Repository>('repository:open-path', pathC);
     await second.watching(gamma.id);
-    expect(second.log.filter((entry) => entry.startsWith(`${gamma.id}:watching`))).toEqual([`${gamma.id}:watching`]);
+    await services.watcher.pause(pathC);
+    services.watcher.endPause(pathC);
+    await vi.waitFor(() => expect(second.log.at(-1)).toBe(`${gamma.id}:watching`), { timeout: 10_000 });
   });
 
   it('carries in the start-up answer the watch as it is when the answer goes, and nothing about it before', async () => {
@@ -308,6 +310,35 @@ describe('a repository per client', () => {
     const data = await reloaded.value<{ activeRepository: Repository; relocatedRepositoryIds?: Record<string, string> }>('app:bootstrap', { repositoryId: alpha.id });
     expect(data.activeRepository.id).toBe(relocated.id);
     expect(data.relocatedRepositoryIds).toEqual({ [alpha.id]: relocated.id });
+  });
+
+  it('follows a relocation for every command naming the old id, tells every other client, and never redirects an id in use again', async () => {
+    const { connect, repository, directory } = await startServer();
+    const work = await repository('alpha');
+    const otherWork = await repository('beta');
+    await execFileAsync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'Start'], { cwd: work });
+    const client = await connect();
+    const bystander = await connect();
+    const alpha = await client.value<Repository>('repository:open-path', work);
+    const beta = await bystander.value<Repository>('repository:open-path', otherWork);
+    const moved = path.join(directory, 'alpha-moved');
+    await execFileAsync('git', ['clone', '-q', work, moved]);
+    const relocated = await client.value<Repository>('repository:relocate-recent', alpha.id, moved);
+
+    // A client on another repository hears of it, to rebind what it holds under the old id.
+    await vi.waitFor(() => expect(bystander.events.at(-1)).toMatchObject({ repositoryId: alpha.id, relocatedTo: { id: relocated.id }, recentRepositories: expect.arrayContaining([expect.objectContaining({ id: relocated.id })]) }));
+    expect(bystander.events.at(-1)?.repositoryId).not.toBe(beta.id);
+    // Commands still naming the old id reach the repository where it is now.
+    expect(await bystander.value<Repository>('repository:open-recent', alpha.id)).toMatchObject({ id: relocated.id });
+    expect(await bystander.request('repository:status', alpha.id)).toMatchObject({ ok: true });
+
+    // The old folder is added again: its id is in use, and leads there, not to the relocated repository.
+    const again = await client.value<Repository>('repository:open-path', work);
+    expect(again.id).toBe(alpha.id);
+    expect(await bystander.value<Repository>('repository:open-recent', alpha.id)).toMatchObject({ id: alpha.id, path: again.path });
+    const fresh = await connect();
+    const data = await fresh.value<{ relocatedRepositoryIds?: Record<string, string> }>('app:bootstrap');
+    expect(data.relocatedRepositoryIds ?? {}).not.toHaveProperty(alpha.id);
   });
 
   it('detaches every connection from a repository removed from OpenTig, and never announces it a watch it is not counted on', async () => {

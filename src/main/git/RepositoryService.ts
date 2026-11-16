@@ -26,7 +26,9 @@ export class RepositoryService {
     try { return await this.openRecent(id); } catch { return null; }
   }
 
-  async openRecent(id: string): Promise<RepositoryInfo> {
+  async openRecent(requestedId: string): Promise<RepositoryInfo> {
+    // A client that has not heard of a relocation yet asks by the old id.
+    const id = this.relocatedId(requestedId);
     const recent = this.settings.recentRepositories.find((item) => item.id === id);
     if (!recent) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-recent', message: 'The recent repository no longer exists.' });
     return this.openPath(recent.path);
@@ -47,6 +49,8 @@ export class RepositoryService {
   async openPath(selectedPath: string): Promise<RepositoryInfo> {
     const repository = await this.preparePath(selectedPath);
     await this.settings.touchRepository(repository);
+    // Its id is in use again: it no longer leads to where a repository it once named went.
+    this.relocations.delete(repository.id);
     return repository;
   }
 
@@ -66,6 +70,7 @@ export class RepositoryService {
     }
     validate();
     await this.settings.touchRepository(repository);
+    this.relocations.delete(repository.id);
     return repository;
   }
 
@@ -81,6 +86,7 @@ export class RepositoryService {
     await this.settings.relocateRepository(id, repository, activate);
     if (repository.id !== id) {
       this.relocations.delete(id);
+      this.relocations.delete(repository.id);
       this.relocations.set(id, repository.id);
       if (this.relocations.size > MAX_RELOCATIONS) this.relocations.delete(this.relocations.keys().next().value!);
     }
@@ -169,7 +175,12 @@ export class RepositoryService {
   /** The id a repository relocated during this run has now, following each move; `id` itself otherwise. */
   relocatedId(id: string): string {
     let current = id;
-    for (let step = 0; step < MAX_RELOCATIONS && this.relocations.has(current) && !this.recent(current); step += 1) current = this.relocations.get(current)!;
+    const seen = new Set<string>();
+    // An id in use, saved or being set up, is never sent elsewhere.
+    while (this.relocations.has(current) && !this.recent(current) && !this.repositories.has(current) && !seen.has(current)) {
+      seen.add(current);
+      current = this.relocations.get(current)!;
+    }
     return current;
   }
 
@@ -208,13 +219,16 @@ export class RepositoryService {
       this.git.registerRepository(hydrated.path, hydrated.commonDir);
       return hydrated;
     }
+    // A command from a client that has not heard of a relocation yet names the old id.
+    const moved = this.relocatedId(id);
+    if (moved !== id) return this.get(moved);
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'repository', message: 'Unknown repository.' });
   }
 
   recents(): RecentRepository[] { return this.settings.recentRepositories; }
 
   /** Opened in this run or saved among the recent repositories. */
-  isKnown(id: string): boolean { return this.repositories.has(id) || Boolean(this.recent(id)); }
+  isKnown(id: string): boolean { return this.repositories.has(id) || Boolean(this.recent(id)) || this.relocatedId(id) !== id; }
 
   async status(id: string, includeStats = true): Promise<RepositoryStatus> {
     const repository = this.get(id);
