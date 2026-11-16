@@ -10,6 +10,7 @@ function fixture(options: { maxWatched?: number } = {}) {
   const started: string[] = [];
   const stopped: string[] = [];
   const states: [string, RepositoryWatchState, string | null][] = [];
+  const watchers: { fail(): void }[] = [];
   let next = 0;
   const pool = new RepositoryWatchPool(() => undefined, () => false, {
     graceMs: 15_000,
@@ -18,23 +19,34 @@ function fixture(options: { maxWatched?: number } = {}) {
     onState: (id, state, watchId) => states.push([id, state, watchId]),
     createWatcher: (onState) => {
       let current: { id: string; watchId: string } | null = null;
-      return {
-        start: (target) => {
+      const watcher = {
+        start: (target: RepositoryInfo) => {
           started.push(target.id);
           current = { id: target.id, watchId: `watch-${++next}` };
           onState(target.id, 'watching', current.watchId);
           return true;
         },
         stop: () => {
-          if (current) stopped.push(current.id);
+          if (current) {
+            stopped.push(current.id);
+            onState(current.id, 'stopped', null);
+          }
           current = null;
         },
-        status: (id) => current?.id === id ? { state: 'watching', watchId: current.watchId } : { state: 'stopped', watchId: null },
-        covers: (id) => current?.id === id ? current.watchId : null,
+        status: (id: string) => current?.id === id ? { state: 'watching' as const, watchId: current.watchId } : { state: 'stopped' as const, watchId: null },
+        covers: (id: string) => current?.id === id ? current.watchId : null,
+        /** The watch gives up by itself, as after failing to start again. */
+        fail: () => {
+          const id = current!.id;
+          current = null;
+          onState(id, 'stopped', null);
+        },
       };
+      watchers.push(watcher);
+      return watcher;
     },
   });
-  return { pool, started, stopped, states };
+  return { pool, started, stopped, states, watchers };
 }
 
 describe('RepositoryWatchPool', () => {
@@ -114,12 +126,65 @@ describe('RepositoryWatchPool', () => {
     expect(pool.covers('c', 'file.txt')).toBeNull();
     expect(states).toContainEqual(['c', 'stopped', null]);
 
+    // The watch left idle goes to the repository waiting, at once rather than after its grace period.
     pool.release('tab-1');
-    vi.advanceTimersByTime(14_999);
-    expect(started).toEqual(['a', 'b']);
-    vi.advanceTimersByTime(1);
     expect(started).toEqual(['a', 'b', 'c']);
     expect(pool.status('c').state).toBe('watching');
+    expect(pool.watchedCount).toBe(2);
+  });
+
+  it('gives the first room to the repository waiting longest, not to one opened after it', () => {
+    vi.useFakeTimers();
+    const { pool, started } = fixture({ maxWatched: 1 });
+    pool.hold('tab-1', repository('a'));
+    vi.advanceTimersByTime(300);
+    pool.hold('tab-2', repository('b'));
+    vi.advanceTimersByTime(300);
+    pool.hold('tab-3', repository('c'));
+    vi.advanceTimersByTime(300);
+    pool.release('tab-1');
+    pool.hold('tab-1', repository('d'));
+    vi.advanceTimersByTime(300);
+    expect(started).toEqual(['a', 'b']);
+    pool.release('tab-2');
+    expect(started).toEqual(['a', 'b', 'c']);
+    pool.release('tab-3');
+    expect(started).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('starts a watch that stopped by itself again when its repository is opened again, and does not count it meanwhile', () => {
+    vi.useFakeTimers();
+    const { pool, started, watchers } = fixture({ maxWatched: 1 });
+    pool.hold('tab-1', repository('a'));
+    vi.advanceTimersByTime(300);
+    watchers[0]!.fail();
+    expect(pool.watchedCount).toBe(0);
+    // Its room is free for another repository.
+    pool.hold('tab-2', repository('b'));
+    vi.advanceTimersByTime(300);
+    expect(started).toEqual(['a', 'b']);
+
+    pool.release('tab-2');
+    pool.hold('tab-1', repository('a'));
+    vi.advanceTimersByTime(300);
+    expect(started).toEqual(['a', 'b', 'a']);
+    expect(pool.status('a').state).toBe('watching');
+    // Nothing starts it again by itself.
+    watchers[2]!.fail();
+    vi.advanceTimersByTime(60_000);
+    expect(started).toEqual(['a', 'b', 'a']);
+  });
+
+  it('reports the end of every watch it gives up, so nobody told it was running keeps relying on it', () => {
+    vi.useFakeTimers();
+    const { pool, states } = fixture();
+    pool.hold('tab-1', repository('a'));
+    pool.hold('tab-2', repository('b'));
+    vi.advanceTimersByTime(300);
+    pool.release('tab-1');
+    vi.advanceTimersByTime(15_000);
+    pool.forget('b');
+    expect(states.filter(([, state]) => state === 'stopped')).toEqual([['a', 'stopped', null], ['b', 'stopped', null]]);
   });
 
   it('stops a forgotten repository’s watch at once, whoever holds it, and makes room for one waiting', () => {
