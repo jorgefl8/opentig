@@ -15,8 +15,9 @@ export const MAX_WATCHED_REPOSITORIES = 6;
  */
 export const WATCH_GRACE_MS = 15_000;
 /**
- * How long a newly held repository waits before its watch is set up. Someone going through the
- * repositories one after another starts only the watch of the one they stop on.
+ * How long a repository waits before its watch is set up when the same client opened another less
+ * than this before: someone going through the repositories one after another starts only the watch
+ * of the first and of the one they stop on. Opening one repository watches it at once.
  */
 export const WATCH_START_DELAY_MS = 300;
 
@@ -44,14 +45,17 @@ interface Entry {
   toldWaiting: boolean;
   /** When the last holder left, to give up the oldest idle watch first. */
   idleSince: number;
+  /** Stopped on purpose for a while, as before its folder is deleted (see `pause`); whoever holds it keeps it. */
+  paused: boolean;
 }
 
 /**
  * One watch per repository that someone has open, shared by everyone on it (see `RepositoryWatcher`).
  *
  * A holder is whoever has the repository open, such as a browser tab's connection. A watch starts
- * shortly after the first holder arrives, and stops `WATCH_GRACE_MS` after the last one leaves; a
- * repository given up before its watch started never starts one. At most `maxWatched` watches run,
+ * when the first holder arrives, or shortly after if that holder opened another just before, and
+ * stops `WATCH_GRACE_MS` after the last one leaves; a repository given up before its watch started
+ * never starts one. At most `maxWatched` watches run,
  * those nobody holds included, but not one that stopped by itself. An idle one is given up for a
  * held one. A held one beyond the bound waits, reported as `stopped`, and repositories waiting take
  * the first room that frees or is idle, the one waiting longest first. A watch that stopped by
@@ -66,6 +70,10 @@ export class RepositoryWatchPool {
   private readonly startDelayMs: number;
   private waitingSequence = 0;
   private stopped = false;
+  /** Set while the pool itself stops a watch, whose end is not a place freed for others yet. */
+  private removing = false;
+  /** When each holder last opened a repository, to tell going through several quickly from opening one. */
+  private readonly lastHold = new Map<string, number>();
 
   constructor(
     private readonly onChange: (repositoryId: string, scope: RepositoryChangeScope) => void,
@@ -109,7 +117,7 @@ export class RepositoryWatchPool {
     this.held.set(holder, repository.id);
     let entry = this.entries.get(repository.id);
     if (!entry) {
-      entry = { repository, holders: new Set(), watcher: null, startTimer: null, releaseTimer: null, waitingSince: 0, toldWaiting: false, idleSince: 0 };
+      entry = { repository, holders: new Set(), watcher: null, startTimer: null, releaseTimer: null, waitingSince: 0, toldWaiting: false, idleSince: 0, paused: false };
       this.entries.set(repository.id, entry);
     }
     entry.holders.add(holder);
@@ -128,12 +136,59 @@ export class RepositoryWatchPool {
       if (moved) entry.watcher.start(repository);
       return;
     }
-    if (entry.startTimer || entry.waitingSince) return;
+    if (entry.startTimer || entry.waitingSince || entry.paused) return;
+    // Opening one repository watches it at once; one opened moments after another, as someone going
+    // through several does, waits a little, so only the one they stop on is set up.
+    const now = Date.now();
+    const quick = this.recentlyHeld(holder, now);
+    if (!quick) {
+      this.request(entry);
+      return;
+    }
     const target = entry;
     target.startTimer = setTimeout(() => {
       target.startTimer = null;
       if (this.entries.get(repository.id) === target && target.holders.size > 0) this.request(target);
     }, this.startDelayMs);
+  }
+
+  /** Whether `holder` opened another repository less than the start delay ago; notes this one. */
+  private recentlyHeld(holder: string, now: number): boolean {
+    for (const [other, at] of this.lastHold) if (now - at >= this.startDelayMs) this.lastHold.delete(other);
+    const recent = this.lastHold.has(holder);
+    this.lastHold.set(holder, now);
+    return recent;
+  }
+
+  /**
+   * Stops the watches of the repositories `match` picks, as before their folder is deleted, keeping
+   * who holds them, who are told the watch stopped. Resolves once the system had a turn to close them.
+   */
+  async pause(match: (repository: RepositoryInfo) => boolean): Promise<string[]> {
+    const paused: string[] = [];
+    for (const [repositoryId, entry] of this.entries) {
+      if (!match(entry.repository)) continue;
+      if (entry.startTimer) clearTimeout(entry.startTimer);
+      entry.startTimer = null;
+      entry.waitingSince = 0;
+      entry.paused = true;
+      this.stopWatcher(entry);
+      paused.push(repositoryId);
+    }
+    if (paused.length > 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    return paused;
+  }
+
+  /** Watches again the repositories `pause` stopped, for whoever still holds them. */
+  resume(repositoryIds: Iterable<string>): void {
+    for (const repositoryId of repositoryIds) {
+      const entry = this.entries.get(repositoryId);
+      if (!entry?.paused) continue;
+      entry.paused = false;
+      if (entry.holders.size > 0) this.request(entry);
+      else this.remove(repositoryId, entry);
+    }
+    this.startWaiting();
   }
 
   /** `holder` left the repository it had open, or went away. */
@@ -210,7 +265,10 @@ export class RepositoryWatchPool {
     entry.toldWaiting = false;
     const repositoryId = entry.repository.id;
     const onState: NonNullable<RepositoryWatcherOptions['onState']> = (id, state, watchId) => {
-      if (this.entries.get(repositoryId)?.watcher === watcher) this.options.onState?.(id, state, watchId);
+      if (this.entries.get(repositoryId)?.watcher !== watcher) return;
+      this.options.onState?.(id, state, watchId);
+      // A watch that stopped by itself no longer takes a place: a repository waiting gets it.
+      if (state === 'stopped' && !this.removing) this.startWaiting();
     };
     const watcher: Watcher = this.options.createWatcher
       ? this.options.createWatcher(onState)
@@ -239,9 +297,16 @@ export class RepositoryWatchPool {
     entry.startTimer = null;
     entry.releaseTimer = null;
     entry.waitingSince = 0;
-    // Stopped while still in place, so whoever holds it is told it ended (see `RepositoryWatcher.stop`).
-    entry.watcher?.stop();
-    entry.watcher = null;
+    this.stopWatcher(entry);
     if (this.entries.get(repositoryId) === entry) this.entries.delete(repositoryId);
+  }
+
+  /** Stopped while still in place, so whoever holds it is told it ended (see `RepositoryWatcher.stop`). */
+  private stopWatcher(entry: Entry): void {
+    const watcher = entry.watcher;
+    if (!watcher) return;
+    this.removing = true;
+    try { watcher.stop(); } finally { this.removing = false; }
+    entry.watcher = null;
   }
 }

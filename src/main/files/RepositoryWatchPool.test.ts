@@ -86,7 +86,7 @@ describe('RepositoryWatchPool', () => {
     expect(pool.status('a').watchId).toBe(before);
   });
 
-  it('starts only the watch of the repository someone stops on when they go through many quickly', () => {
+  it('starts only the watches of the first repository and of the one someone stops on when they go through many quickly', () => {
     vi.useFakeTimers();
     const { pool, started } = fixture();
     for (let index = 0; index < 12; index += 1) {
@@ -94,8 +94,28 @@ describe('RepositoryWatchPool', () => {
       vi.advanceTimersByTime(150);
     }
     vi.advanceTimersByTime(300);
-    expect(started).toEqual(['r11']);
-    expect(pool.watchedCount).toBe(1);
+    expect(started).toEqual(['r0', 'r11']);
+  });
+
+  it('watches a repository opened on its own at once, without waiting for the start delay', () => {
+    vi.useFakeTimers();
+    const { pool, started } = fixture();
+    pool.hold('tab', repository('a'));
+    expect(started).toEqual(['a']);
+    vi.advanceTimersByTime(1_000);
+    pool.hold('tab', repository('b'));
+    expect(started).toEqual(['a', 'b']);
+  });
+
+  it('gives the place of a watch that stopped by itself to a repository waiting for one', () => {
+    vi.useFakeTimers();
+    const { pool, started, watchers } = fixture({ maxWatched: 1 });
+    pool.hold('tab-1', repository('a'));
+    pool.hold('tab-2', repository('b'));
+    expect(started).toEqual(['a']);
+    watchers[0]!.fail();
+    expect(started).toEqual(['a', 'b']);
+    expect(pool.status('b').state).toBe('watching');
   });
 
   it('gives up the watch idle the longest for a repository someone opens once the bound is reached', () => {
@@ -211,5 +231,23 @@ describe('RepositoryWatchPool', () => {
     pool.hold('tab', repository('b'));
     vi.advanceTimersByTime(1_000);
     expect(started).toEqual(['a', 'a']);
+  });
+
+  it('stops a watch before its folder goes, keeps who holds it, and watches it again if asked', async () => {
+    const { pool, started, stopped, states } = fixture();
+    pool.hold('tab', repository('a'));
+    pool.hold('other', repository('b'));
+    const paused = await pool.pause((target) => target.id === 'a');
+    expect(paused).toEqual(['a']);
+    expect(stopped).toEqual(['a']);
+    expect(states.at(-1)).toEqual(['a', 'stopped', null]);
+    expect(pool.status('a').state).toBe('stopped');
+    expect(pool.heldBy('tab')).toBe('a');
+    // Held again meanwhile, it stays stopped until it is resumed.
+    pool.hold('third', repository('a'));
+    expect(started).toEqual(['a', 'b']);
+    pool.resume(paused);
+    expect(started).toEqual(['a', 'b', 'a']);
+    expect(pool.status('a').state).toBe('watching');
   });
 });
