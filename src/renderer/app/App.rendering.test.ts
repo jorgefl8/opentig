@@ -271,8 +271,9 @@ async function redrawnBy(action: () => Promise<void> | void): Promise<string[]> 
 const click = (name: string) => () => {
   [...container.querySelectorAll('button')].find((button) => button.textContent === name || button.getAttribute('aria-label') === name)!.click();
 };
-/** A background refresh, as the server reports a change in the working tree. */
-const worktreeChanged = () => { for (const listener of [...calls.repositoryChanged]) listener('repo', 'worktree'); };
+/** A background refresh, as the server reports a change of `scope`: the working tree unless said otherwise. */
+const repositoryChanged = (scope = 'worktree') => () => { for (const listener of [...calls.repositoryChanged]) listener('repo', scope); };
+const worktreeChanged = repositoryChanged();
 
 async function openEverySection() {
   await settle();
@@ -317,4 +318,24 @@ it('redraws each section for what it shows, and none of them for what another se
   expect(await redrawnBy(section('k'))).toEqual([]);
   expect(container.querySelector('[aria-label="Close the palette"]')).not.toBeNull();
   expect(await redrawnBy(click('Close the palette'))).toEqual([]);
+});
+
+it('keeps what is on screen when a read finds the status, branches and worktrees as they were', async () => {
+  await openEverySection();
+  // Every read arrives as new objects, as it does over the connection.
+  const withChanges = (changes: FileChange[]) => async () => structuredClone({ ...initialStatus, changes, unstagedCount: changes.length });
+  calls.status.mockImplementation(withChanges([changedFile]));
+  await redrawnBy(worktreeChanged);
+  expect(container.textContent).toContain('1 changes');
+
+  calls.toolbar.mockClear();
+  // Search reads its results again on any change in the working tree; nothing else has anything new to show.
+  expect(await redrawnBy(worktreeChanged)).toEqual(['search']);
+  expect(await redrawnBy(repositoryChanged('refs'))).toEqual([]);
+  expect(calls.toolbar).not.toHaveBeenCalled();
+
+  calls.status.mockImplementation(withChanges([changedFile, { ...changedFile, path: 'other.txt' }]));
+  expect(await redrawnBy(worktreeChanged)).toEqual(['changes', 'commit', 'search']);
+  expect(container.textContent).toContain('2 changes');
+  expect(calls.toolbar).toHaveBeenCalled();
 });
