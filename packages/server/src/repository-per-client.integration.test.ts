@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 interface Repository { id: string; name: string; path: string; commonDir: string }
-interface WatchEvent { type: 'repository.changed'; repositoryId: string; scope: string; watch?: string; watchId?: string }
+interface WatchEvent { type: 'repository.changed'; repositoryId: string; scope: string; watch?: string; watchId?: string; refresh?: false }
 
 /** One connection, as a client sees it: what it asked and what it was sent. */
 class Client {
@@ -43,7 +43,7 @@ class Client {
         this.waiting.get(message.id)?.(message.result!);
       } else if (message.type === 'event' && message.event?.type === 'repository.changed') {
         const event = message.event as WatchEvent;
-        this.log.push(`${event.repositoryId}:${event.watch ?? 'change'}`);
+        this.log.push(`${event.repositoryId}:${event.watch ?? 'change'}${event.refresh === false ? ':no-read' : ''}`);
         this.events.push(event);
       } else if (message.type === 'event' && message.event) {
         this.log.push(message.event.type);
@@ -211,7 +211,103 @@ describe('a repository per client', () => {
     await first.value('repository:open-recent', beta.id);
     await first.watching(beta.id);
     // Nothing about either repository comes before the answer, which a client would take for the one it is leaving.
-    expect(first.log).toEqual(['answer:repository:open-recent', `${alpha.id}:stopped`, `${beta.id}:watching`]);
+    // Neither needs a read: the client left one, and reads the other only after this.
+    expect(first.log).toEqual(['answer:repository:open-recent', `${alpha.id}:stopped:no-read`, `${beta.id}:watching:no-read`]);
+  });
+
+  it('tells a connection again of the watch of a repository it opens while already on it, by the same id', async () => {
+    const { connect, repository } = await startServer();
+    const work = await repository('alpha');
+    const client = await connect();
+    const alpha = await client.value<Repository>('repository:open-path', work);
+    const watchId = await client.watching(alpha.id);
+    client.log.length = 0;
+
+    await client.value('repository:open-recent', alpha.id);
+    await client.settled();
+
+    expect(client.log).toContain(`${alpha.id}:watching:no-read`);
+    expect(client.events.at(-1)?.watchId).toBe(watchId);
+  });
+
+  it('asks for no read when joining a watch already running, and for one when the watch starts after the answer', async () => {
+    const { connect, repository } = await startServer();
+    const [pathA, pathB, pathC] = await Promise.all([repository('alpha'), repository('beta'), repository('gamma')]);
+    const first = await connect();
+    const second = await connect();
+    const alpha = await first.value<Repository>('repository:open-path', pathA);
+    await first.watching(alpha.id);
+    await second.value('repository:open-path', pathB);
+    second.log.length = 0;
+
+    // Joining: the watch ran before the answer, and the client's reads come after it.
+    await second.value('repository:open-recent', alpha.id);
+    await second.watching(alpha.id);
+    expect(second.log).toContain(`${alpha.id}:watching:no-read`);
+
+    // Opened moments after another, gamma's watch is set up after the answer: whatever changed in between is read.
+    const gamma = await second.value<Repository>('repository:open-path', pathC);
+    await second.watching(gamma.id);
+    expect(second.log.filter((entry) => entry.startsWith(`${gamma.id}:watching`))).toEqual([`${gamma.id}:watching`]);
+  });
+
+  it('carries in the start-up answer the watch as it is when the answer goes, and nothing about it before', async () => {
+    const { server, connect, repository, services } = await startServer();
+    const work = await repository('alpha');
+    const setup = await connect();
+    const alpha = await setup.value<Repository>('repository:open-path', work);
+    await setup.watching(alpha.id);
+    const client = await connect();
+    // The watch runs into trouble and recovers while the answer is being put together.
+    const unavailableIds = services.repositories.unavailableIds.bind(services.repositories);
+    services.repositories.unavailableIds = async () => {
+      server.runtime.publishRepositoryWatch(alpha.id, 'degraded', null);
+      server.runtime.publishRepositoryWatch(alpha.id, 'watching', services.watcher.status(alpha.id).watchId);
+      return unavailableIds();
+    };
+    const data = await client.value<{ activeRepositoryWatch?: { state: string; watchId?: string } }>('app:bootstrap', { repositoryId: alpha.id });
+    services.repositories.unavailableIds = unavailableIds;
+
+    expect(client.log[0]).toBe('answer:app:bootstrap');
+    expect(data.activeRepositoryWatch?.state).toBe('watching');
+    const read = await client.value<{ watchId?: string }>('repository:read-file', alpha.id, 'README.md');
+    expect(read.watchId).toBe(data.activeRepositoryWatch?.watchId);
+  });
+
+  it('says in each answer where the server has the connection, so a client can tell an open that did not take', async () => {
+    const { connect, repository, services } = await startServer();
+    const [pathA, pathB] = await Promise.all([repository('alpha'), repository('beta')]);
+    const setup = await connect();
+    const alpha = await setup.value<Repository>('repository:open-path', pathA);
+    const beta = await setup.value<Repository>('repository:open-path', pathB);
+    const client = await connect();
+
+    // An open sent before the start-up request, as one queued while offline is on reconnecting.
+    const [opened, started] = await Promise.all([
+      client.value<Repository & { attachment: { attached: boolean; repositoryId: string; ticket: number } }>('repository:open-recent', beta.id),
+      client.value<{ attachment: { attached: boolean; repositoryId: string; ticket: number } }>('app:bootstrap', { repositoryId: alpha.id }),
+    ]);
+
+    const latest = [opened.attachment, started.attachment].sort((left, right) => right.ticket - left.ticket)[0]!;
+    expect(latest.repositoryId).toBe(alpha.id);
+    expect(services.clients.connectionsOn(alpha.id).size).toBe(1);
+    expect(opened.attachment.attached ? opened.attachment.ticket < started.attachment.ticket : opened.attachment.repositoryId === alpha.id).toBe(true);
+  });
+
+  it('opens a relocated repository asked for by its old id, and tells a client which ids moved', async () => {
+    const { connect, repository, directory } = await startServer();
+    const work = await repository('alpha');
+    await execFileAsync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'Start'], { cwd: work });
+    const client = await connect();
+    const alpha = await client.value<Repository>('repository:open-path', work);
+    const moved = path.join(directory, 'alpha-moved');
+    await execFileAsync('git', ['clone', '-q', work, moved]);
+    const relocated = await client.value<Repository>('repository:relocate-recent', alpha.id, moved);
+
+    const reloaded = await connect();
+    const data = await reloaded.value<{ activeRepository: Repository; relocatedRepositoryIds?: Record<string, string> }>('app:bootstrap', { repositoryId: alpha.id });
+    expect(data.activeRepository.id).toBe(relocated.id);
+    expect(data.relocatedRepositoryIds).toEqual({ [alpha.id]: relocated.id });
   });
 
   it('detaches every connection from a repository removed from OpenTig, and never announces it a watch it is not counted on', async () => {
@@ -292,10 +388,12 @@ describe('a repository per client', () => {
     const older = await connect();
     const shared = await older.value<{ activeRepository: Repository }>('app:bootstrap');
     expect(shared.activeRepository.id).toBe(beta.id);
+    await setup.settled();
+    const heardBefore = setup.events.length;
     await older.value('repository:open-recent', alpha.id);
     await older.watching(alpha.id);
     await setup.settled();
-    expect(setup.events.filter((event) => event.repositoryId === alpha.id)).toEqual([]);
+    expect(setup.events.slice(heardBefore).filter((event) => event.repositoryId === alpha.id)).toEqual([]);
 
     const unknown = await connect();
     const fallback = await unknown.value<{ activeRepository: Repository }>('app:bootstrap', { repositoryId: '0123456789abcdef' });
@@ -369,7 +467,11 @@ describe('a repository per client', () => {
     await second.watching(main.id);
     expect(second.otherEvents.at(-1)).toMatchObject({ type: 'repository.active-changed', repository: { id: main.id } });
     // Told it is on the main worktree before anything about that worktree's watch.
-    expect(second.log.indexOf('repository.active-changed')).toBeLessThan(second.log.indexOf(`${main.id}:watching`));
+    // First that the worktree it was on is no longer watched, then where it is, then that worktree's watch.
+    expect(second.log.slice(second.log.indexOf(`${other.id}:stopped:no-read`))).toEqual(expect.arrayContaining([`${other.id}:stopped:no-read`, 'repository.active-changed', `${main.id}:watching:no-read`]));
+    expect(second.log.indexOf(`${other.id}:stopped:no-read`)).toBeLessThan(second.log.indexOf('repository.active-changed'));
+    expect(second.log.indexOf('repository.active-changed')).toBeLessThan(second.log.indexOf(`${main.id}:watching:no-read`));
+    expect(second.otherEvents.at(-1)).toMatchObject({ previousId: other.id, reason: 'removed', recentRepositories: [{ id: main.id }] });
     expect(services.clients.connectionsOn(main.id).size).toBe(2);
     expect(services.clients.connectionsOn(other.id).size).toBe(0);
     expect(services.repositories.recents().map((item) => item.id)).toEqual([main.id]);

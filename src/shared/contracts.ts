@@ -920,6 +920,18 @@ export interface OpenTigCapabilities {
   aiProviders: AiHarnessStatus[];
 }
 
+/**
+ * Where a server with `repositoryPerClient` has the connection that asked, sent with the answer to
+ * the bootstrap and to every open. `attached` is false when the open did not take, because the
+ * connection was moved, reconnected or opened something else since it was asked. `ticket` orders
+ * these answers and moves: the highest is where the server has the connection.
+ */
+export interface ClientAttachment {
+  attached: boolean;
+  repositoryId: string | null;
+  ticket: number;
+}
+
 export interface BootstrapRequest {
   repositoryId?: string;
 }
@@ -944,6 +956,10 @@ export interface BootstrapData {
    * Absent while the watch is being set up: an announcement follows.
    */
   activeRepositoryWatch?: { state: RepositoryWatchState; watchId?: string };
+  /** See `ClientAttachment`. */
+  attachment?: ClientAttachment;
+  /** Saved repositories relocated during this server's run, by their old id: addresses and steps under one follow it. */
+  relocatedRepositoryIds?: Record<string, string>;
 }
 
 /** Another saved repository found in the folder a moved repository now lives in. */
