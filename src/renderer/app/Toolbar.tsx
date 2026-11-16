@@ -27,6 +27,7 @@ import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { opentig } from '@/lib/opentig-api';
 import { inBackground } from '@/lib/websocket-transport';
 import { useShortcuts } from './useShortcuts';
+import { useNavigationKeys } from './navigation-keys';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar, type MobileViewerBarProps } from './MobileToolbar';
 import { RepositoryLoadIndicator, type RepositoryLoadPhase } from './RepositoryLoadIndicator';
@@ -106,6 +107,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
   useEffect(() => { if (!mobile) setMobileContextOpen(false); }, [mobile]);
   const publishBranch = needsBranchPublication(props.status);
   const shortcuts = useShortcuts();
+  const navigation = useNavigationKeys();
   const repoSwitcherKey = shortcuts.repoSwitcher.toLowerCase();
   const [repositorySelectOpen, setRepositorySelectOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
@@ -484,12 +486,12 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
       )}
       <div className="toolbar-history" role="group" aria-label="Navigation history">
         <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Back" aria-keyshortcuts="Alt+ArrowLeft" focusableWhenDisabled disabled={!props.canGoBack} onClick={props.onBack} />}><IconChevronLeft /></TooltipTrigger>
-          <TooltipContent>Back <Kbd>Alt+←</Kbd></TooltipContent>
+          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Back" aria-keyshortcuts={navigation.backAria} focusableWhenDisabled disabled={!props.canGoBack} onClick={props.onBack} />}><IconChevronLeft /></TooltipTrigger>
+          <TooltipContent>Back <Kbd>{navigation.back}</Kbd></TooltipContent>
         </Tooltip>
         <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Forward" aria-keyshortcuts="Alt+ArrowRight" focusableWhenDisabled disabled={!props.canGoForward} onClick={props.onForward} />}><IconChevronRight /></TooltipTrigger>
-          <TooltipContent>Forward <Kbd>Alt+→</Kbd></TooltipContent>
+          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Forward" aria-keyshortcuts={navigation.forwardAria} focusableWhenDisabled disabled={!props.canGoForward} onClick={props.onForward} />}><IconChevronRight /></TooltipTrigger>
+          <TooltipContent>Forward <Kbd>{navigation.forward}</Kbd></TooltipContent>
         </Tooltip>
       </div>
       <span className="toolbar-history-divider" aria-hidden="true" />

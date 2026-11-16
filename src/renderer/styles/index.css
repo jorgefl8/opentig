@@ -338,6 +338,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   /* Back and Forward: one undraggable group, set apart from Refresh and the window's own controls. */
   .toolbar-history { display: inline-flex; flex: none; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
   .toolbar-history [data-size^="icon"]:disabled { opacity: 0.4; }
+  /* A path quoted in a notice reads as a path, not as part of the message. */
+  .notice-path { padding: 0 4px; border-radius: 4px; background: color-mix(in oklch, currentColor 12%, transparent); font-family: var(--font-mono); overflow-wrap: anywhere; }
   .toolbar-history-divider { width: 1px; height: 18px; flex: none; margin-inline: 4px; background: var(--border); }
   .toolbar-branch-pr-group { display: inline-flex; align-items: center; gap: 2px; flex: none; }
   .toolbar-branch-pr-group.is-mobile { display: flex; width: 100%; }

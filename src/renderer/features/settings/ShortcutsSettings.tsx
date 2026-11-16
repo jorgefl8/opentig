@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SettingGroup, SettingRow } from './SettingRows';
+import { useNavigationKeys } from '@/app/navigation-keys';
 
 const IGNORED_LISTENING_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta']);
 
@@ -32,11 +33,13 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
     }));
   }, []);
 
+  const keys = useNavigationKeys();
   const fixedByCategory = useMemo(() => {
-    const available = FIXED_SHORTCUTS.filter((item) => !(inBrowser && item.desktopOnly));
+    const available = FIXED_SHORTCUTS.filter((item) => !(inBrowser && item.desktopOnly))
+      .map((item) => item.navigation ? { ...item, combo: `${formatCombo(keys.back)} / ${formatCombo(keys.forward)}` } : item);
     const categories = [...new Set(available.map((item) => item.category))];
     return categories.map((category) => ({ category, items: available.filter((item) => item.category === category) }));
-  }, [inBrowser]);
+  }, [inBrowser, keys]);
 
   const capture = (id: ShortcutId, combo: string) => {
     if (combo === resolved[id]) { setCaptureError(null); return; }
