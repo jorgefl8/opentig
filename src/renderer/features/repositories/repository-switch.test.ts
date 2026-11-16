@@ -135,6 +135,18 @@ describe('repository switching', () => {
     expect(handlers.abandoned).toHaveBeenCalledExactlyOnceWith(repository('todor'));
   });
 
+  it('says the server was left elsewhere when a choice it opened was replaced by one that then failed', async () => {
+    const { switcher, handlers, opens, settle } = setup();
+    void switcher.select('todor', 'launchpad');
+    const later = switcher.select('monorepo', 'launchpad');
+    opens.get('todor')![0]!.resolve(repository('todor'));
+    await settle();
+    opens.get('monorepo')![0]!.reject(new Error('Not a repository.'));
+    expect(await later).toBe('failed');
+    expect(handlers.apply).not.toHaveBeenCalled();
+    expect(handlers.abandoned).toHaveBeenCalledExactlyOnceWith(repository('todor'));
+  });
+
   it('says nothing of a choice given up when a later choice follows it, which the server opens last', async () => {
     const { switcher, handlers, opens, settle } = setup();
     void switcher.select('todor', 'launchpad');

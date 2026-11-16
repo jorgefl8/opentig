@@ -4,7 +4,10 @@ export interface RepositorySwitchHandlers {
   /** Opens a recent repository; null means the user cancelled (for example, a relocation prompt). */
   open(id: string): Promise<RepositoryInfo | null>;
   apply(repository: RepositoryInfo, id: string): void;
-  /** A choice given up while it was on its way opened anyway, and no later choice followed it. */
+  /**
+   * The switching ended with the server on a repository that is not shown: a choice given up, or
+   * replaced by one that then failed, opened anyway. Called once, with the last one opened.
+   */
   abandoned?(repository: RepositoryInfo): void;
   fail(reason: unknown): void;
   pending(id: string | null): void;
@@ -72,16 +75,22 @@ export function createRepositorySwitcher(): RepositorySwitcher {
       handlers().pending(id);
       if (running) return outcome;
       running = true;
+      /** What the server last opened in this run, while it is not what is shown. */
+      let leftOnServer: RepositoryInfo | null = null;
       try {
         while (target !== null) {
           const next: string = target;
           inFlight = next;
           try {
             const repository = await handlers().open(next);
+            if (repository) leftOnServer = repository;
             if (target === next) {
-              if (repository) handlers().apply(repository, next);
+              if (repository) {
+                handlers().apply(repository, next);
+                leftOnServer = null;
+              }
               settle(repository ? 'opened' : 'cancelled');
-            } else if (target === null && abandoned === next && repository) handlers().abandoned?.(repository);
+            }
           } catch (reason) {
             if (target === next) {
               handlers().fail(reason);
@@ -95,6 +104,7 @@ export function createRepositorySwitcher(): RepositorySwitcher {
         }
       } finally {
         running = false;
+        if (leftOnServer) handlers().abandoned?.(leftOnServer);
         handlers().pending(null);
       }
       return outcome;
