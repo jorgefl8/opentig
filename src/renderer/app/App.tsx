@@ -112,6 +112,7 @@ import { RepositoryLinksContext, repositoryLinkUrl, type RepositoryLinks } from 
 import { Spinner } from '@/components/ui/spinner';
 import type { PaletteActions, PaletteMode, PaletteRequest, PaletteState } from '@/features/palette/palette-types';
 import { useKeyboardMap } from './keyboard/useKeyboardMap';
+import { isTypingTarget } from './keyboard/keys';
 
 // The sections and the viewer are downloaded on first use, or while the app is idle if that comes first (see `preloadWhenIdle`).
 const Viewer = lazyWithPreload(() => import('@/features/viewer/Viewer'));
@@ -304,7 +305,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    */
   const [paletteWantsCommits, setPaletteWantsCommits] = useState(false);
   /** Text the palette found no file for, handed to Search. */
-  const [searchSeed, setSearchSeed] = useState<{ text: string } | null>(null);
+  const [searchSeed, setSearchSeed] = useState<{ repositoryId: string; text: string } | null>(null);
   const [fileLineTarget, setFileLineTarget] = useState<FileLineTarget | null>(null);
   // Open-file tabs, one session per worktree. Structural metadata only: the
   // draft text of a dirty tab lives in a ref-backed map, never in React state.
@@ -2053,7 +2054,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       // The palette, on files or on commands. Pressed again while it is open, it starts afresh in that mode.
       const paletteMode = !repository || event.repeat ? null
         : matchesCombo(event, shortcuts.quickOpen) ? 'files' : matchesCombo(event, shortcuts.commandPalette) ? 'commands' : null;
-      if (paletteMode) {
+      // On a Mac, Ctrl+K in a text field deletes to the end of the line; the palette there is Cmd+K.
+      const macLineKill = paletteMode === 'commands' && event.ctrlKey && !event.metaKey && isMacPlatform() && isTypingTarget(event.target);
+      if (paletteMode && !macLineKill) {
         if (!palette && document.querySelector('[data-slot="dialog-popup"], .mobile-sheet, .confirm-popover')) return;
         event.preventDefault();
         openPalette(paletteMode);
@@ -3260,7 +3263,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     addRepository: () => void openRepository(),
     openSettings,
     openOnGitHub: () => { if (githubNameWithOwner) openOnGitHub(`https://github.com/${githubNameWithOwner}`); },
-    searchInFiles: (text) => { setSearchSeed({ text }); showSidebarView('search'); },
+    searchInFiles: (text) => { const open = repositoryRef.current; if (open) setSearchSeed({ repositoryId: open.id, text }); showSidebarView('search'); },
     loadCommits: () => setPaletteWantsCommits(true),
     recentPlaces: () => {
       const shown = shownLocationRef.current;
@@ -3741,7 +3744,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   onOpenFile={(path, line) => { setFileLineTarget(line ? { path, line, reached: false } : null); openFile(path); }}
                   unsavedPathsAmong={unsavedTabsUnder}
                   onReplaced={() => { void refresh({ background: true }); }}
-                  seed={searchSeed}
+                  seed={searchSeed?.repositoryId === repository.id ? searchSeed : null}
                 />
                 </Suspense>
               </Activity>}

@@ -88,8 +88,14 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
 
   useEffect(() => { if (active) inputRef.current?.focus(); }, [active]);
   // Text the command palette found nothing for, searched for here instead, as typed.
+  // Once per text sent: this section's effects run again each time it is shown, and must not put it back over what was typed since.
+  const seeded = useRef<typeof seed>(null);
   useEffect(() => {
-    if (seed) setQuery(seed.text);
+    if (!seed || seeded.current === seed) return;
+    seeded.current = seed;
+    setQuery(seed.text);
+    // The palette offered the text as it reads, not as a pattern.
+    setRegex(false);
   }, [seed]);
 
   useEffect(() => {
