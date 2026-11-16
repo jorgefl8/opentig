@@ -60,6 +60,8 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const revealingReplace = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** The match last opened, which the viewer shows and the keyboard moves on from. */
+  const [opened, setOpened] = useState<string | null>(null);
 
   const options = useMemo<SearchOptions>(
     () => ({ query, matchCase, wholeWord, regex, includeIgnored: searchIgnored }),
@@ -257,7 +259,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
           </div>
         )}
       </div>
-      <div ref={scrollRef} className="search-results">
+      <div ref={scrollRef} className="search-results" data-list-root="">
         {!trimmedQuery && <p className="empty-list">Type to search every file.</p>}
         {searching && !result && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Searching…" /></div>}
         <div className="search-rows virtual-list" style={{ height: virtualizer.getTotalSize() }}>
@@ -267,8 +269,8 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
             return (
               <div key={virtualRow.key} ref={mobile ? virtualizer.measureElement : undefined} data-index={virtualRow.index} className="virtual-row" style={{ height: mobile ? undefined : virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
                 {row.kind === 'file' ? (
-                  <div className={`search-file-heading ${row.file.ignored ? 'ignored' : ''}`}>
-                    <button className="search-file-toggle" onClick={() => toggleFile(row.file.path)} aria-expanded={row.open}>
+                  <div className={`search-file-heading ${row.file.ignored ? 'ignored' : ''}`} data-list-item="" data-list-folder="" data-list-depth={0}>
+                    <button className="search-file-toggle" data-list-primary="" onClick={() => toggleFile(row.file.path)} aria-expanded={row.open}>
                       {row.open ? <IconChevronDown /> : <IconChevronRight />}
                       <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(row.file.path)} alt="" aria-hidden="true" draggable={false} />
                       <span className="search-file-name"><bdi>{row.file.path}</bdi></span>
@@ -288,8 +290,8 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
                     )}
                   </div>
                 ) : (
-                  <div className="search-match">
-                    <button className="search-match-open" onClick={() => onOpenFile(row.file.path, row.match.line)}>
+                  <div className="search-match" data-list-item="" data-list-depth={1} data-list-current={opened === matchKey(row.file, row.match) ? '' : undefined}>
+                    <button className="search-match-open" data-list-primary="" onClick={() => { setOpened(matchKey(row.file, row.match)); onOpenFile(row.file.path, row.match.line); }}>
                       <span className="search-match-line">{mobile ? row.match.line : `${row.match.line}:${row.match.column ?? 1}`}</span>
                       <span className="search-match-text">{highlight(row.match.text, highlighter)}</span>
                     </button>
@@ -339,4 +341,8 @@ function highlight(text: string, pattern: RegExp | null): React.ReactNode {
   if (parts.length === 0) return trimmed;
   parts.push(<Fragment key="tail">{trimmed.slice(cursor)}</Fragment>);
   return parts;
+}
+
+function matchKey(file: SearchFileResult, match: SearchMatch): string {
+  return `${file.path}\u0000${match.line}:${match.column ?? 1}`;
 }

@@ -457,7 +457,16 @@ These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Sho
 | `Ctrl+O` | Open a repository |
 | `Ctrl+P` | Quick-open a file |
 | `Ctrl+R` | Refresh repository state |
-| `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, GitHub, or Search |
+| `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, GitHub, or Search. A browser tab often keeps these keys for its own tabs |
+| `G`, then `C`, `F`, `H`, `P` or `S` (fixed) | Open Changes, Files, History, GitHub, or Search, in any browser; press the letter within about a second |
+| `?` (fixed) | Open **Settings → Shortcuts** |
+| `↑` `↓` or `J` `K` (fixed) | Move to the previous or next row of a list. With the viewer open, it follows the row, as a click would |
+| `Home`, `End` (fixed) | Move to the first or last row of a list |
+| `Enter` (fixed) | Open the row in the viewer and move the keyboard there |
+| `←`, `→` (fixed) | Fold or unfold a folder in Files, Changes, or Search |
+| `J`, `K` in the viewer (fixed) | Open the next or previous row of the list without leaving the viewer |
+| `N`, `P` in the viewer (fixed) | Move to the next or previous file of a diff; in Changes, the next or previous change |
+| `Esc` (fixed) | Close the viewer and return to its row; on a phone, the same as the back arrow. A file stays open |
 | `Alt+←`, `Alt+→` (fixed, desktop app) | Go [back or forward](interface.md#back-and-forward) through the places you visited; the mouse's back and forward buttons do the same. In a browser, its own keys do it: `Cmd+[` and `Cmd+]` on a Mac |
 | `Ctrl+B` | Collapse or expand the desktop sidebar |
 | `Ctrl+S` | Save the open editable file |

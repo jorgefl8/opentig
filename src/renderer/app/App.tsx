@@ -110,6 +110,7 @@ import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDialog';
 import { RepositoryLinksContext, repositoryLinkUrl, type RepositoryLinks } from '@/components/repository-links';
 import { Spinner } from '@/components/ui/spinner';
+import { useKeyboardMap } from './keyboard/useKeyboardMap';
 
 // The sections and the viewer are downloaded on first use, or while the app is idle if that comes first (see `preloadWhenIdle`).
 const Viewer = lazyWithPreload(() => import('@/features/viewer/Viewer'));
@@ -3202,6 +3203,19 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     onOrganizationChange: (organization: Parameters<ToolbarProps['onOrganizationChange']>[0]) => setBootstrap((current) => current ? { ...current, ...organization } : current),
     onRefsManaged: handleRefsManaged,
   });
+  useKeyboardMap({
+    enabled: repository !== null && !welcomeReplay,
+    mobile,
+    viewer: () => {
+      const shown = viewerSelectionRef.current;
+      return !shown ? 'none' : shown.type === 'file' ? 'file' : 'other';
+    },
+    changes: () => viewRef.current === 'changes',
+    showSection: (section) => { showSidebarView(section); if (mobile) setMobilePane('list'); },
+    showShortcuts: () => openSettings('shortcuts'),
+    closeViewer: () => { selectViewer(null); },
+    phoneBack: mobileViewerBar.onBack,
+  });
   const mobilePreferences = useMemo(() => mobile && bootstrap ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : null, [bootstrap, mobile, mobileWrapLines]);
   const viewerHandlers = useStableHandlers({
     onUndoCommit: setUndoCommit,
@@ -3711,7 +3725,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                 trailing={fileHistoryOpener && viewerSelection?.type === 'file' ? <FileHistoryButton path={viewerSelection.path} onOpen={fileHistoryOpener} /> : null}
               />
             )}
-            <div className="viewer-pane-body">
+            {/* Focusable, so the keys of the viewer reach it after a list's Enter (see `useKeyboardMap`). */}
+            <div className="viewer-pane-body" tabIndex={-1}>
               <ErrorBoundary
                 resetKey={viewerSelection}
                 fallback={(err) => isModuleLoadError(err) ? (

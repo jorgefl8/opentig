@@ -64,12 +64,12 @@ export function ReleasesView({ repositoryId, activeTag, onSelect }: { repository
     <div className="pulls-view">
       {error && <div className="pulls-error" role="alert"><span>{error}</span><Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
       <KeptReadNotice className="pulls-kept" prefixes={[queryKeys.releases(repositoryId)]} onRetry={() => void query.refetch()} />
-      <div className="pulls-scroll" role="list" aria-label="Releases">
+      <div className="pulls-scroll" role="list" data-list-root="" aria-label="Releases">
         {releases === null && !error && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading releases…" /></div>}
         {releases?.length === 0 && <p className="empty-list">No releases yet.</p>}
         {releases?.map((release) => (
-          <div key={release.tagName} className={`pull-item ${activeTag === release.tagName ? 'active' : ''}`} role="listitem">
-            <button className="pull-main release-row" onClick={() => onSelect(release.tagName)}>
+          <div key={release.tagName} className={`pull-item ${activeTag === release.tagName ? 'active' : ''}`} role="listitem" data-list-item="" data-list-current={activeTag === release.tagName ? '' : undefined}>
+            <button className="pull-main release-row" data-list-primary="" onClick={() => onSelect(release.tagName)}>
               <span className={`status-dot tone-${releaseStateTone(release)}`} aria-hidden="true" />
               <span className="pull-line"><span className="pull-title">{release.name}</span><span className="pull-age">{releaseNote(release)}</span></span>
             </button>
