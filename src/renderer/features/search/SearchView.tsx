@@ -41,9 +41,11 @@ interface SearchViewProps {
   onReplaced(paths: string[]): void;
   /** Text to search for, handed over from elsewhere; a new object for each request. */
   seed?: { text: string } | null;
+  /** The seed's text is in the field: it is not to be sent again, to this section or to one mounted later. */
+  onSeedTaken?: () => void;
 }
 
-export function SearchView({ repositoryId, active, revision, onOpenFile, unsavedPathsAmong, onReplaced, seed = null }: SearchViewProps) {
+export function SearchView({ repositoryId, active, revision, onOpenFile, unsavedPathsAmong, onReplaced, seed = null, onSeedTaken }: SearchViewProps) {
   const mobile = useMobileLayout();
   const [query, setQuery] = useState('');
   const [matchCase, setMatchCase] = useState(false);
@@ -96,7 +98,8 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
     setQuery(seed.text);
     // The palette offered the text as it reads, not as a pattern.
     setRegex(false);
-  }, [seed]);
+    onSeedTaken?.();
+  }, [seed, onSeedTaken]);
 
   useEffect(() => {
     if (!searchQuery.data) return;

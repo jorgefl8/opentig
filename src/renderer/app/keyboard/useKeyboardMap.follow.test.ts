@@ -64,6 +64,7 @@ it('returns focus to the row the viewer was showing when Esc closes it, not to t
 });
 
 it('walks on row by row while j is held in the viewer, and opens only where it stops', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   await mount();
   element('viewer').focus();
   await key('viewer', 'keydown', 'j');
@@ -105,4 +106,25 @@ it('gives up the row a held key was about to open once Esc closes the viewer', a
   await act(async () => { vi.advanceTimersByTime(1_000); });
   await key('three', 'keyup', 'j');
   expect(opened).toEqual(['two']);
+});
+
+it('gives up that row as well for End, for a key that is no command, and for a click', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  await mount();
+  for (const interrupt of [
+    () => key('three', 'keydown', 'End'),
+    () => key('three', 'keydown', 'Tab'),
+    () => act(async () => { element('five').dispatchEvent(new Event('pointerdown', { bubbles: true })); }),
+  ]) {
+    opened.length = 0;
+    element('one').focus();
+    await key('one', 'keydown', 'j');
+    await key('two', 'keydown', 'j', { repeat: true });
+    await interrupt();
+    await key('three', 'keyup', 'j');
+    await act(async () => { vi.advanceTimersByTime(1_000); });
+    expect(opened).toEqual(['two']);
+    // Back to the start for the next way of interrupting.
+    await act(async () => { element('one').click(); });
+  }
 });

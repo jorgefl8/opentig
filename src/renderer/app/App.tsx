@@ -306,6 +306,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [paletteWantsCommits, setPaletteWantsCommits] = useState(false);
   /** Text the palette found no file for, handed to Search. */
   const [searchSeed, setSearchSeed] = useState<{ repositoryId: string; text: string } | null>(null);
+  const takeSearchSeed = useCallback(() => setSearchSeed(null), []);
   const [fileLineTarget, setFileLineTarget] = useState<FileLineTarget | null>(null);
   // Open-file tabs, one session per worktree. Structural metadata only: the
   // draft text of a dirty tab lives in a ref-backed map, never in React state.
@@ -2054,8 +2055,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       // The palette, on files or on commands. Pressed again while it is open, it starts afresh in that mode.
       const paletteMode = !repository || event.repeat ? null
         : matchesCombo(event, shortcuts.quickOpen) ? 'files' : matchesCombo(event, shortcuts.commandPalette) ? 'commands' : null;
-      // On a Mac, Ctrl+K in a text field deletes to the end of the line; the palette there is Cmd+K.
-      const macLineKill = paletteMode === 'commands' && event.ctrlKey && !event.metaKey && isMacPlatform() && isTypingTarget(event.target);
+      // On a Mac, Ctrl+K and Ctrl+P in a text field delete to the end of the line and go up one; the palette there is Cmd.
+      const macLineKill = paletteMode !== null && event.ctrlKey && !event.metaKey && isMacPlatform() && isTypingTarget(event.target);
       if (paletteMode && !macLineKill) {
         if (!palette && document.querySelector('[data-slot="dialog-popup"], .mobile-sheet, .confirm-popover')) return;
         event.preventDefault();
@@ -3745,6 +3746,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   unsavedPathsAmong={unsavedTabsUnder}
                   onReplaced={() => { void refresh({ background: true }); }}
                   seed={searchSeed?.repositoryId === repository.id ? searchSeed : null}
+                  onSeedTaken={takeSearchSeed}
                 />
                 </Suspense>
               </Activity>}

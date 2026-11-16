@@ -77,8 +77,6 @@ export function useKeyboardMap(options: KeyboardMapOptions): void {
 
     const run = (command: KeyCommand, area: KeyArea, target: EventTarget | null, repeat: boolean): boolean => {
       const { mobile, viewer } = latest.current;
-      // A row a held key was about to open is given up by any key that is not another step.
-      if (command.kind !== 'move' && command.kind !== 'file') dropHeld();
       if (command.kind === 'chord') return true;
       if (command.kind === 'section') {
         latest.current.showSection(command.view);
@@ -190,20 +188,27 @@ export function useKeyboardMap(options: KeyboardMapOptions): void {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!latest.current.enabled) { chord.since = null; return; }
+      if (!latest.current.enabled) { chord.since = null; dropHeld(); return; }
       const target = event.target;
       const viewer = document.querySelector('.viewer-pane');
       const area: KeyArea = rowAt(target) ? 'list' : viewer && target instanceof Node && viewer.contains(target) ? 'viewer' : 'other';
       const command = readKey(event, { area, typing: isTypingTarget(target), overlay: isOverlayOpen() }, chord);
+      // A row a held key was about to open is given up by any key that is not one more step the same way.
+      const step = command !== null && (command.kind === 'file' || (command.kind === 'move' && (command.to === 'next' || command.to === 'previous')));
+      if (!step) dropHeld();
       if (command && run(command, area, target, event.repeat)) event.preventDefault();
     };
+    // And by a click, which chooses for itself.
+    const onPointerDown = () => dropHeld();
     // Letting go of a held key opens the row it stopped on without waiting.
     const onKeyUp = () => { if (held) openHeld(); };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('pointerdown', onPointerDown, true);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('pointerdown', onPointerDown, true);
       clearTimeout(heldTimer);
       cancelAnimationFrame(frame);
     };
