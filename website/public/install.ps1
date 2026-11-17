@@ -99,7 +99,9 @@
     } elseif ($package -cmatch '\.tgz$') {
       $file = $package
       if ($package -match '^~[\\/]') {
-        $file = Join-Path $HOME $package.Substring(2)
+        # The home npm resolves ~ against: USERPROFILE on Windows, HOME elsewhere.
+        $userHome = if ($onWindows -and $env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { $HOME }
+        $file = Join-Path $userHome $package.Substring(2)
       } elseif ($package -notmatch '^([A-Za-z]:[\\/]|[\\/]|\.{1,2}[\\/])') {
         $package = ".$([IO.Path]::DirectorySeparatorChar)$package"
         $file = $package

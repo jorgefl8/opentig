@@ -125,12 +125,14 @@ const bracketed = (...values) => values.map(value => `[${value}]`).join(' ');
 const serviceInstall = (pkg, ...options) => bracketed('--yes', `--package=${pkg}`, 'opentig', 'service', 'install', ...options);
 
 const environment = (directory, extra = {}) => {
-  const env = { PATH: directory, HOME: root, NO_COLOR: '1', ...extra };
-  // PowerShell and cmd.exe need the system's own variables to start.
-  if (windows) for (const name of ['SystemRoot', 'SYSTEMROOT', 'ComSpec', 'WINDIR', 'TEMP', 'TMP', 'PSModulePath']) if (process.env[name]) env[name] = process.env[name];
-  // The stand-in home, which is what ~ means to PowerShell and npm on Windows.
-  if (windows) env.USERPROFILE = root;
-  return env;
+  if (!windows) return { PATH: directory, HOME: root, NO_COLOR: '1', ...extra };
+  // Windows programs, the stand-ins included, need the system's own variables
+  // to start, so only PATH is doctored: the stand-ins first, then the Windows
+  // folders, which hold neither Node.js nor Git.
+  const system = process.env.SystemRoot ?? 'C:\\Windows';
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(path|home|homedrive|homepath|userprofile|no_color|opentig_.*)$/i.test(name)));
+  // The stand-in home is what ~ means to PowerShell and npm on Windows.
+  return { ...inherited, PATH: [directory, `${system}\\System32`, system, `${system}\\System32\\WindowsPowerShell\\v1.0`].join(';'), HOME: root, USERPROFILE: root, NO_COLOR: '1', ...extra };
 };
 
 // Runs a program to completion in a new session on macOS and Linux: without a
