@@ -94,8 +94,8 @@ if (command === 'auth' && subcommand === 'status') {
 }
 if (command === 'auth' && subcommand === 'token') done('gho_e2e_stand_in_token\n');
 if (command === 'pr' && subcommand === 'list') {
-  // A slow GitHub, for journeys that look at what shows while the list is read.
-  if (world.pullListDelayMs) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, world.pullListDelayMs);
+  // A slow GitHub, for journeys that look at what shows while the list is read; a branch's own pull request is not the list.
+  if (world.pullListDelayMs && !args.includes('--head')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, world.pullListDelayMs);
   const head = option('--head');
   const state = option('--state');
   const open = state === 'open' || state === 'all' || state === undefined;

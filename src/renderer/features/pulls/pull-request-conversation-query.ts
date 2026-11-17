@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import { opentig } from '@/lib/opentig-api';
-import { queryKeys, takeFreshRead } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-client';
+import { readFresh } from '@/lib/fresh-reads';
 
 /**
  * A PR's conversation, for its tab and for the viewer, which asks for it as the PR opens.
@@ -9,7 +10,7 @@ import { queryKeys, takeFreshRead } from '@/lib/query-client';
 export function pullRequestConversationQueryOptions(repositoryId: string, number: number) {
   return queryOptions({
     queryKey: queryKeys.pullRequestConversation(repositoryId, number),
-    queryFn: () => opentig.github.getPullRequestConversation(repositoryId, number, takeFreshRead(queryKeys.pullRequestConversation(repositoryId, number))),
+    queryFn: ({ queryKey, signal }) => readFresh(queryKey, signal, (fresh) => opentig.github.getPullRequestConversation(repositoryId, number, fresh)),
     // The PR's live state reloads it as soon as GitHub reports a change.
     staleTime: 60_000,
   });

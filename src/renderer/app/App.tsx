@@ -78,7 +78,7 @@ import { LineBlameContext, type LineBlameSettings } from '@/features/viewer/line
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
 import {
-  mergeRefreshRequests, refreshOperationsForScope, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
+  mergeRefreshRequests, refreshOperationsForScope, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest, type RefreshView,
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
@@ -92,8 +92,9 @@ import { createScrollKeeper, type ScrollKeeper } from './navigation/scroll-keepe
 import { listenForTrailInput } from './navigation/trail-input';
 import { noticePath } from './navigation/notice-path';
 import { forgetRestoredViewStates, onRememberedTab, restoreViewerMemory, snapshotViewerMemory } from '@/features/viewer/viewer-memory';
-import { askFreshRead, historyHead, queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries, takeFreshRead } from '@/lib/query-client';
-import { githubOnScreen, refreshGitHubOnScreen } from './github-refresh';
+import { historyHead, queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
+import { askFreshReads, readFresh } from '@/lib/fresh-reads';
+import { createGitHubRefresher, githubOnScreen, refreshGitHubOnScreen } from './github-refresh';
 import { keptReads } from '@/lib/kept-reads';
 import { listAgents } from '@/features/refs/local-refs-model';
 import { AgentMarks } from '@/features/refs/AgentLabel';
@@ -495,10 +496,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
   const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
-    queryFn: async () => {
+    queryFn: async ({ queryKey, signal }) => {
       // Asked by an explicit refresh, so the read skips the list the backend keeps for a few seconds.
-      const fresh = takeFreshRead(queryKeys.pulls(repository!.id, pullRequestStates));
-      try { return pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates, fresh) : []; }
+      try { return pullRequestStates.length ? await readFresh(queryKey, signal, (fresh) => opentig.github.listPullRequests(repository!.id, pullRequestStates, fresh)) : []; }
       catch (error) {
         if (serializedErrorFromReason(error)?.code === 'GH_CLI_NOT_FOUND') {
           void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubCliStatus });
@@ -1028,6 +1028,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     void refreshFileHistoryState();
   }, [refreshFileHistoryState, repository]);
 
+  // GitHub's part of a manual refresh runs beside the Git part, outside `busy` and the refresh cycle,
+  // so the app is usable as soon as Git is read, as before; only the Refresh icon keeps turning.
+  const [githubRefreshingId, setGitHubRefreshingId] = useState<string | null>(null);
+  const [githubRefresher] = useState(() => createGitHubRefresher(setGitHubRefreshingId));
+  const refreshGitHub = useCallback((repositoryId: string, view: RefreshView) => {
+    const onScreen = githubOnScreen({ view, viewer: viewerSelectionRef.current, ...githubScreenRef.current });
+    githubRefresher.run(repositoryId, () => refreshGitHubOnScreen(appQueryClient, repositoryId, onScreen));
+  }, [appQueryClient, githubRefresher]);
+
   const performRefresh = useCallback(async (repositoryId: string, request: RefreshRequest) => {
     const { background, manual, view: refreshView } = request;
     // Nothing of this repository is on screen yet, so read all of it whatever asked for the refresh.
@@ -1040,10 +1049,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       void appQueryClient.invalidateQueries({ queryKey: queryKeys.histories(repositoryId), refetchType: 'none' });
     }
     if (!background) { busyRef.current = 'refresh'; setBusy('refresh'); }
-    // What GitHub shows is read again alongside, and the refresh lasts until it settles.
-    const githubRead = manual
-      ? refreshGitHubOnScreen(appQueryClient, repositoryId, githubOnScreen({ view: refreshView, viewer: viewerSelectionRef.current, ...githubScreenRef.current }))
-      : null;
+    if (manual) refreshGitHub(repositoryId, refreshView);
     try {
       if (manual) {
         // Explicit checks bypass the automatic interval; update state stays in
@@ -1140,11 +1146,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (background && isConnectionLoss(reason)) recordConnectionLoss('Could not refresh', reason);
       else reportError('Could not refresh', reason);
     } finally {
-      // A GitHub read that fails says so where its list or viewer shows it, so it never reaches the catch above.
-      await githubRead?.catch(() => undefined);
       if (!background && repositoryRef.current?.id === repositoryId) { busyRef.current = null; setBusy(null); }
     }
-  }, [applyFilesSnapshot, appQueryClient, noteFetchResult, readTree]);
+  }, [applyFilesSnapshot, appQueryClient, noteFetchResult, readTree, refreshGitHub]);
   // One cycle per repository folds watcher bursts and explicit mutation
   // refreshes into a single follow-up snapshot with the union of their scopes.
   const refresh = useCallback((options?: AppRefreshOptions): Promise<void> => {
@@ -1271,8 +1275,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       }
     }
     if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
-    if (repository) askFreshRead(queryKeys.pulls(repository.id, pullRequestStates));
-    await pullsQuery.refetch();
+    const asks = askFreshReads(repository ? [queryKeys.pulls(repository.id, pullRequestStates)] : []);
+    try { await pullsQuery.refetch(); } finally { asks.drop(); }
     // After the list, which tells the backend these are to be read again too.
     if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-line-counts'] });
   }, [appQueryClient, ghStatusQuery, pullRequestStates, pullsQuery, repository]);
@@ -3968,6 +3972,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           worktreeAgents={worktreeAgents}
           preferences={settingsPreferences}
           busy={busy}
+          githubRefreshing={githubRefreshingId === repository.id}
           repositorySyncOperations={repositorySyncOperations}
           remoteProblem={remoteProblem?.repositoryId === repository.id ? remoteProblem : null}
           pendingRepositoryId={pendingRepositoryId}

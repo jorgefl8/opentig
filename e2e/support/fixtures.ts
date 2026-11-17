@@ -43,7 +43,7 @@ export interface GitHubWorld {
   pulls: StandInPullRequest[];
   /** The clone whose Git answers `gh pr diff`, as GitHub's own diff would. */
   clone?: string;
-  /** How long `gh pr list` takes to answer, to see what shows while the list is read. */
+  /** How long `gh pr list` takes to list the pull requests, to see what shows while the list is read. */
   pullListDelayMs?: number;
 }
 

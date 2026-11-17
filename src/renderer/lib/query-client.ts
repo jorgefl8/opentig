@@ -1,4 +1,4 @@
-import { focusManager, hashKey, QueryClient, type QueryKey } from '@tanstack/react-query';
+import { focusManager, QueryClient } from '@tanstack/react-query';
 import type { PullRequestState } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { refreshOperationsForScope, type RefreshView } from '../app/refresh-policy';
@@ -55,21 +55,6 @@ export function keepGitHubData(client: QueryClient): () => void {
   });
 }
 keepGitHubData(queryClient);
-
-const freshReads = new Set<string>();
-
-/**
- * The next read of this query asks GitHub itself, past what the backend read
- * moments ago and serves as current, as a manual refresh should. One ask covers one read.
- */
-export function askFreshRead(queryKey: QueryKey): void {
-  freshReads.add(hashKey(queryKey));
-}
-
-/** Whether this read was asked to come from GitHub itself; the query function asks as it starts. */
-export function takeFreshRead(queryKey: QueryKey): boolean {
-  return freshReads.delete(hashKey(queryKey));
-}
 
 export const queryKeys = {
   commitAuthorship: (repositoryId: string) => ['repository', repositoryId, 'commit-authorship'] as const,

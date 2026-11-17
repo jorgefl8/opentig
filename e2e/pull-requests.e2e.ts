@@ -131,7 +131,7 @@ test('the pull request list shows placeholder rows while GitHub answers, and its
   expect(Math.abs(arrived!.height - placeholder!.height)).toBeLessThanOrEqual(1);
 });
 
-test('Refresh on the GitHub section reads the pull request list from GitHub again', async ({ pairedPage: page, repository, github }) => {
+test('Refresh on the GitHub section reads the pull request list from GitHub again, without holding the app for it', async ({ pairedPage: page, repository, github }) => {
   await cloneOfGitHub(repository);
   const first = await pullRequestBranch(repository, 'feature/status-filter', [
     { message: 'Filter tasks by status', files: { 'src/filter-tasks.js': 'export const filterTasks = (list) => list;\n' } },
@@ -148,10 +148,20 @@ test('Refresh on the GitHub section reads the pull request list from GitHub agai
   const second = await pullRequestBranch(repository, 'feature/due-dates', [
     { message: 'Sort tasks by due date', files: { 'src/sort-tasks.js': 'export const sortTasks = (list) => list;\n' } },
   ]);
-  await github({ ...world, pulls: [...world.pulls, pull(25, 'Sort tasks by due date', 'feature/due-dates', second)] });
+  // GitHub is slow to answer this time.
+  await github({ ...world, pullListDelayMs: 3_000, pulls: [...world.pulls, pull(25, 'Sort tasks by due date', 'feature/due-dates', second)] });
+  // Refresh asks GitHub again only for what it answered more than a few seconds ago.
+  await page.waitForTimeout(5_500);
   const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
+  const turning = refresh.locator('g.refresh-icon-turn');
   await refresh.click();
 
-  await expect(list.getByRole('button', { name: /Sort tasks by due date/ })).toBeVisible();
-  await expect(refresh).toBeEnabled();
+  // The Git part is done long before GitHub answers: the app is usable again while the icon still turns.
+  await expect(refresh).toBeEnabled({ timeout: 2_500 });
+  await expect(turning).toHaveCount(1);
+  // Pressed again meanwhile, it refreshes Git and leaves GitHub's reads to finish.
+  await refresh.click();
+  // GitHub commands run one at a time, after the branch's own pull request that the Git refresh reads.
+  await expect(list.getByRole('button', { name: /Sort tasks by due date/ })).toBeVisible({ timeout: 15_000 });
+  await expect(turning).toHaveCount(0);
 });

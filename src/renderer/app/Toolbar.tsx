@@ -49,6 +49,8 @@ export interface ToolbarProps {
   mobileViewer?: MobileViewerBarProps | undefined;
   repository: RepositoryInfo; recent: BootstrapData['recentRepositories']; repositoryProjects: RepositoryProject[]; status: RepositoryStatus | null;
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
+  /** A manual refresh is still reading what GitHub shows, after its Git part is done. */
+  githubRefreshing?: boolean;
   /** Worktrees in which coding agents are working. */
   worktreeAgents?: readonly WorktreeAgents[] | undefined;
   githubInfo: GitHubRepositoryInfo | null;
@@ -481,7 +483,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
         <TrailButton direction="forward" enabled={props.canGoForward} keys={navigation.forward} keysAria={navigation.forwardAria} onStep={props.onForward} listSteps={props.listTrailSteps} onGo={props.onGo}><IconChevronRight /></TrailButton>
       </div>
       <span className="toolbar-history-divider" aria-hidden="true" />
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><RefreshIcon turning={props.busy === 'refresh'} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><RefreshIcon turning={props.busy === 'refresh' || props.githubRefreshing === true} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <DesktopUpdateIndicator />
       {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
       <Tooltip>
