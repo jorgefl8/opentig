@@ -563,6 +563,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return (direction === 'back' ? steps.back : steps.forward).map((step) => ({ key: step.key, offset: step.offset, name: nameStep(step, sources) }));
   }, [appQueryClient, trail]);
   const goInTrail = useCallback((offset: number) => trail.go(offset), [trail]);
+  useEffect(() => trail.onMissedJump(() => {
+    sileo.info({ title: 'That step is no longer in this tab’s history', description: 'The browser keeps a limited number of steps. You stayed where you were.' });
+  }), [trail]);
   // The phone's arrow walks the whole trail; only at its start does it go back to the list.
   const mobileViewerBar = useMemo(() => ({
     onBack: () => { if (trail.state().canGoBack) trail.back(); else setMobilePane('list'); },

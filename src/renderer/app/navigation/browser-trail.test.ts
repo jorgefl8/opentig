@@ -69,3 +69,122 @@ describe('the trail kept in the browser’s history, as a list', () => {
     expect(trail.steps().back.map((step) => step.location.view)).toEqual(['history', 'files']);
   });
 });
+
+describe('the browser trail across page loads', () => {
+  /** The browser's Back or Forward by `offset`, outside any page's trail, as when another page load holds the tab. */
+  function traverse(offset: number): Promise<void> {
+    return new Promise((resolve) => {
+      window.addEventListener('popstate', () => resolve(), { once: true });
+      window.history.go(offset);
+    });
+  }
+  /** A new page load on the entry the tab shows now. */
+  function load() {
+    const trail = open();
+    const opened = trail.initial().entry!;
+    trail.adopt(opened);
+    return trail;
+  }
+
+  it('never lists the steps of another page load in the same tab, so the row chosen is where the browser goes', async () => {
+    const views: NavigationLocation['view'][] = ['files', 'history', 'changes', 'search', 'prs', 'files'];
+    const first = open();
+    first.start(at(views[0]!));
+    for (const view of views.slice(1)) first.push(at(view));
+    first.detach();
+    // An address pasted into the same tab: a page load with a trail of its own.
+    window.history.pushState(null, '', '/r/repo/history');
+    const second = load();
+    second.push(at('changes'));
+    second.push(at('search'));
+    second.push(at('files', { type: 'file', path: 'README.md' }));
+    expect(second.steps().back.map((step) => step.location.view)).toEqual(['search', 'changes', 'history']);
+    second.detach();
+
+    // Four Backs: the first page load's last step, loaded again.
+    await traverse(-4);
+    const again = load();
+    expect(again.steps().back.map((step) => step.location.view)).toEqual(['prs', 'search', 'changes', 'history', 'files']);
+    expect(again.steps().forward).toEqual([]);
+    const arrival = landed(again);
+    again.go(-3);
+    expect((await arrival).location.view).toBe('changes');
+    expect(again.steps().forward.map((step) => step.location.view)).toEqual(['search', 'prs', 'files']);
+  });
+
+  it('drops the steps the browser dropped when a new page load came after an earlier step', async () => {
+    const first = open();
+    first.start(at('files'));
+    first.push(at('history'));
+    first.push(at('changes'));
+    const arrival = landed(first);
+    first.go(-1);
+    await arrival;
+    first.detach();
+    // From History, an address pasted: the browser drops Changes, which was ahead.
+    window.history.pushState(null, '', '/r/repo/search');
+    load().detach();
+    await traverse(-1);
+    const again = load();
+    expect(again.steps().forward).toEqual([]);
+    expect(again.state()).toEqual({ canGoBack: true, canGoForward: false });
+  });
+
+  it('starts empty from steps kept in a shape it cannot read, and corrects a kept step the browser shows otherwise', async () => {
+    for (const garbage of ['not json', '{"v":2,"steps":"no"}', JSON.stringify({ v: 2, steps: [{ trail: '../x', index: -1, key: 7, location: {} }], tops: [['a', 'b']], last: 'x' })]) {
+      window.sessionStorage.setItem('opentig.navigation.steps', garbage);
+      const trail = open();
+      trail.start(at('files'));
+      expect(trail.steps()).toEqual({ back: [], forward: [] });
+      trail.detach();
+      window.sessionStorage.clear();
+    }
+
+    const trail = open();
+    trail.start(at('files'));
+    trail.push(at('history'));
+    trail.push(at('changes'));
+    trail.detach();
+    // The kept step two back says Search, but the history entry there is Files.
+    const kept = JSON.parse(window.sessionStorage.getItem('opentig.navigation.steps')!) as { steps: Array<{ index: number; location: NavigationLocation }> };
+    const wrong = kept.steps.reduce((oldest, step) => step.index < oldest.index ? step : oldest);
+    wrong.location = at('search');
+    window.sessionStorage.setItem('opentig.navigation.steps', JSON.stringify(kept));
+    const reloaded = load();
+    expect(reloaded.steps().back.map((step) => step.location.view)).toEqual(['history', 'search']);
+    const arrival = landed(reloaded);
+    reloaded.go(-2);
+    expect((await arrival).location.view).toBe('files');
+    expect(reloaded.steps().forward.map((step) => step.location.view)).toEqual(['history', 'changes']);
+    reloaded.go(2);
+    await landed(reloaded);
+    expect(reloaded.steps().back.map((step) => step.location.view)).toEqual(['history', 'files']);
+  });
+
+  it('lists only the steps the browser’s history still holds, and takes out a step it cannot reach', async () => {
+    const trail = createBrowserTrail((location) => addressOf(location), { arrivalMs: 50 });
+    trail.attach();
+    trails.push(trail);
+    trail.start(at('files'));
+    for (let step = 0; step < 60; step++) trail.push(at(step % 2 ? 'history' : 'changes'));
+    // A browser keeps about fifty entries per tab.
+    const length = Object.getOwnPropertyDescriptor(History.prototype, 'length')!;
+    Object.defineProperty(window.history, 'length', { configurable: true, get: () => 50 });
+    try {
+      expect(trail.steps().back).toHaveLength(49);
+      // The entry is gone though its length says otherwise: the jump never arrives.
+      Object.defineProperty(window.history, 'length', { configurable: true, get: () => 61 });
+      const go = window.history.go;
+      window.history.go = () => undefined;
+      const missed = new Promise<void>((resolve) => { trail.onMissedJump(resolve); });
+      trail.go(-55);
+      await missed;
+      window.history.go = go;
+      expect(trail.steps().back).toHaveLength(54);
+      expect(trail.steps().back.at(-1)!.offset).toBe(-54);
+    } finally {
+      Object.defineProperty(window.history, 'length', length);
+      delete (window.history as unknown as Record<string, unknown>).length;
+    }
+  });
+});

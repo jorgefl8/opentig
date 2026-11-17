@@ -5,27 +5,43 @@ import { EMPTY_MEMORY, MAX_SCROLL_MARKS, SIDEBAR_VIEWS, type EntryMemory, type N
 import { createTrailSignals, MAX_TRAIL_ENTRIES, newEntryKey, type NavigationTrail, type TrailStep } from './trail';
 
 const STATE_KEY = 'opentigNavigation';
-/** The last step of this tab's trail, which Forward cannot go past. Kept per tab, through reloads. */
-const TOP_KEY = 'opentig.navigation.top';
 /**
- * Where each step of this tab's trail leads, by its place in the history, so Back and Forward
- * can list them: a page cannot read the other entries of its history. Kept per tab, through reloads.
+ * What this tab knows of its trails, kept through reloads: where each step leads, since a page
+ * cannot read the other entries of its history, how far each trail goes, and the step last shown.
+ * A page load that starts a trail of its own (a pasted address, a bookmark) gives it a new id, kept
+ * in each of its history entries, so the steps of one load are never taken for another's.
  */
 const STEPS_KEY = 'opentig.navigation.steps';
+/** The most steps kept for the tab; the current trail's go last. */
+const MAX_KEPT_STEPS = 300;
 /** Steps whose memory is kept in the page as well, so a step left by the browser's own Back has its latest. */
 const MAX_KEPT_MEMORIES = 200;
 /** How long scrolling waits before its position is written into the history entry. */
 const MEMORY_WRITE_DELAY_MS = 800;
+/** A jump the browser has not made by then never will: its history no longer holds that step. */
+const JUMP_ARRIVAL_MS = 1500;
 
 /** A step as the lists of Back and Forward know it. A commit's subject is kept to name it. */
 interface KnownStep {
+  trail: string;
+  index: number;
   key: string;
   location: NavigationLocation;
+}
+
+interface KeptTrails {
+  steps: KnownStep[];
+  /** The last step of each trail, which Forward cannot go past. */
+  tops: Map<string, number>;
+  /** The step on screen when the tab last showed one. */
+  last: { trail: string; index: number } | null;
 }
 
 interface StoredEntry {
   v: 1;
   key: string;
+  /** The page load whose trail the entry belongs to; empty in entries written before trails had one. */
+  trail: string;
   index: number;
   location: NavigationLocation;
   memory: EntryMemory;
@@ -45,30 +61,71 @@ export interface BrowserTrail extends NavigationTrail {
  * reload, and the app's arrows all walk the same steps. Scrolling and other
  * changes within a step replace its entry; only a step pushes one.
  */
-export function createBrowserTrail(addressFor: (location: NavigationLocation) => string): BrowserTrail {
+export function createBrowserTrail(addressFor: (location: NavigationLocation) => string, { arrivalMs = JUMP_ARRIVAL_MS }: { arrivalMs?: number } = {}): BrowserTrail {
   const signals = createTrailSignals();
   const memories = new Map<string, EntryMemory>();
   let current: NavigationEntry | null = null;
+  let trail = '';
   let index = 0;
-  let top = readTop();
+  let top = 0;
   let writeTimer: number | null = null;
+  let jumpTimer: number | null = null;
   let attached = false;
   /** The address last written, which a pull request's tab can change without the location changing. */
   let writtenUrl: string | null = null;
-  const known = readKnownSteps();
-  let knownWritten = '';
-  /** Notes where the step at `position` leads, and keeps the steps nearest the current one for a reload. */
-  const know = (position: number, entry: { key: string; location: NavigationLocation }) => {
-    known.set(position, { key: entry.key, location: entry.location });
-    for (const other of [...known.keys()]) if (Math.abs(other - index) > MAX_TRAIL_ENTRIES) known.delete(other);
-    const serialized = JSON.stringify([...known]);
-    if (serialized === knownWritten) return;
-    knownWritten = serialized;
+  const kept = readKeptTrails();
+  let keptWritten = '';
+  const save = () => {
+    const serialized = JSON.stringify({ v: 2, steps: kept.steps, tops: [...kept.tops], last: kept.last });
+    if (serialized === keptWritten) return;
+    keptWritten = serialized;
     try { window.sessionStorage.setItem(STEPS_KEY, serialized); } catch { /* storage unavailable: the lists know this page's steps only */ }
   };
+  /** Continues a trail the history entry names, as after a reload or the browser's Back into an earlier page load. */
+  const joinTrail = (id: string, position: number) => {
+    trail = id;
+    index = position;
+    top = Math.max(kept.tops.get(id) ?? position, position);
+  };
+  /**
+   * Starts a trail for this page load. It came after the step last shown, so the browser dropped whatever
+   * was ahead of that step, which its trail drops too.
+   */
+  const startTrail = () => {
+    const previous = kept.last;
+    if (previous) {
+      kept.steps = kept.steps.filter((step) => step.trail !== previous.trail || step.index <= previous.index);
+      if ((kept.tops.get(previous.trail) ?? 0) > previous.index) kept.tops.set(previous.trail, previous.index);
+    }
+    trail = newEntryKey();
+    index = 0;
+    top = 0;
+  };
+  const setTop = (value: number) => {
+    top = value;
+    kept.tops.delete(trail);
+    kept.tops.set(trail, value);
+    while (kept.tops.size > MAX_KEPT_TRAILS) kept.tops.delete(kept.tops.keys().next().value!);
+  };
+  /** Notes where the current step leads, and keeps the steps nearest it for a reload, with the other trails' first to go. */
+  const know = (entry: { key: string; location: NavigationLocation }) => {
+    kept.steps = kept.steps.filter((step) => !(step.trail === trail && (step.index === index || Math.abs(step.index - index) > MAX_TRAIL_ENTRIES)));
+    kept.steps.push({ trail, index, key: entry.key, location: entry.location });
+    while (kept.steps.length > MAX_KEPT_STEPS) {
+      const other = kept.steps.findIndex((step) => step.trail !== trail);
+      kept.steps.splice(other >= 0 ? other : 0, 1);
+    }
+    kept.last = { trail, index };
+    if (!kept.tops.has(trail) || kept.tops.get(trail)! < top) setTop(top);
+    save();
+  };
+  const knownAt = (position: number) => kept.steps.find((step) => step.trail === trail && step.index === position);
   /** A new step drops whatever was ahead of it, in the browser's history as in the lists. */
   const forgetFrom = (position: number) => {
-    for (const other of [...known.keys()]) if (other >= position) known.delete(other);
+    kept.steps = kept.steps.filter((step) => step.trail !== trail || step.index < position);
+  };
+  const stopWaitingForJump = () => {
+    if (jumpTimer !== null) { window.clearTimeout(jumpTimer); jumpTimer = null; }
   };
 
   const keep = (key: string, memory: EntryMemory) => {
@@ -77,15 +134,11 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     while (memories.size > MAX_KEPT_MEMORIES) memories.delete(memories.keys().next().value!);
   };
   const changed = () => signals.update({ canGoBack: index > 0, canGoForward: index < top });
-  const setTop = (value: number) => {
-    top = value;
-    try { window.sessionStorage.setItem(TOP_KEY, String(value)); } catch { /* storage unavailable: Forward is known for this page only */ }
-  };
   const write = (entry: NavigationEntry, mode: 'push' | 'replace') => {
-    const stored: StoredEntry = { v: 1, key: entry.key, index, location: storedLocation(entry.location), memory: entry.memory };
+    const stored: StoredEntry = { v: 1, key: entry.key, trail, index, location: storedLocation(entry.location), memory: entry.memory };
     const url = addressFor(entry.location);
     writtenUrl = url;
-    know(index, entry);
+    know(entry);
     try {
       if (mode === 'push') window.history.pushState({ [STATE_KEY]: stored }, '', url);
       else window.history.replaceState({ [STATE_KEY]: stored }, '', url);
@@ -99,15 +152,18 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
   };
   const onPopState = (event: PopStateEvent) => {
     if (writeTimer !== null) { window.clearTimeout(writeTimer); writeTimer = null; }
+    stopWaitingForJump();
     const stored = readStored(event.state);
     let entry: NavigationEntry;
     if (stored) {
+      if (stored.trail !== trail) joinTrail(stored.trail, stored.index);
       index = stored.index;
       if (index > top) setTop(index);
       entry = { key: stored.key, location: stored.location, memory: memories.get(stored.key) ?? stored.memory };
-      // What a list said of this step may name a commit by its subject, which the history entry does not keep.
-      const listed = known.get(index);
-      know(index, listed?.key === entry.key ? { key: entry.key, location: { ...entry.location, selection: withSubject(entry.location.selection, listed.location.selection) } } : entry);
+      // What a list said of this step may name a commit by its subject, which the history entry does not keep;
+      // a kept step that is not this entry is replaced by it, so the lists say where the browser really is.
+      const listed = knownAt(index);
+      know(listed?.key === entry.key ? { key: entry.key, location: { ...entry.location, selection: withSubject(entry.location.selection, listed.location.selection) } } : entry);
     } else {
       // An address typed or edited by hand: a new step after the one it was typed over.
       const parsed = parseAddress(window.location.pathname, window.location.search, window.location.hash);
@@ -137,22 +193,16 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     adopt(entry) {
       const stored = readStored(window.history.state);
       // A reload keeps its place in the trail; a pasted address starts one.
-      if (stored?.key === entry.key) {
-        index = stored.index;
-        if (index > top) setTop(index);
-      } else {
-        index = 0;
-        setTop(0);
-        known.clear();
-      }
-      know(index, entry);
+      if (stored?.key === entry.key) joinTrail(stored.trail, stored.index);
+      else startTrail();
+      know(entry);
       current = entry;
       changed();
     },
     start(location) {
       const stored = readStored(window.history.state);
-      index = stored ? stored.index : 0;
-      if (!stored) setTop(0);
+      if (stored) joinTrail(stored.trail, stored.index);
+      else startTrail();
       current = { key: newEntryKey(), location, memory: EMPTY_MEMORY };
       write(current, 'replace');
       changed();
@@ -193,13 +243,16 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
       window.history.forward();
     },
     steps() {
-      // Only the steps this tab has seen are listed; the browser still walks the ones it has not.
+      // Only the steps of this page load's trail that the tab has seen, and only as far as the browser's
+      // history still reaches: it keeps a limited number of entries per tab, the oldest going first.
+      const ahead = top - index;
+      const reachableBack = Math.max(0, Math.min(index, window.history.length - 1 - ahead));
       const step = (position: number): TrailStep | null => {
-        const listed = known.get(position);
-        return listed ? { ...listed, memory: memories.get(listed.key) ?? EMPTY_MEMORY, offset: position - index } : null;
+        const listed = knownAt(position);
+        return listed ? { key: listed.key, location: listed.location, memory: memories.get(listed.key) ?? EMPTY_MEMORY, offset: position - index } : null;
       };
       const back: TrailStep[] = [];
-      for (let position = index - 1; position >= 0 && back.length < MAX_TRAIL_ENTRIES; position -= 1) {
+      for (let position = index - 1; position >= index - reachableBack && back.length < MAX_TRAIL_ENTRIES; position -= 1) {
         const found = step(position);
         if (found) back.push(found);
       }
@@ -214,8 +267,21 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
       // The browser moves through its own history, so the address and what its Back and Forward do stay in step.
       if (!Number.isSafeInteger(offset) || offset === 0 || index + offset < 0 || index + offset > top) return;
       flush();
+      stopWaitingForJump();
+      const target = index + offset;
+      // A step the browser no longer holds is never reached: nothing moves, so the view and the address still
+      // agree, and the step and those past it leave the lists.
+      jumpTimer = window.setTimeout(() => {
+        jumpTimer = null;
+        kept.steps = kept.steps.filter((step) => step.trail !== trail || (offset < 0 ? step.index > target : step.index < target));
+        if (offset > 0) setTop(target - 1);
+        save();
+        changed();
+        signals.missed();
+      }, arrivalMs);
       window.history.go(offset);
     },
+    onMissedJump: signals.onMissed,
     onRestore: signals.onRestore,
     subscribe: signals.subscribe,
     attach() {
@@ -228,6 +294,7 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     },
     detach() {
       flush();
+      stopWaitingForJump();
       attached = false;
       window.removeEventListener('popstate', onPopState);
       window.removeEventListener('pagehide', onPageHide);
@@ -245,24 +312,37 @@ function storedLocation(location: NavigationLocation): NavigationLocation {
   };
 }
 
-function readKnownSteps(): Map<number, KnownStep> {
-  const steps = new Map<number, KnownStep>();
-  try {
-    const value: unknown = JSON.parse(window.sessionStorage.getItem(STEPS_KEY) ?? '[]');
-    if (!Array.isArray(value)) return steps;
-    // Written by this page, but read back with the same care as a history entry.
-    for (const item of value.slice(0, 2 * MAX_TRAIL_ENTRIES + 1)) {
-      if (!Array.isArray(item) || item.length !== 2 || !Number.isSafeInteger(item[0]) || item[0] < 0) continue;
-      const step = item[1] as Record<string, unknown> | null;
-      if (!step || typeof step !== 'object' || typeof step.key !== 'string' || step.key.length > 64) continue;
+/** The most trails whose last step is kept: a tab rarely has more page loads that history still reaches. */
+const MAX_KEPT_TRAILS = 50;
+const TRAIL_ID = /^[A-Za-z0-9-]{0,64}$/;
+
+/** What the tab kept of its trails. Written by this page, but read back with the same care as a history entry. */
+function readKeptTrails(): KeptTrails {
+  const kept: KeptTrails = { steps: [], tops: new Map(), last: null };
+  let value: unknown;
+  try { value = JSON.parse(window.sessionStorage.getItem(STEPS_KEY) ?? 'null'); }
+  catch { return kept; }
+  if (!value || typeof value !== 'object' || (value as Record<string, unknown>).v !== 2) return kept;
+  const record = value as Record<string, unknown>;
+  const position = (item: unknown): item is number => Number.isSafeInteger(item) && (item as number) >= 0;
+  const trailId = (item: unknown): item is string => typeof item === 'string' && TRAIL_ID.test(item);
+  if (Array.isArray(record.steps)) {
+    for (const item of record.steps.slice(0, MAX_KEPT_STEPS)) {
+      const step = item as Record<string, unknown> | null;
+      if (!step || typeof step !== 'object' || !trailId(step.trail) || !position(step.index) || typeof step.key !== 'string' || step.key.length > 64) continue;
       const location = validLocation(step.location);
       if (!location) continue;
-      steps.set(item[0], { key: step.key, location: { ...location, selection: withSubject(location.selection, (step.location as NavigationLocation).selection) } });
+      kept.steps.push({ trail: step.trail, index: step.index, key: step.key, location: { ...location, selection: withSubject(location.selection, (step.location as NavigationLocation).selection) } });
     }
-  } catch {
-    // Unreadable or unavailable: the lists start from this page.
   }
-  return steps;
+  if (Array.isArray(record.tops)) {
+    for (const item of record.tops.slice(0, MAX_KEPT_TRAILS)) {
+      if (Array.isArray(item) && item.length === 2 && trailId(item[0]) && position(item[1])) kept.tops.set(item[0], item[1]);
+    }
+  }
+  const last = record.last as Record<string, unknown> | null;
+  if (last && typeof last === 'object' && trailId(last.trail) && position(last.index)) kept.last = { trail: last.trail, index: last.index };
+  return kept;
 }
 
 /** A commit's subject, which names it in the lists, when the stored selection had one. */
@@ -271,14 +351,6 @@ function withSubject(selection: ViewerSelection, from: ViewerSelection): ViewerS
   return typeof from.subject === 'string' && from.subject.length <= 500 ? { ...selection, subject: from.subject } : selection;
 }
 
-function readTop(): number {
-  try {
-    const value = Number(window.sessionStorage.getItem(TOP_KEY));
-    return Number.isSafeInteger(value) && value > 0 ? value : 0;
-  } catch {
-    return 0;
-  }
-}
 
 /** A step from an address: its pull request's tab goes with it as the viewer's memory. */
 function entryOf(target: AddressTarget): NavigationEntry {
@@ -302,9 +374,10 @@ function readStored(state: unknown): StoredEntry | null {
   const stored = value as Record<string, unknown>;
   if (stored.v !== 1 || typeof stored.key !== 'string' || stored.key.length > 64) return null;
   if (typeof stored.index !== 'number' || !Number.isSafeInteger(stored.index) || stored.index < 0) return null;
+  if (stored.trail !== undefined && !(typeof stored.trail === 'string' && TRAIL_ID.test(stored.trail))) return null;
   const location = validLocation(stored.location);
   const memory = validMemory(stored.memory);
-  return location && memory ? { v: 1, key: stored.key, index: stored.index, location, memory } : null;
+  return location && memory ? { v: 1, key: stored.key, trail: typeof stored.trail === 'string' ? stored.trail : '', index: stored.index, location, memory } : null;
 }
 
 function validLocation(value: unknown): NavigationLocation | null {
