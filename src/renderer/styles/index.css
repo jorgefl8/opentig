@@ -694,8 +694,10 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
      The <svg> element stays untransformed: rotating the element itself was
      measured to carry the whole icon around a small circle on some displays. */
   .spinner-arc { transform-origin: 12px 12px; animation: spin 1s linear infinite; }
+  /* The refresh icon's arrows turn the same way, about the point they are symmetric about. */
+  .refresh-icon-turn { transform-origin: 12px 12px; animation: spin 1s linear infinite; }
   @media (prefers-reduced-motion: reduce) {
-    .spinner-arc { animation: none; }
+    .spinner-arc, .refresh-icon-turn { animation: none; }
   }
   .view-spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; color: var(--primary); }
   .repository-projects-dialog { display: flex; max-height: min(700px, calc(100vh - 40px)); flex-direction: column; }
@@ -1121,7 +1123,14 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-description-skeleton > span:nth-child(2) { width: 78%; }
   .pr-description-skeleton > span:nth-child(3) { width: 54%; }
   .pr-loading-line { margin: 0; padding: 16px; color: var(--muted-foreground); font-size: var(--text-ui); }
-  @media (prefers-reduced-motion: reduce) { .pr-skeleton-line, .pr-description-skeleton > span { animation: none; } }
+  /* A list's first read: placeholder rows built from the real rows' classes. */
+  .list-skeleton { pointer-events: none; }
+  .list-skeleton-bar { display: inline-block; max-width: 100%; vertical-align: middle; }
+  .list-skeleton-fill { flex: 1; }
+  .list-skeleton-spacer { visibility: hidden; }
+  .list-skeleton-avatar { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--muted); animation: repository-loading-pulse 1.4s ease-in-out infinite; }
+  .list-skeleton-dot { color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .pr-skeleton-line, .pr-description-skeleton > span, .list-skeleton-avatar { animation: none; } }
   /* A question beside the button that asked it, sized for its words rather than the header's width. */
   .confirm-popover { display: grid; width: min(310px, calc(100vw - 24px)); max-height: var(--available-height); gap: 10px; overflow: auto; transform-origin: var(--transform-origin); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--popover); padding: 12px; color: var(--popover-foreground); font-size: var(--text-ui); line-height: 1.5; box-shadow: 0 10px 25px rgb(0 0 0 / 18%); outline: none; }
   .confirm-popover[data-open] { animation: fade-rise var(--motion-fast) var(--ease-out); }
@@ -2129,6 +2138,8 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
 .searchable-picker [data-slot="combobox-input"] > svg { width: 14px; height: 14px; }
 .searchable-picker-list { max-height: 292px; padding: 4px; }
 .repository-picker[data-slot="combobox-content"] { max-height: min(80dvh, var(--available-height)); }
+/* The detached HEAD's note sits above the branches; the menu grows by about its height rather than taking it from the list. */
+.searchable-picker[data-slot="combobox-content"]:has(.branch-detached-notice) { max-height: min(36rem, var(--available-height)); }
 .repository-picker .searchable-picker-list { max-height: none; }
 .searchable-picker-group { padding: 6px 8px 3px; font-size: var(--text-meta); font-weight: var(--weight-strong); line-height: 14px; }
 .searchable-picker-item { min-height: 32px; padding: 5px 28px 5px 8px; gap: 7px; border-radius: 5px; color: var(--popover-foreground); }
@@ -2162,6 +2173,15 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
 .undo-commit-content > .agent-marks > .agent-mark + .agent-mark { margin-left: -8px; }
 .undo-commit-content > .agent-marks > .agent-mark > .ai-provider-icon, .undo-commit-content > .agent-marks > .agent-mark > svg { width: 20px; height: 20px; }
 .searchable-picker-empty { padding: 22px 8px; text-align: center; color: var(--muted-foreground); font-size: var(--text-ui); }
+.branch-detached-notice { display: grid; flex-shrink: 0; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; row-gap: 2px; margin: 4px 4px 0; padding: 7px 9px 8px; border: 1px solid color-mix(in oklch, var(--primary) 22%, transparent); border-radius: 6px; background: color-mix(in oklch, var(--primary) 8%, transparent); color: var(--popover-foreground); font-size: var(--text-ui); line-height: 17px; }
+.branch-detached-notice > svg { grid-row: span 3; width: 16px; height: 16px; margin-top: 1px; color: var(--primary); }
+.branch-detached-notice strong { font-weight: var(--weight-strong); }
+.branch-detached-notice code { font-family: var(--font-mono); font-weight: var(--weight-medium); }
+.branch-detached-subject { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.branch-detached-refs { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; }
+.branch-detached-ref { display: inline-flex; max-width: 100%; align-items: center; gap: 3px; height: 18px; padding: 0 6px; overflow: hidden; border-radius: 4px; background: color-mix(in oklch, var(--foreground) 8%, transparent); color: var(--popover-foreground); font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.branch-detached-ref svg { width: 11px; height: 11px; flex: none; }
+.branch-detached-ref span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .searchable-picker-footer { border-top: 1px solid var(--border); padding: 4px; }
 .searchable-picker-footer button { display: flex; width: 100%; min-height: 30px; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; color: var(--muted-foreground); font-size: var(--text-ui); text-align: left; cursor: pointer; }
 .searchable-picker-footer button:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--popover)); color: var(--popover-foreground); }

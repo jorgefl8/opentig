@@ -95,11 +95,15 @@ async function click(selector: string) {
   await act(async () => { container.querySelector<HTMLButtonElement>(selector)!.click(); });
   await settle();
 }
+/** The pull request list's placeholder, by the words it is named after. */
+function loadingPulls(): Element | null {
+  return [...container.querySelectorAll('[role="status"][aria-labelledby]')].find((region) => document.getElementById(region.getAttribute('aria-labelledby')!)?.textContent === 'Loading pull requests…') ?? null;
+}
 async function openPulls() {
   await click('[aria-keyshortcuts="Control+4"]');
   await vi.waitFor(async () => {
     await settle();
-    expect(container.textContent).toMatch(/Loading pull requests|No open pull requests|GitHub CLI is required|GitHub account unavailable/);
+    expect(loadingPulls() !== null || /No open pull requests|GitHub CLI is required|GitHub account unavailable/.test(container.textContent ?? '')).toBe(true);
   });
 }
 
@@ -145,7 +149,7 @@ it('detects the CLI, reads the PRs ahead of opening them, and shows PR loading w
   expect(calls.listPulls).toHaveBeenCalledExactlyOnceWith('repo', ['OPEN'], false);
   await openPulls();
   expect(calls.listPulls).toHaveBeenCalledOnce();
-  expect(container.textContent).toContain('Loading pull requests');
+  expect(loadingPulls()).not.toBeNull();
   expect(container.textContent).not.toContain('Checking GitHub CLI');
   expect(calls.cliStatus).toHaveBeenCalledOnce();
 });
@@ -160,9 +164,10 @@ it('keeps cached PR results visible on return and shares CLI detection across re
   // Read moments ago, so going back shows it without asking again.
   expect(calls.listPulls).toHaveBeenCalledOnce();
   expect(container.textContent).toContain('No open pull requests');
-  expect(container.textContent).not.toMatch(/Checking GitHub CLI|Loading pull requests/);
+  expect(container.textContent).not.toContain('Checking GitHub CLI');
+  expect(loadingPulls()).toBeNull();
   await click('[aria-label="Switch repository"]');
-  expect(container.textContent).toContain('Loading pull requests');
+  expect(loadingPulls()).not.toBeNull();
   expect(calls.cliStatus).toHaveBeenCalledOnce();
   expect(calls.listPulls).toHaveBeenLastCalledWith('repo-b', ['OPEN'], false);
 });

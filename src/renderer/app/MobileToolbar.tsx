@@ -13,6 +13,7 @@ import type { ToolbarProps } from './Toolbar';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 import { Spinner } from '@/components/ui/spinner';
+import { checkoutLabel } from '@/features/refs/detached-head';
 import { TrailBackArrow, type TrailListItem } from './TrailMenu';
 
 export interface MobileViewerBarProps {
@@ -80,7 +81,7 @@ export function MobileToolbar({ props, branchCleanUp, onBranchCleanUp, repositor
         <span className="mobile-toolbar-mark"><OpenTigMark /></span>
         <button className="mobile-repository-context" aria-label="Repository and branch" aria-haspopup="dialog" aria-expanded={contextOpen} onClick={() => onContextOpen(true)}>
           <strong><span>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</span>{props.repositoryLoadPhase ? <Spinner /> : <IconSelector aria-hidden="true" />}</strong>
-          <small>{status ? status.branch ?? 'Detached HEAD' : 'Loading…'}{pullRequest && <> · <span className={`mobile-pr-number pr-state-${pullRequestStateTone(pullRequest)}`}>#{pullRequest.number}{pullRequest.state !== 'OPEN' && ` ${prStateLabel(pullRequest)}`}</span>{newCommits > 0 && ` +${newCommits} new`}</>}</small>
+          <small>{status ? checkoutLabel(status, props.branches) : 'Loading…'}{pullRequest && <> · <span className={`mobile-pr-number pr-state-${pullRequestStateTone(pullRequest)}`}>#{pullRequest.number}{pullRequest.state !== 'OPEN' && ` ${prStateLabel(pullRequest)}`}</span>{newCommits > 0 && ` +${newCommits} new`}</>}</small>
         </button>
         <div className="mobile-toolbar-actions">
           {isDevProfile && <AppName />}

@@ -52,6 +52,8 @@ interface SearchablePickerProps {
   shortcut?: string;
   placeholder: string;
   management?: SearchablePickerAction[];
+  /** Says something about the current state above the list, without being one of its choices. */
+  notice?: ReactNode;
   disabled?: boolean | undefined;
   align?: 'start' | 'end';
   open?: boolean;
@@ -62,7 +64,7 @@ interface SearchablePickerProps {
 
 /** Compact selection for toolbars and forms; optional management actions stay outside the listbox. */
 export function SearchablePicker({ groups, value, onValueChange, label, triggerLabel, icon, triggerHint, triggerIndicator,
-  triggerId, size = 'sm', triggerClassName, contentClassName, shortcut, placeholder, management, disabled, align = 'end',
+  triggerId, size = 'sm', triggerClassName, contentClassName, shortcut, placeholder, management, notice, disabled, align = 'end',
   open: controlledOpen, onOpenChange, focusSearch = true, onSearchChange,
 }: SearchablePickerProps) {
   const comboboxId = useId();
@@ -143,6 +145,7 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
       </Tooltip>
       <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch && !mobile}>
         <ComboboxInput placeholder={placeholder} aria-label={placeholder} />
+        {notice}
         {virtualized ? <VirtualPickerList query={needle} groups={filtered} selectedIndex={selected ? filteredItems.indexOf(selected) : -1} highlight={highlight} scrolling={scrolling} label={label} comboboxId={comboboxId} onScroll={dismissScrollingTooltips} /> : <ComboboxList className="searchable-picker-list" aria-label={label} onScroll={dismissScrollingTooltips} onWheelCapture={dismissScrollingTooltips}>
           {filtered.length === 0 && <div className="searchable-picker-empty" role="status">No matches</div>}
           {filtered.map((group) => (

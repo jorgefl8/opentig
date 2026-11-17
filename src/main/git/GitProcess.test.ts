@@ -78,8 +78,8 @@ describe('GitProcess', () => {
     const listener = vi.fn();
     git.onInvalidate(listener);
     await git.runWrite(process.cwd(), ['-c', 'color.ui=false', 'status', '--short'], { operation: 'status-write', timeoutMs: 5_000 });
-    // The write lock also invalidates, without a command of its own.
-    expect(listener.mock.calls.map(([, command]) => command).filter(Boolean)).toEqual(['status', 'status']);
+    // The write lock's own invalidations name the command too, so a fetch's lock doesn't restart what ignores a fetch.
+    expect(listener.mock.calls.map(([, command]) => command)).toEqual(['status', 'status', 'status', 'status']);
     git.invalidate(process.cwd());
     expect(listener).toHaveBeenLastCalledWith(expect.any(String), undefined);
   });

@@ -6,7 +6,7 @@ Browse files, review diffs, make edits, and commit changes. Work with branches, 
 
 [Website](https://opentig.com/) · [Installation](https://opentig.com/docs/getting-started/#run-the-headless-cli) · [Documentation](https://opentig.com/docs/) · [Source](https://github.com/jorgefl8/opentig) · [Report a bug](https://github.com/jorgefl8/opentig/issues)
 
-![OpenTig reviewing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository](https://raw.githubusercontent.com/jorgefl8/opentig/main/docs/images/workspace.png)
+![OpenTig reviewing an open pull request file by file, with side-by-side diffs of a renamed JavaScript file and its new test, in the Launchpad sample repository](https://raw.githubusercontent.com/jorgefl8/opentig/main/docs/images/workspace.png)
 
 *OpenTig reviewing a sample pull request in the interactive demo.*
 
@@ -15,7 +15,7 @@ Browse files, review diffs, make edits, and commit changes. Work with branches, 
 Works on **macOS, Linux, and Windows** with **Node.js 24+** and **Git 2.31+** installed.
 
 ```bash
-npx --yes @opentig/cli@latest
+npx opentig@latest
 ```
 
 This starts OpenTig at `127.0.0.1:6767` and opens a one-use browser pairing link. Open, clone, or find a repository from the start screen and start reviewing. Repositories are managed in the UI; you do not need to start a separate server for each one.
@@ -40,10 +40,10 @@ opentig
 | | |
 | --- | --- |
 | **Review changes** | Split or unified diffs, staged and unstaged files, and merge-conflict resolution. [Details](https://opentig.com/docs/features/#changes-diffs-and-commits) |
-| **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, and Markdown, image, HTML, and SVG previews. [Details](https://opentig.com/docs/features/#files-and-editing) |
-| **Work with Git** | Stage files, commit, pull and push, inspect history, and switch branches and worktrees. [Details](https://opentig.com/docs/features/#safe-pull-and-push) |
+| **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, a command palette, and Markdown, image, HTML, and SVG previews. [Details](https://opentig.com/docs/features/#files-and-editing) |
+| **Work with Git** | Stage files, commit, pull and push, inspect history and a file's history, and switch branches and worktrees. [Details](https://opentig.com/docs/features/#safe-pull-and-push) |
 | **Organize repositories** | Recent repositories, project groups, and manual relocation without moving files. [Details](https://opentig.com/docs/features/#repositories-and-projects) |
-| **Work with GitHub** | Create, review, and merge pull requests, follow Actions runs and start workflows, and manage releases through your authenticated `gh` CLI. [Details](https://opentig.com/docs/github/) |
+| **Work with GitHub** | Create, review, and merge pull requests, follow Actions runs, read their jobs' logs, and start workflows, and manage releases through your authenticated `gh` CLI. [Details](https://opentig.com/docs/github/) |
 | **Use a remote server** | Pair a browser on your laptop or phone and work with repositories on the server. [Details](https://opentig.com/docs/web-access/) |
 
 **AI is optional.** Normal Git work needs no AI account or OpenTig account. If you choose to use AI assistance, a supported CLI installed and authenticated on the host can draft commit messages and pull-request descriptions for you to review. The selected CLI may send the supplied context to its provider. OpenTig does not run an autonomous coding agent or create commits on its own. See the [feature guide](https://opentig.com/docs/features/) and [privacy details](https://opentig.com/docs/security-and-privacy/).
@@ -53,7 +53,7 @@ opentig
 Start without opening a browser:
 
 ```bash
-npx --yes @opentig/cli@latest serve
+npx opentig@latest serve
 ```
 
 Server mode is designed for personal access through **Cloudflare Tunnel**, a **private network such as Tailscale**, or an SSH tunnel. The default listener stays on `127.0.0.1:6767`, which a tunnel or HTTPS reverse proxy on the same machine can reach. For direct private-network access, bind to its interface with `--host`; alternatively, keep loopback and use a private HTTPS proxy such as Tailscale Serve. Tunnel and VPN setup are managed separately from OpenTig.
@@ -65,6 +65,22 @@ After a global installation, run `opentig pair` as the same OS user to generate 
 Paired browsers have the host user's filesystem, Git, and configured CLI authority. Keep access private and do not expose the raw HTTP port publicly. See [remote access and pairing](https://opentig.com/docs/web-access/) for SSH and reverse-proxy examples.
 
 ## Keep a background server running
+
+Install a background service without a global installation. The install scripts check for Node.js 24+ and Git first, say what is missing, then run this package's `service install`:
+
+```bash
+curl -fsSL https://opentig.com/install.sh | sh    # macOS and Linux
+```
+
+```powershell
+irm https://opentig.com/install.ps1 | iex         # Windows PowerShell
+```
+
+The same installation through npx, on any system:
+
+```bash
+npx opentig@latest service install
+```
 
 After installing globally, opt into a background service on Linux, macOS, or Windows:
 

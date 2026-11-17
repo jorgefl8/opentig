@@ -20,6 +20,7 @@ import { hasViewerDraft, releaseEditDraft } from './viewer-drafts';
 import { useGitHubAccount } from './useGitHubAccount';
 import '@/features/markdown/markdown.css';
 import { Spinner } from '@/components/ui/spinner';
+import { ViewerSkeleton } from './LoadingSkeletons';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -91,7 +92,7 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
       </div>
     );
   }
-  if (!release) return <div className="viewer-message">{bar}<Spinner className="view-spinner" /> <ShimmeringText text={`Loading release ${tagName}…`} /></div>;
+  if (!release) return <ViewerSkeleton bar={bar} label={`Loading release ${tagName}`} />;
 
   if (editing) {
     const closeEditor = () => {

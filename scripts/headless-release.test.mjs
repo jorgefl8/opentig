@@ -24,6 +24,21 @@ function fixture(overrides = {}) {
   save();
   return { root, metadata, save };
 }
+// Adds a packed opentig alias to a fixture; `manifest` replaces fields of its package.json.
+function withAlias({ root, metadata, save }, manifest = {}) {
+  const directory = path.join(root, 'alias', 'package');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'package.json'), JSON.stringify({
+    name: 'opentig', version: '0.1.2', bin: { opentig: 'bin.mjs' }, dependencies: { '@opentig/cli': '0.1.2' }, ...manifest,
+  }));
+  const filename = 'opentig-0.1.2.tgz';
+  execFileSync('tar', ['-czf', path.join(root, filename), '-C', path.join(root, 'alias'), 'package/package.json']);
+  const bytes = readFileSync(path.join(root, filename));
+  metadata.alias = { packageName: 'opentig', version: '0.1.2', filename,
+    sha256: createHash('sha256').update(bytes).digest('hex'), npmIntegrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}` };
+  save();
+  return { root, metadata, save };
+}
 
 it('accepts the exact packed release identity and both digests', () => {
   const { root } = fixture();
@@ -67,4 +82,22 @@ it('does not move npm latest backwards when backfilling an older release', () =>
   expect(publicationTag('0.1.10', '0.1.9')).toBe('latest');
   expect(publicationTag('0.1.2', '0.0.0-reserved.0')).toBe('latest');
   expect(publicationTag('0.1.2', undefined)).toBe('latest');
+});
+
+it('verifies the opentig alias packed with the CLI, and accepts releases prepared before it', () => {
+  expect(verifyBundle(fixture().root, 'v0.1.2', commit).alias).toBeNull();
+  const { root, metadata } = withAlias(fixture());
+  expect(verifyBundle(root, 'v0.1.2', commit).alias.filename).toBe('opentig-0.1.2.tgz');
+  writeFileSync(path.join(root, metadata.alias.filename), 'tampered');
+  expect(() => verifyBundle(root, 'v0.1.2', commit)).toThrow(/alias integrity/);
+});
+it('refuses an alias that would run another CLI version, or a different alias', () => {
+  // A range would let npm install a different CLI than the one released with it.
+  expect(() => verifyBundle(withAlias(fixture(), { dependencies: { '@opentig/cli': '^0.1.2' } }).root, 'v0.1.2', commit)).toThrow(/exactly its own version/);
+  expect(() => verifyBundle(withAlias(fixture(), { dependencies: { '@opentig/cli': '0.1.2', ws: '8.0.0' } }).root, 'v0.1.2', commit)).toThrow(/exactly its own version/);
+  expect(() => verifyBundle(withAlias(fixture(), { version: '0.1.1' }).root, 'v0.1.2', commit)).toThrow(/exactly its own version/);
+  expect(() => verifyBundle(withAlias(fixture(), { scripts: { postinstall: 'unsafe' } }).root, 'v0.1.2', commit)).toThrow(/lifecycle/);
+  const renamed = withAlias(fixture());
+  renamed.metadata.alias.filename = 'opentig-0.1.1.tgz'; renamed.save();
+  expect(() => verifyBundle(renamed.root, 'v0.1.2', commit)).toThrow(/release identity/);
 });

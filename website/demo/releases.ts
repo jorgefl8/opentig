@@ -10,7 +10,7 @@ const assets = [
 function release(tagName: string, name: string, overrides: Partial<ReleaseDetails>, body: string): ReleaseDetails {
   return {
     tagName, name, isDraft: false, isPrerelease: false, isLatest: false, isImmutable: false, createdAt: sampleDate, publishedAt: sampleDate,
-    databaseId: tagName.length * 1000 + name.length, body, bodyHash: 'a'.repeat(64), targetCommitish: 'b'.repeat(40), url: '', assets: [], tagExists: true, viewerCanWrite: true, ...overrides,
+    databaseId: tagName.length * 1000 + name.length, body, bodyHash: 'a'.repeat(64), targetCommitish: 'main', url: '', assets: [], tagExists: true, viewerCanWrite: true, ...overrides,
   };
 }
 const samples = [

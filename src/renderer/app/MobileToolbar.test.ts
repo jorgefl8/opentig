@@ -17,7 +17,7 @@ let root: Root;
 let container: HTMLDivElement;
 const pull = vi.fn(); const push = vi.fn(); const settings = vi.fn(); const back = vi.fn();
 async function render(status: RepositoryStatus | null, syncBusy = false, branchPullRequest: PullRequestSummary | null = null, pendingRepositoryName: string | null = null, overrides: Partial<ToolbarProps> = {}) {
-  const props = { repository: { repositoryName: 'sample' }, status, branchPullRequest, worktrees: [], onPull: pull, onPush: push, onSettingsOpen: settings, repositoryLoadPhase: pendingRepositoryName ? 'opening' : null, ...overrides } as unknown as ToolbarProps;
+  const props = { repository: { repositoryName: 'sample' }, status, branchPullRequest, worktrees: [], branches: [], onPull: pull, onPush: push, onSettingsOpen: settings, repositoryLoadPhase: pendingRepositoryName ? 'opening' : null, ...overrides } as unknown as ToolbarProps;
   await act(async () => root.render(createElement(MobileToolbar, { props, repositoryControl: null, branchControl: null, worktreeControl: createElement('i', { className: 'worktree-control' }), pendingRepositoryName, loadIndicator: null, contextOpen: true, onContextOpen: () => {}, syncBusy })));
 }
 const syncButtons = () => [...container.querySelectorAll<HTMLButtonElement>('.mobile-context-sync button')];

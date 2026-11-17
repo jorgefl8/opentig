@@ -12,7 +12,8 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    // Only pages with a Markdown twin need content negotiation.
-    "run_worker_first": ["/", "/docs/*"]
+    // Pages with a Markdown twin need content negotiation; the install
+    // scripts need a text content type.
+    "run_worker_first": ["/", "/docs/*", "/install.sh", "/install.ps1"]
   }
 }

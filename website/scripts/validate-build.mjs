@@ -115,7 +115,7 @@ export function validateBuild({ directory, site, indexable }) {
     'site must be an HTTPS origin without a path, query, or fragment');
   const root = resolve(directory);
   const files = new Set(filesIn(root));
-  for (const required of ['index.html', '404.html', 'robots.txt', 'sitemap.xml', 'llms.txt', '_headers']) check(files.has(required), `missing ${required}`);
+  for (const required of ['index.html', '404.html', 'robots.txt', 'sitemap.xml', 'llms.txt', '_headers', 'install.sh', 'install.ps1']) check(files.has(required), `missing ${required}`);
   const pages = new Map();
   for (const file of files) {
     if (!file.endsWith('.html')) continue;

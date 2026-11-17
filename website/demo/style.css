@@ -13,23 +13,10 @@ html #root {
   padding: 24px;
   color: #ccc;
 }
+/* The installed app's Settings layout, with the two sections the sample answers. */
 html .demo-settings {
-  display: flex;
-  flex-direction: column;
-  width: min(680px, calc((100vw - 32px) / var(--demo-ui-scale, 1)));
+  width: min(760px, calc((100vw - 48px) / var(--settings-ui-scale, 1)));
   max-width: none;
-  height: min(560px, calc((100dvh - 32px) / var(--demo-ui-scale, 1)));
-  max-height: calc((100dvh - 32px) / var(--demo-ui-scale, 1));
-  overflow: hidden;
-}
-.demo-settings > .settings-general {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: 4px 24px 24px;
-}
-.demo-settings .settings-panel-header {
-  align-items: center;
 }
 @media (max-width: 767px) {
   html .demo-settings {

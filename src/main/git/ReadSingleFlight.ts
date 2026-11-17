@@ -17,14 +17,19 @@ export class ReadSingleFlight {
     for (const scope of this.generations.keys()) this.invalidate(scope);
   }
 
-  async run<T>(scope: string, key: string, read: () => Promise<T>, retryInvalidated = true): Promise<T> {
+  /**
+   * `startNew` never joins a read already under way, which may predate what the
+   * caller is asking about; later readers join the new one instead.
+   */
+  async run<T>(scope: string, key: string, read: () => Promise<T>, retryInvalidated = true, startNew = false): Promise<T> {
     // Retry outside the shared promise. Joining a newer consumer must not inherit
     // its fresh retry budget and extend an older request indefinitely.
     for (let attempt = 0; ; attempt++) {
       // The last attempt started after the previous change, so a repository that
       // keeps changing still gets its newest read; that change publishes its own refresh.
       const settle = !retryInvalidated || attempt === 2;
-      const { generation, promise } = this.pending(scope, key, read);
+      // A retry follows a change made after the first attempt started, so any read under way by then is new enough.
+      const { generation, promise } = this.pending(scope, key, read, startNew && attempt === 0);
       try {
         const value = await promise;
         if (!generation.invalidated || settle) return value;
@@ -34,14 +39,14 @@ export class ReadSingleFlight {
     }
   }
 
-  private pending<T>(scope: string, key: string, read: () => Promise<T>): { generation: Generation; promise: Promise<T> } {
+  private pending<T>(scope: string, key: string, read: () => Promise<T>, startNew: boolean): { generation: Generation; promise: Promise<T> } {
     let generation = this.generations.get(scope);
     if (!generation) {
       generation = { invalidated: false, flights: new Map() };
       this.generations.set(scope, generation);
     }
     const existing = generation.flights.get(key);
-    if (existing) return { generation, promise: existing as Promise<T> };
+    if (existing && !startNew) return { generation, promise: existing as Promise<T> };
     const current = generation;
     const release = () => {
       if (current.flights.get(key) === promise) current.flights.delete(key);

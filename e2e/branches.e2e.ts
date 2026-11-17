@@ -83,6 +83,36 @@ test('choosing a remote branch creates and checks out its local tracking branch'
   expect(await repository.git('rev-parse', 'HEAD')).toBe(await other.git('rev-parse', 'HEAD'));
 });
 
+test('a detached HEAD says its commit, and its branch menu names the branches on that commit', async ({ pairedPage: page, repository }) => {
+  await repository.addRemote();
+  await repository.git('switch', '-q', '-c', 'later');
+  await repository.commit('later.txt', 'later\n', 'Add later work');
+  await repository.git('switch', '-q', '--detach', 'main');
+  const shortOid = await repository.git('rev-parse', '--short', 'HEAD');
+  await openRepository(page, repository);
+
+  await expect(branchPicker(page)).toContainText(`Detached at ${shortOid}`);
+  await branchPicker(page).click();
+  // A note above the choices, not a row to pick: main and origin/main are on this commit, later isn't.
+  const note = page.getByRole('note', { name: `Detached at ${shortOid}` });
+  await expect(note).toContainText('Not on a branch. Same commit as');
+  await expect(note.locator('.branch-detached-ref')).toHaveText(['main', 'origin/main']);
+  await expect(page.getByRole('listbox', { name: 'Select branch' }).getByRole('option', { selected: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // A commit no branch points at is named alone.
+  await repository.commit('loose.txt', 'loose\n', 'Add a loose commit');
+  const looseOid = await repository.git('rev-parse', '--short', 'HEAD');
+  await page.keyboard.press('Control+r');
+  await expect(branchPicker(page)).toContainText(`Detached at ${looseOid}`);
+  await branchPicker(page).click();
+  await expect(page.getByRole('note', { name: `Detached at ${looseOid}` })).not.toContainText('Same commit as');
+  await page.keyboard.press('Escape');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('button', { name: 'Repository and branch' })).toContainText(`Detached at ${looseOid}`);
+});
+
 test('switching with local changes that Git would overwrite moves them to the destination unstaged', async ({ pairedPage: page, repository }) => {
   const lines = ['# Sample project', '', 'one', 'two', 'three', 'four', 'last line'];
   await repository.commit('README.md', `${lines.join('\n')}\n`, 'Expand README');

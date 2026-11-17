@@ -1,5 +1,5 @@
 import type { ActionJobLog, ActionJobLogLine, ActionJobLogStep, ActionRunDetails, ActionRunGraphNode, ActionRunJob, ActionRunPage, ActionRunSummary, RunnableWorkflowList, WorkflowTriggers } from '../../src/shared/contracts';
-import { sampleDate } from './model.ts';
+import { mainOid, sampleDate } from './model.ts';
 import { demoPulls } from './pulls.ts';
 
 /**
@@ -12,7 +12,7 @@ const minutesAgo = (minutes: number) => new Date(sampleTime - minutes * 60_000).
 const liveTime = Date.now();
 const liveMinutesAgo = (minutes: number) => new Date(liveTime - minutes * 60_000).toISOString();
 // The sample repository's published commit, so a run's commit opens in OpenTig too.
-const mainSha = 'a'.repeat(40);
+const mainSha = mainOid;
 
 const triggers: Record<string, WorkflowTriggers> = {
   '.github/workflows/prepare-release.yml': { events: ['workflow_dispatch'], inputs: [

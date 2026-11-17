@@ -2,7 +2,7 @@ import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconChevronLeft, IconChevronRight, IconHierarchy2, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconChevronLeft, IconChevronRight, IconHierarchy2, IconPlus, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { isEditableTarget } from '@/features/files/file-tree';
 import type { LocalRefsFocus, LocalRefsTab } from '@/features/refs/local-refs-model';
 import { agentsAt, listAgents, samePath } from '@/features/refs/local-refs-model';
+import { describeDetachedHead, detachedHeadLabel } from '@/features/refs/detached-head';
 import { AgentLabel } from '@/features/refs/AgentLabel';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
 import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavicons';
@@ -40,6 +41,7 @@ import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 import { mergedBranchCleanUp, mergedBranchCleanUpStep, type MergedBranchCleanUp } from '@/features/pulls/merged-branch';
 import { Spinner } from '@/components/ui/spinner';
+import { RefreshIcon } from '@/components/ui/refresh-icon';
 
 export interface ToolbarProps {
   onOnboarding?(): void;
@@ -47,6 +49,8 @@ export interface ToolbarProps {
   mobileViewer?: MobileViewerBarProps | undefined;
   repository: RepositoryInfo; recent: BootstrapData['recentRepositories']; repositoryProjects: RepositoryProject[]; status: RepositoryStatus | null;
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
+  /** A manual refresh is still reading what GitHub shows, after its Git part is done. */
+  githubRefreshing?: boolean;
   /** Worktrees in which coding agents are working. */
   worktreeAgents?: readonly WorktreeAgents[] | undefined;
   githubInfo: GitHubRepositoryInfo | null;
@@ -399,7 +403,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
         groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({ item, agents: agentsAt(props.worktreeAgents, item.path) })).map(({ item, agents }) => ({
           value: item.path,
           label: item.path.split(/[\\/]/).pop() ?? item.path,
-          description: `${item.branch ?? 'Detached HEAD'}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
+          description: `${item.branch ?? detachedHeadLabel(item.oid, props.branches)}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
           trailing: <AgentLabel agents={agents} compact />,
           search: item.path,
           // A locked worktree opens like any other; the lock says why it can't be removed, often a tool's session using it.
@@ -419,10 +423,13 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
         disabled={refsBusy}
       />
   );
+  const detachedHead = useMemo(() => describeDetachedHead(props.status, props.branches), [props.status, props.branches]);
+  const checkout = detachedHead?.label ?? props.status?.branch ?? 'Detached HEAD';
   const branchControl = (
       <BranchCombobox
         branches={props.branches}
-        currentLabel={props.status?.branch ?? 'Detached HEAD'}
+        currentLabel={checkout}
+        detached={detachedHead}
         disabled={refsBusy || props.unconfirmed === true}
         readOnly={props.status?.readOnly}
         crumb={!mobile}
@@ -476,7 +483,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
         <TrailButton direction="forward" enabled={props.canGoForward} keys={navigation.forward} keysAria={navigation.forwardAria} onStep={props.onForward} listSteps={props.listTrailSteps} onGo={props.onGo}><IconChevronRight /></TrailButton>
       </div>
       <span className="toolbar-history-divider" aria-hidden="true" />
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <Spinner /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><RefreshIcon turning={props.busy === 'refresh' || props.githubRefreshing === true} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <DesktopUpdateIndicator />
       {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
       <Tooltip>

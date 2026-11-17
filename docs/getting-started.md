@@ -99,14 +99,16 @@ Run these commands on the machine that holds your repositories. Keep the process
 To start OpenTig and open a one-time browser pairing link:
 
 ```bash
-npx --yes @opentig/cli@latest
+npx opentig@latest
 ```
 
 On a server, or when you want to open the browser yourself, use `serve`:
 
 ```bash
-npx --yes @opentig/cli@latest serve
+npx opentig@latest serve
 ```
+
+`opentig` is the short name of the CLI package, `@opentig/cli`: it is published at the same version and runs the same command, so `npx @opentig/cli@latest` works the same. The first time, npx asks before downloading the package; answer `y`, or add `--yes` in scripts.
 
 This prints a pairing code, one-use link, and terminal QR without opening a browser. Use the link or code to pair your browser. For another device, follow [remote access and pairing](web-access.md).
 
@@ -129,6 +131,8 @@ Node.js is still required: plain `bunx` installs the package and launches its No
 npm install -g @opentig/cli@latest
 opentig serve
 ```
+
+Install only one of `@opentig/cli` and `opentig` globally: both provide the `opentig` command, and npm refuses the second with `EEXIST`.
 
 If npm reports `EACCES` because its global prefix (often `/usr/local` with the Node.js macOS installer) is not writable, do not use `sudo`. Install a [background service with npx](#background-services) instead, which also provides an `opentig` command, or [configure a per-user npm prefix](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally/).
 
@@ -178,10 +182,24 @@ SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI child p
 
 ## Background services
 
-A background service keeps OpenTig running after you close the terminal. It does not need a global installation or administrator access:
+A background service keeps OpenTig running after you close the terminal. It does not need a global installation or administrator access. Install it with the script for your system, which first checks Node.js and Git:
+
+- **macOS and Linux:**
+
+  ```bash
+  curl -fsSL https://opentig.com/install.sh | sh
+  ```
+
+- **Windows PowerShell** (the [desktop app](#windows-desktop) already includes a server; use this to run the server alone):
+
+  ```powershell
+  irm https://opentig.com/install.ps1 | iex
+  ```
+
+Or, on any system with Node.js, run the same installation through npx:
 
 ```bash
-npx --yes @opentig/cli@latest service install
+npx opentig@latest service install
 ```
 
 With a global installation, run `opentig service install` instead. Add `--host` and `--port` to choose another address, for example `--host 127.0.0.1 --port 6768`. In an interactive terminal, installation then asks **Pair a device now? [Y/n]**: press Enter, `y`, or `yes` to print a one-time pairing link, code, and QR for the new service, or answer `n` and run `opentig pair` later. Non-interactive runs, such as scripts, print the pairing details without asking.
@@ -192,6 +210,40 @@ The service uses your OS account's repository access and CLI credentials. It doe
 
 Installation checks the effective listening address and prerequisites before staging dependencies or registering the service. It prints preparation, registration, and startup phases, and reports success only after verifying the managed server's identity. A live service can be reinstalled using its own listener. Stop an unrelated foreground process using the same home in its terminal before installing the service.
 
+### The install scripts
+
+Both scripts do the same two steps:
+
+1. Check the variables described below, and that Node.js 24 or later, with npx, and Git 2.31 or later are on `PATH`. If a value is not allowed, or a program is missing or too old, the script says what it found and how to fix it, then stops with a non-zero exit code without changing anything.
+2. Run `npx --yes --package=@opentig/cli@latest opentig service install`, the same installation as the npx command above. On Windows the script starts npx's own script, `npx-cli.js` from the npm beside `npx.cmd` or `node.exe`, with `node.exe`, so no value passes through `cmd.exe`. It prints the same phases, adds the `opentig` command, and offers to pair a device.
+
+They do not install Node.js or Git, use `sudo` or ask for administrator rights, or download anything other than the npm package. Everything else, including the shell profile or user `Path` change, is what `service install` itself does.
+
+**Read a script before running it.** Open [install.sh](https://opentig.com/install.sh) or [install.ps1](https://opentig.com/install.ps1) in a browser, or print it with `curl -fsSL https://opentig.com/install.sh` or `irm https://opentig.com/install.ps1`. Everything that runs in each one sits inside a single pair of braces, which the shell cannot run before it has read the closing brace on the last line, so a download cut short at any point runs nothing. The PowerShell script never calls `exit` and leaves the session's variables and preferences as they were.
+
+When `curl ... | sh` pipes the script into the shell, the pairing question reads your terminal directly. Without a terminal, for example in automation, nothing waits for input and the pairing details are printed instead.
+
+Any value other than those below is refused before anything runs.
+
+| Environment variable | Effect |
+| --- | --- |
+| `OPENTIG_VERSION` | CLI version such as `1.0.0`, or a tag such as `latest`. Default: `latest`. |
+| `OPENTIG_PACKAGE` | What to install instead of `@opentig/cli@` followed by `OPENTIG_VERSION`: `@opentig/cli` or `opentig`, optionally followed by `@` and a version or tag, or the path of an existing `.tgz` file. A relative path such as `dist/opentig-cli-1.0.0.tgz` gets `./` (`.\` on Windows) in front, because npm reads `dist/opentig-cli-1.0.0.tgz` as a GitHub repository. |
+| `OPENTIG_HOST`, `OPENTIG_PORT`, `OPENTIG_HOME` | Read by the CLI itself, as in [the address and data directory options](#pair-another-browser). |
+| `NO_COLOR` | Turns off colored output. |
+
+For example, to pin a version on macOS or Linux:
+
+```bash
+curl -fsSL https://opentig.com/install.sh | OPENTIG_VERSION=1.0.0 sh
+```
+
+In PowerShell, set `$env:OPENTIG_VERSION = '1.0.0'` before running the script. `install.sh` also passes options after `sh -s --` to `service install`, for example `curl -fsSL https://opentig.com/install.sh | sh -s -- --port 6768 --no-modify-path`.
+
+On Linux, `service install` enables lingering through your login session. In a container or CI job without one, it stops with **Lingering is required**, even when an administrator has already enabled lingering; run `serve` there instead.
+
+Uninstall a service installed by a script the same way as any other: `opentig service uninstall`.
+
 ### The `opentig` command
 
 `service install` also creates an `opentig` command in `<home>/bin` (by default `~/.opentig/bin`) and adds that directory to your `PATH`, without administrator access. Open a new terminal to use it. The command always runs the service's current version, including after browser updates, and defaults to that service's home.
@@ -201,7 +253,7 @@ Installation checks the effective listening address and prerequisites before sta
 
 If the directory is already on `PATH`, nothing else is changed. With `--no-modify-path`, installation leaves `PATH` unchanged and tells you what to add yourself. `service uninstall` removes the command and only the `PATH` entries that point to that home.
 
-Commands printed by an `npx` run use the same pinned `npx -y @opentig/cli@<version>` form, so they work before the `opentig` command is available.
+Commands printed by an `npx` run, including one started as `npx opentig@latest`, use the pinned `npx -y @opentig/cli@<version>` form, so they work before the `opentig` command is available.
 
 ### When the service runs
 
@@ -335,7 +387,7 @@ If you keep OpenTig's data, paired browsers can reconnect after a reinstall. To 
 
 - **Windows desktop:** uninstall OpenTig from Windows **Settings → Apps**. Settings, sessions, and logs remain in `%APPDATA%\OpenTig`; delete that folder to remove them.
 - **CLI service:** run `opentig service uninstall`, with the same `--home` if you used one. It removes the service, its staged runtimes, and the `opentig` command, and keeps the home.
-- **Global CLI:** run `npm uninstall -g @opentig/cli`.
+- **Global CLI:** run `npm uninstall -g @opentig/cli`, or `npm uninstall -g opentig` if you installed the short name.
 - **CLI data:** after stopping every instance that uses it, delete the home (`~/.opentig` by default) to remove settings, paired sessions, credentials, history, and logs.
 
 ## Local tarball evaluation

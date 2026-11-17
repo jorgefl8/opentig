@@ -366,7 +366,7 @@ Each row has a dot, the title, and one line with the date, author, short hash, a
 | Hollow | There is no upstream to compare with |
 | Ring | Merge commit, in the color of its state |
 
-When the loaded commits branch and rejoin, quiet lanes connect the dots; a linear history shows only the dots. The lanes follow current-branch history and actual parent relationships. OpenTig does not fetch in the background or include unmerged branches outside HEAD.
+When the loaded commits branch and rejoin, quiet lanes connect the dots; a linear history shows only the dots. The lanes follow current-branch history and actual parent relationships. OpenTig does not fetch in the background or include unmerged branches outside HEAD. Each row's text starts right after the lanes that row carries, so a stretch of crossed merges further down doesn't push the text of the rows above it, and **Load more** doesn't shift the rows already listed. A lane keeps its place from row to row, so the lines stay joined while the text follows them.
 
 On a branch other than its base, the line through the branch's own commits is drawn in the accent color, down to the commit where the base starts, and the branch's name takes the same color; from there the line is gray. This applies even to a linear history, so you can see what the branch adds. A base merged into the branch keeps its gray line, and a commit's dot hint says when it is only on this branch. The dots keep meaning only publication. On the base branch itself, or when no base is known, the history looks as described above. The base is the locally known default branch of the upstream's remote, usually `origin/main`.
 
@@ -401,6 +401,8 @@ In a GitHub repository, a link to one of its pull requests, commits (by full has
 **Switch branches**
 
 Open the branch menu in the top bar, search local and remote branches, then select one. Selecting a remote branch creates or uses its local tracking branch. A branch already checked out in another worktree can't be switched to here, so choosing it opens that worktree instead.
+
+With no branch checked out, the top bar names the commit HEAD is on, such as **Detached at 823a26e**, and so do the phone header and the worktree lists. The branch menu then opens with a note above the branches that says which local and remote branches have that commit as their tip, up to four of them and how many more, and the commit's title when one does; when none does, it names only the commit. There, and in the worktree lists, a commit's id is Git's own abbreviation of it when OpenTig has one, and otherwise as long as the longest Git uses in the repository, so Git accepts it. Tags aren't named there.
 
 When the repository has more than one worktree, a small button with their number beside the repository lists them. On a phone, they have their own selector in the repository sheet. A worktree that Git marks as **Locked**, as tools such as Claude Code do with the worktrees their sessions use, opens like any other; the lock only stops it from being removed, and its details in **Manage worktrees** show the reason Git recorded. Missing and bare worktrees can't be opened.
 

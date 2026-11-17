@@ -32,12 +32,13 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - name: Download the prepared CLI; never rebuild during publication
+      # The opentig alias follows the CLI it depends on, from the same release.
+      - name: Download the prepared CLI and alias; never rebuild during publication
         run: |
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'opentig-cli-*.tgz' --pattern 'opentig-headless.json' --dir release-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'opentig-cli-*.tgz' --pattern 'opentig-[0-9]*.tgz' --pattern 'opentig-headless.json' --dir release-assets
           node scripts/headless-release.mjs publish release-assets "$RELEASE_TAG"
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
       - name: Summary
-        run: echo 'The verified CLI release is available on npm. Install globally with npm install -g @opentig/cli@<version>.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'The verified CLI release, and its opentig alias unless a warning above says otherwise, is available on npm. Install globally with npm install -g @opentig/cli@<version>.' >> "$GITHUB_STEP_SUMMARY"

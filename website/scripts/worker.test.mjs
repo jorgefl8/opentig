@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import worker, { prefersMarkdown } from '../worker/index.mjs';
+import { readFileSync } from 'node:fs';
+import worker, { installScripts, prefersMarkdown } from '../worker/index.mjs';
 
 // Stand-in for the Workers Static Assets binding with a few generated files.
 const files = {
@@ -9,6 +10,8 @@ const files = {
   '/docs/github/': ['<h1>GitHub</h1>', 'text/html'],
   '/docs/github/index.md': ['# GitHub\n', 'text/markdown'],
   '/demo/': ['<h1>Demo</h1>', 'text/html'],
+  '/install.sh': ['#!/bin/sh\n', 'application/x-sh'],
+  '/install.ps1': ['& {}\n', 'application/octet-stream'],
 };
 const env = {
   ASSETS: {
@@ -58,4 +61,18 @@ test('browsers and pages without a Markdown twin keep the HTML response', async 
   assert.equal(missing.headers.get('Vary'), null);
   const file = await get('/docs/github/index.md');
   assert.equal(await file.text(), '# GitHub\n');
+});
+
+test('install scripts open as text in a browser and stay out of search results', async () => {
+  for (const [path, body] of [['/install.sh', '#!/bin/sh\n'], ['/install.ps1', '& {}\n']]) {
+    const response = await get(path, 'text/html,*/*;q=0.8');
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('Content-Type'), 'text/plain; charset=utf-8');
+    assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
+    assert.equal(response.headers.get('X-Robots-Tag'), 'noindex');
+    assert.equal(await response.text(), body);
+  }
+  // Static assets skip the Worker unless wrangler.jsonc sends their paths to it first.
+  const config = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, ''));
+  for (const path of installScripts) assert.ok(config.assets.run_worker_first.includes(path), `${path} must run the Worker first`);
 });

@@ -235,10 +235,11 @@ export class RepositoryService {
     return structuredClone(await this.git.shareRead(repository.path, `status:${includeStats}`, () => this.readStatus(id, includeStats)));
   }
 
-  invalidate(id: string): void { this.git.invalidate(this.get(id).path); }
+  /** `command` names the Git command the change comes from, for listeners that ignore some, as GitHub's reads ignore a fetch. */
+  invalidate(id: string, command?: string): void { this.git.invalidate(this.get(id).path, command); }
 
-  invalidateIfKnown(id: unknown): void {
-    if (typeof id === 'string' && (this.repositories.has(id) || this.recent(id))) this.invalidate(id);
+  invalidateIfKnown(id: unknown, command?: string): void {
+    if (typeof id === 'string' && (this.repositories.has(id) || this.recent(id))) this.invalidate(id, command);
   }
 
   private async readStatus(id: string, includeStats: boolean): Promise<RepositoryStatus> {

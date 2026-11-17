@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { cloneOfGitHub, openRepository, pullRequestBranch } from './support/app';
 import { expect, test } from './support/fixtures';
@@ -105,4 +106,68 @@ test('a pull request’s code lists its files at once, reads each one as it unfo
   await expect(viewer.getByText('"dependency-0": "1.0.0",', { exact: false }).first()).toBeVisible({ timeout: 15_000 });
   expect(commands).toContain('github:pr-files');
   expect(commands).not.toContain('github:pr-diff');
+});
+
+test('the pull request list shows placeholder rows while GitHub answers, and its rows take their place without moving', async ({ pairedPage: page, repository, github }) => {
+  await cloneOfGitHub(repository);
+  const branch = await pullRequestBranch(repository, 'feature/status-filter', [
+    { message: 'Filter tasks by status', files: { 'src/filter-tasks.js': 'export const filterTasks = (list) => list;\n' } },
+  ]);
+  await github({
+    login: 'e2e-tester', nameWithOwner: 'e2e/sample-project', pullListDelayMs: 2_500,
+    pulls: [{ number: 24, title: 'Filter tasks by status', headRefName: 'feature/status-filter', baseRefName: 'main', ...branch }],
+  });
+  await openRepository(page, repository);
+  await section(page, 'GitHub').click();
+
+  const loading = page.getByRole('status', { name: 'Loading pull requests' });
+  await expect(loading).toBeVisible();
+  const placeholder = await loading.locator('.pull-item').first().boundingBox();
+  const list = page.getByRole('list', { name: /pull requests$/ });
+  const row = list.getByRole('listitem').filter({ hasText: 'Filter tasks by status' });
+  await expect(row).toBeVisible();
+  await expect(loading).toBeHidden();
+  const arrived = await row.boundingBox();
+  expect(Math.abs(arrived!.y - placeholder!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(arrived!.height - placeholder!.height)).toBeLessThanOrEqual(1);
+});
+
+test('Refresh on the GitHub section reads the pull request list from GitHub again, without holding the app for it', async ({ pairedPage: page, repository, github, server }) => {
+  await cloneOfGitHub(repository);
+  const first = await pullRequestBranch(repository, 'feature/status-filter', [
+    { message: 'Filter tasks by status', files: { 'src/filter-tasks.js': 'export const filterTasks = (list) => list;\n' } },
+  ]);
+  const pull = (number: number, title: string, headRefName: string, branch: typeof first) => ({ number, title, headRefName, baseRefName: 'main', ...branch });
+  const world = { login: 'e2e-tester', nameWithOwner: 'e2e/sample-project', pulls: [pull(24, 'Filter tasks by status', 'feature/status-filter', first)] };
+  await github(world);
+  // The list reads the stand-in GitHub has answered, with when each began; a branch's own pull request is another read.
+  const listReads = async () => (await readFile(`${server.githubWorld}.log`, 'utf8')).trim().split('\n')
+    .map((line) => JSON.parse(line) as { at: number; args: string[] })
+    .filter(({ args }) => args[0] === 'pr' && args[1] === 'list' && !args.includes('--head'));
+  await openRepository(page, repository);
+  await section(page, 'GitHub').click();
+  const list = page.getByRole('list', { name: /pull requests$/ });
+  await expect(list.getByRole('listitem')).toHaveText([/Filter tasks by status/]);
+
+  // Opened on GitHub meanwhile: the list read moments ago doesn't know it, and nothing polls it.
+  const second = await pullRequestBranch(repository, 'feature/due-dates', [
+    { message: 'Sort tasks by due date', files: { 'src/sort-tasks.js': 'export const sortTasks = (list) => list;\n' } },
+  ]);
+  // GitHub is slow to answer this time, far slower than the Git part of a refresh.
+  await github({ ...world, pullListDelayMs: 8_000, pulls: [...world.pulls, pull(25, 'Sort tasks by due date', 'feature/due-dates', second)] });
+  // Refresh asks GitHub again only for what it answered more than five seconds ago.
+  await expect.poll(async () => Date.now() - Math.max(...(await listReads()).map(({ at }) => at)), { timeout: 20_000 }).toBeGreaterThan(5_000);
+  const readsBefore = (await listReads()).length;
+  const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
+  const turning = refresh.locator('g.refresh-icon-turn');
+  await refresh.click();
+
+  // The Git part is done long before GitHub answers: the app is usable again while the icon still turns.
+  await expect(refresh).toBeEnabled({ timeout: 5_000 });
+  await expect(turning).toHaveCount(1);
+  // Pressed again meanwhile, it refreshes Git and leaves GitHub's reads to finish, without reading the list again.
+  await refresh.click();
+  await expect(list.getByRole('button', { name: /Sort tasks by due date/ })).toBeVisible({ timeout: 30_000 });
+  await expect(turning).toHaveCount(0, { timeout: 10_000 });
+  expect((await listReads()).length).toBe(readsBefore + 1);
 });

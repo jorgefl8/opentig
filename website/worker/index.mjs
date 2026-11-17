@@ -26,11 +26,19 @@ function withHeaders(response, headers) {
   return result;
 }
 
-// Runs only for the HTML routes listed in wrangler.jsonc `run_worker_first`; everything else
+// The install scripts read as text in a browser, and stay out of search results.
+export const installScripts = ['/install.sh', '/install.ps1'];
+const scriptHeaders = { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex' };
+
+// Runs only for the routes listed in wrangler.jsonc `run_worker_first`; everything else
 // is served by Workers Static Assets directly.
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (installScripts.includes(url.pathname)) {
+      const response = await env.ASSETS.fetch(request);
+      return response.ok ? withHeaders(response, scriptHeaders) : response;
+    }
     if (!url.pathname.endsWith('/') || !['GET', 'HEAD'].includes(request.method)) return env.ASSETS.fetch(request);
     if (prefersMarkdown(request.headers.get('Accept'))) {
       const markdown = await env.ASSETS.fetch(new Request(new URL(markdownPath(url.pathname), url), { method: request.method }));

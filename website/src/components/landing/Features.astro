@@ -29,10 +29,13 @@ import Shot from './Shot.astro';
       </article>
 
       <article class="tile">
-        <div class="tile-copy flex h-full flex-col justify-end">
-          <h3>Branches and worktrees.</h3>
-          <p>Explore commit history, switch branches, and give parallel work its own worktree instead of stashing.</p>
-          <a href="/docs/features/" class="mt-4 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">Git workflows guide</a>
+        <div class="tile-stage has-shot">
+          <Shot name="history" alt="History narrowed to README.md, listing the three commits that changed it with the lines each added and removed." />
+        </div>
+        <div class="tile-copy">
+          <h3>History, branches, and worktrees.</h3>
+          <p>Explore commit history, or only the commits that changed one file, across renames. Switch branches, and give parallel work its own worktree instead of stashing.</p>
+          <a href="/docs/features/" class="mt-3 inline-block text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">Git workflows guide</a>
         </div>
       </article>
 
@@ -43,6 +46,24 @@ import Shot from './Shot.astro';
         <div class="tile-copy">
           <h3>Preview more than code.</h3>
           <p>Open HTML, images, SVG, and Markdown with Mermaid diagrams in Preview to see them rendered, next to their code.</p>
+        </div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-copy flex h-full flex-col justify-end">
+          <h3>Back to where you were.</h3>
+          <p>Back and Forward return to each place as you left it, with the same tab, unfolded files, and scroll position. Hold or right-click an arrow to jump several steps. In a browser, every place has an address you can reload or bookmark.</p>
+          <a href="/docs/interface/#back-and-forward" class="mt-4 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">Back and Forward</a>
+        </div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-stage has-shot">
+          <Shot name="palette" alt="The command palette on its Commands tab, with tabs for files, branches, commits, pull requests, runs, and repositories, and the g then letter key next to each section." />
+        </div>
+        <div class="tile-copy">
+          <h3>Find anything from the keyboard.</h3>
+          <p>Ctrl+K opens the command palette, and Ctrl+P its files. Its tabs find branches, commits, pull requests, workflow runs, and repositories. In every list, the arrow keys or J and K move and Enter opens; g and a letter opens a section.</p>
         </div>
       </article>
     </div>

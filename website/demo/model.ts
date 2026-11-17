@@ -11,6 +11,15 @@ import type {
 } from "../../src/shared/git-types";
 import type { DiffResult, FileHistoryResult, FileHistoryState, UndoLatestCommitResult } from "../../src/shared/contracts";
 
+/** Where the sample would live on GitHub. It isn't there: links to it explain that instead (see browser-capabilities.ts). */
+export const sampleNameWithOwner = "opentig-demo/launchpad";
+const samplePages = `https://github.com/${sampleNameWithOwner}`.toLowerCase();
+/** Whether a link leads to one of the sample's pages on GitHub, which exist only in this demo. */
+export function isSampleGitHubLink(value: string): boolean {
+  const link = value.trim().toLowerCase();
+  // The sample's pull requests, runs, and releases have no address of their own.
+  return link === "" || link === samplePages || link.startsWith(`${samplePages}/`);
+}
 export const repository = {
   id: "launchpad",
   name: "launchpad",
@@ -192,8 +201,23 @@ function earlier(text: string, replacements: [later: string, before: string][]):
   }, text);
 }
 
+/**
+ * A commit id that reads like Git's: forty hex digits drawn from the seed, the same on every load.
+ * Different seeds give different ids, as different commits would.
+ */
+export function sampleOid(seed: string): string {
+  let hex = "";
+  for (let round = 0; hex.length < 40; round++) {
+    let hash = 0x811c9dc5 ^ round;
+    for (const char of seed) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193);
+    hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b);
+    hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35);
+    hex += ((hash ^ (hash >>> 16)) >>> 0).toString(16).padStart(8, "0");
+  }
+  return hex.slice(0, 40);
+}
 /** The tip of main, which the remote has too. */
-export const mainOid = "a".repeat(40);
+export const mainOid = sampleOid("Document the local test command (#19)");
 const demoAuthor = { author: "OpenTig Demo", email: "demo@example.com" };
 const searchPath = "src/search.js";
 const filterPath = "src/filter-tasks.js";
@@ -230,22 +254,22 @@ const beforeWorkflows = withFiles(beforeScripts, Object.fromEntries(workflowPath
 
 /** Launchpad's history, oldest first: main, then the two commits of the branch's pull request. */
 export const sampleHistory: SampleCommit[] = [
-  { oid: `7c1e5f0${"c".repeat(33)}`, subject: "Start the Launchpad release board", body: "", ...demoAuthor, date: daysAgo(34), before: {}, after: beforeWorkflows, renames: {}, onMain: true },
-  { oid: `9d42b6a${"c".repeat(33)}`, subject: "Add CI, nightly, and release workflows", body: "", ...demoAuthor, date: daysAgo(20), before: beforeWorkflows, after: beforeScripts, renames: {}, onMain: true },
+  { oid: sampleOid("Start the Launchpad release board"), subject: "Start the Launchpad release board", body: "", ...demoAuthor, date: daysAgo(34), before: {}, after: beforeWorkflows, renames: {}, onMain: true },
+  { oid: sampleOid("Add CI, nightly, and release workflows"), subject: "Add CI, nightly, and release workflows", body: "", ...demoAuthor, date: daysAgo(20), before: beforeWorkflows, after: beforeScripts, renames: {}, onMain: true },
   { oid: mainOid, subject: "Document the local test command (#19)", body: "", ...demoAuthor, date: daysAgo(6), before: beforeScripts, after: beforeTaskFilter, renames: {}, onMain: true },
   {
-    oid: `0000150${"b".repeat(33)}`, subject: "Turn search into a task filter",
+    oid: sampleOid("Turn search into a task filter"), subject: "Turn search into a task filter",
     body: "Rename searchTasks to filterTasks and move it to src/filter-tasks.js.\nReplace the smoke script with node:test tests.",
     ...demoAuthor, date: daysAgo(3), before: beforeTaskFilter, after: beforeReadmeUpdate, renames: { [filterPath]: searchPath }, onMain: false,
   },
-  { oid: `0000151${"b".repeat(33)}`, subject: "Describe the task filter in the README", body: "", ...demoAuthor, date: daysAgo(2), before: beforeReadmeUpdate, after: initialFiles, renames: {}, onMain: false },
+  { oid: sampleOid("Describe the task filter in the README"), subject: "Describe the task filter in the README", body: "", ...demoAuthor, date: daysAgo(2), before: beforeReadmeUpdate, after: initialFiles, renames: {}, onMain: false },
 ];
 
 /** The commit a teammate pushes to the branch while the visitor works, which the first push runs into. */
 const teammateTest = "test/empty-list.test.js";
 function teammateCommit(tip: Tree): SampleCommit {
   return {
-    oid: `4e7a1d3${"e".repeat(33)}`, subject: "Cover an empty task list", body: "", author: "leo-builds", email: "leo@example.com",
+    oid: sampleOid("Cover an empty task list"), subject: "Cover an empty task list", body: "", author: "leo-builds", email: "leo@example.com",
     date: new Date(Date.now() - 4 * 60_000).toISOString(), before: tip, renames: {}, onMain: false,
     after: withFiles(tip, {
       [teammateTest]: `import assert from 'node:assert/strict';
@@ -356,7 +380,7 @@ export class DemoRepository {
     });
   }
   private newOid() {
-    return `${(this.nextCommit++).toString(16).padStart(7, "0")}${"d".repeat(33)}`;
+    return sampleOid(`Commit ${this.nextCommit++} made in the demo`);
   }
   private requireFile(path: string) {
     if (!Object.hasOwn(this.working, path))

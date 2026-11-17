@@ -23,6 +23,7 @@ import { actionRunListOptions, latestActionRunsOptions, listedRunIds, runsOfPage
 import { actionStatusLabel, actionTone, findStartedRun, formatDuration, runDuration, STARTED_RUN_REFRESH_MS, STARTED_RUN_WINDOW_MS, type StartedWorkflow } from './action-status';
 import './actions.css';
 import { Spinner } from '@/components/ui/spinner';
+import { ListSkeleton } from '@/features/pulls/LoadingSkeletons';
 
 /** --motion-med and --ease-out, as elsewhere in the app. */
 const ROW_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
@@ -118,11 +119,12 @@ export function ActionsView({ repositoryId, workflowId, activeRunId, onSelect }:
       {error && <div className="pulls-error" role="alert"><span>{error}</span><Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
       <KeptReadNotice className="pulls-kept" prefixes={[queryKeys.actionRuns(repositoryId, workflowId)]} onRetry={() => void query.refetch()} />
       <div className="pulls-scroll" role="list" data-list-root="" aria-label="Workflow runs">
-        {runs === null && !error && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading workflow runs…" /></div>}
+        {runs === null && !error && <ListSkeleton kind="run" label="Loading workflow runs" />}
         {runs?.length === 0 && <p className="empty-list">{workflowId === null ? 'No workflow runs yet.' : 'This workflow has no runs yet.'}</p>}
-        {/* The first page just shows; runs that appear later, and pages loaded with Load more, fade in. */}
-        <AnimatePresence initial={false}>
-          {runs?.map((run) => (
+        {/* The first page just shows where its placeholders were; runs that appear later, and pages loaded
+            with Load more, fade in. Mounted with that page, so it counts the page as already there. */}
+        {runs && <AnimatePresence initial={false}>
+          {runs.map((run) => (
             <motion.div
               key={run.id}
               role="listitem"
@@ -138,7 +140,7 @@ export function ActionsView({ repositoryId, workflowId, activeRunId, onSelect }:
               <RunRow run={run} phone={mobile} now={now} onSelect={onSelect} />
             </motion.div>
           ))}
-        </AnimatePresence>
+        </AnimatePresence>}
         {query.hasNextPage && (
           <button type="button" className="actions-more" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
             {query.isFetchingNextPage ? <ShimmeringText text="Loading…" /> : 'Load more'}

@@ -21,6 +21,7 @@ import { GitHubSectionMenu } from './GitHubSectionMenu';
 import { pullRequestLiveStateQueryOptions } from './pull-request-live-state-query';
 import { LazyPullRequestViewer } from './pull-request-viewer-chunks';
 import { Spinner } from '@/components/ui/spinner';
+import { ListSkeleton } from './LoadingSkeletons';
 
 const ReleasesView = lazyWithPreload(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
 const ReleasesTools = lazyWithPreload(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesTools })));
@@ -120,12 +121,12 @@ export const PullRequestsView = memo(function PullRequestsView(props: PullReques
       </div>
       <ViewerTabsPanel value="pulls" className="pulls-section-panel" tabIndex={-1}><PullsList {...props} /></ViewerTabsPanel>
       <ViewerTabsPanel value="actions" className="pulls-section-panel" tabIndex={-1}>
-        <Suspense fallback={<div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading workflow runs…" /></div>}>
+        <Suspense fallback={<ListSkeleton kind="run" label="Loading workflow runs" />}>
           <ActionsView repositoryId={props.repositoryId} workflowId={props.actionsWorkflowId} activeRunId={props.activeRun} onSelect={props.onSelectRun} />
         </Suspense>
       </ViewerTabsPanel>
       <ViewerTabsPanel value="releases" className="pulls-section-panel" tabIndex={-1}>
-        <Suspense fallback={<div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading releases…" /></div>}>
+        <Suspense fallback={<ListSkeleton kind="release" label="Loading releases" />}>
           <ReleasesView repositoryId={props.repositoryId} activeTag={props.activeRelease} onSelect={props.onSelectRelease} />
         </Suspense>
       </ViewerTabsPanel>
@@ -198,7 +199,7 @@ function PullsList(props: PullRequestsViewProps) {
       <KeptReadNotice className="pulls-kept" prefixes={[['repository', props.repositoryId, 'pulls'], ['repository', props.repositoryId, 'pull-stacks'], ['repository', props.repositoryId, 'pull-line-counts']]} onRetry={props.onRefresh} />
       <div ref={scrollRef} className="pulls-scroll" role="list" data-list-root="" aria-label={`${props.states.map(stateLabel).join(', ') || 'No'} pull requests`}>
         {pulls === null && !props.error ? (
-          <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading pull requests…" /></div>
+          <ListSkeleton kind="pull" label="Loading pull requests" />
         ) : pulls !== null && pulls.length === 0 ? (
           <p className="empty-list">{props.states.length ? `No ${props.states.map((state) => stateLabel(state).toLowerCase()).join(', ')} pull requests.` : 'Select at least one PR state.'}</p>
         ) : pulls !== null && (

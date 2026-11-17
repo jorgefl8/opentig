@@ -48,7 +48,7 @@ Each font selector previews its own typeface. Open **Text preview** to see the c
 
 Diffs, Files editors, merge conflicts, and Markdown code blocks share syntax colors. Diffs and editors keep the active interface background regardless of which view opens first. Tooltips and their arrows follow the active theme.
 
-Loading status uses shimmering text and a primary-colored spinner. Busy buttons retain their spinner and shimmer their label. Text shimmer pauses outside the viewport or while the document is hidden, resumes from the same point when visible, and respects reduced-motion preferences.
+Loading status uses shimmering text and a primary-colored spinner. Busy buttons retain their spinner and shimmer their label. The first time the GitHub section reads its pull requests, workflow runs, or releases, the list shows placeholder rows with the real rows' height and their avatar or status dot, title, and date where those will be, so nothing moves when the rows arrive; a pull request or release opened before anything is known about it shows the shape of its header the same way. The jobs of a workflow run, whose shape isn't known before they are read, show a centered spinner. Placeholders pulse gently and stay still with reduced motion. Text shimmer pauses outside the viewport or while the document is hidden, resumes from the same point when visible, and respects reduced-motion preferences.
 
 Opening another file or diff fades the viewer in without moving it. Expanding a commit in History, and unfolding or folding a file in commit and pull request diffs, briefly animates its height and fades the content in or out; the rows below move with it. A commit's file list also grows smoothly when it finishes loading. Files with more than 400 changed lines, and diffs of more than 40 files, fold and unfold immediately. Reduced-motion preferences turn these animations off.
 
@@ -91,7 +91,7 @@ Set **Settings → General → Repository sync → Remote check interval** to co
 
 Periodic checks pause while the window is hidden and after six minutes without any activity in it. The first key press, pointer movement, or scroll after that reads again at once whatever is on screen and read on a timer.
 
-Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and then refresh the local workspace, even with automatic checks off. The icon rotates while refreshing and returns to rest afterward.
+Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and then refresh the local workspace, even with automatic checks off. It also reads again from GitHub what the GitHub section shows: the list of its open tab while that section is shown, and the pull request, workflow run, or release open in the viewer from any section. The rest of the app is usable again as soon as Git is read; only the icon keeps turning on itself until GitHub has answered too, and it stays still with reduced motion. Pressing Refresh again meanwhile reads Git again and lets GitHub's reads finish, then reads what is on screen by then that they didn't cover, such as a pull request opened meanwhile; what a refresh got an answer for in the last five seconds isn't read again, while a read that failed is. A GitHub read that fails keeps what was shown and says so the way that list or viewer always does.
 
 Refresh also checks for app updates immediately instead of waiting for the five-minute update interval.
 

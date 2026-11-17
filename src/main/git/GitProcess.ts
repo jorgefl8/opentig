@@ -220,14 +220,18 @@ export class GitProcess {
    * cannot mutate them concurrently.
    */
   async runWrite(cwd: string, args: string[], options: RunOptions, lockKey?: string): Promise<GitOutput> {
-    return this.withWriteLock(lockKey ?? cwd, () => this.run(cwd, args, options));
+    return this.withWriteLock(lockKey ?? cwd, () => this.run(cwd, args, options), gitCommand(args));
   }
 
   async runWriteTask<T>(cwd: string, task: (run: (args: string[], options: RunOptions) => Promise<GitOutput>) => Promise<T>, lockKey?: string): Promise<T> {
     return this.withWriteLock(lockKey ?? cwd, () => task((args, options) => this.run(cwd, args, options)));
   }
 
-  private async withWriteLock<T>(rawKey: string, task: () => Promise<T>): Promise<T> {
+  /**
+   * `command` names what the lock is for when it runs one command, so a listener that ignores that
+   * command, such as GitHub's reads ignoring a fetch, ignores the lock's invalidations too.
+   */
+  private async withWriteLock<T>(rawKey: string, task: () => Promise<T>, command?: string): Promise<T> {
     const key = normalizeLockKey(rawKey);
     const previous = this.writeQueues.get(key) ?? Promise.resolve();
     let release!: () => void;
@@ -235,11 +239,11 @@ export class GitProcess {
     const queued = previous.then(() => current);
     this.writeQueues.set(key, queued);
     await previous;
-    this.invalidate(rawKey);
+    this.invalidate(rawKey, command);
     try {
       return await task();
     } finally {
-      this.invalidate(rawKey);
+      this.invalidate(rawKey, command);
       release();
       if (this.writeQueues.get(key) === queued) this.writeQueues.delete(key);
     }

@@ -23,6 +23,19 @@ describe('read invalidation at the command boundary', () => {
     expect(write).toHaveBeenCalledTimes(6);
   });
 
+  it('names a fetch when it invalidates, so what ignores a fetch, as GitHub\'s reads do, goes on', async () => {
+    const invalidateIfKnown = vi.fn();
+    const fetch = vi.fn(async () => ({ status: 'success', ahead: 0, behind: 0 }));
+    const write = vi.fn(async () => ({ ok: true }));
+    const registry = new CommandRegistry();
+    registerServerCommands(registry, { repositories: { invalidateIfKnown }, operations: { fetch }, files: { write } } as unknown as OpenTigRuntimeServices, {} as OpenTigHost);
+    expect(await registry.execute('one', IPC.refsFetch, ['repo'])).toMatchObject({ ok: true });
+    expect(invalidateIfKnown.mock.calls).toEqual([['repo', 'fetch'], ['repo', 'fetch']]);
+    invalidateIfKnown.mockClear();
+    await registry.execute('one', IPC.repositoryWriteFile, ['repo', 'file.txt', 'new', 'old']);
+    expect(invalidateIfKnown.mock.calls).toEqual([['repo', undefined], ['repo', undefined]]);
+  });
+
   it('does not invalidate reads when one consumer has disconnected', async () => {
     const invalidateIfKnown = vi.fn();
     const status = vi.fn(async () => ({ branch: 'main' }));

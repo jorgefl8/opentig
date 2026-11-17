@@ -1213,9 +1213,10 @@ export interface OpenTigApi {
     listPullRequestLineCounts(repositoryId: string, states: PullRequestState[]): Promise<PullRequestLineCounts[]>;
     /** Which of these PRs belong to a native stack. Optional metadata: a failed read is an empty list. */
     listPullRequestStacks(repositoryId: string, numbers: number[]): Promise<Array<{ number: number; stack: PullRequestStackMembership }>>;
-    getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
+    /** `fresh` asks GitHub even when the backend read the pull request moments ago, as a manual refresh should. */
+    getPullRequest(repositoryId: string, number: number, fresh?: boolean): Promise<PullRequestDetails>;
     getPullRequestLiveState(repositoryId: string, number: number): Promise<PullRequestLiveState>;
-    getPullRequestConversation(repositoryId: string, number: number): Promise<PullRequestConversation>;
+    getPullRequestConversation(repositoryId: string, number: number, fresh?: boolean): Promise<PullRequestConversation>;
     runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult>;
     updatePullRequest(input: UpdatePullRequestInput): Promise<void>;
     commentOnPullRequest(input: CommentOnPullRequestInput): Promise<void>;

@@ -24,7 +24,7 @@ OpenTig releases move through three stages: **draft notes**, **prepare a tagged 
 
 ### Website and application releases
 
-The [public website](website.md#ci-and-release-separation) has a separate validation job within CI. **Deploy website** is a separate, manual workflow on upstream `main` that validates, builds, and uploads it to Cloudflare Workers. Publishing an application release or updating scan metadata does not deploy the website. Website-only means every changed path is in `website/`, `docs/website.md`, or `.github/workflows/website.yml`.
+The [public website](website.md#ci-and-release-separation) has a separate validation job within CI. **Deploy website** is a separate, manual workflow on upstream `main` that validates, builds, and uploads it to Cloudflare Workers. Publishing an application release or updating scan metadata does not deploy the website. Deploy it after **Publish CLI to npm** has published both npm names: the site and guides show `npx opentig@latest`, and the deployment checks that `opentig@latest` matches `@opentig/cli@latest`. Website-only means every changed path is in `website/`, `docs/website.md`, or `.github/workflows/website.yml`.
 
 Mixed commits and changes to shared manifests, lockfiles, or tooling remain application changes. **Prepare release** refuses to create a new application tag if only website changes have accumulated; the website is not versioned or published with the desktop and CLI.
 
@@ -64,7 +64,17 @@ Before the first release, the draft uses the package version and includes eligib
 2. Wait for the **entire run** to succeed, including both Windows and CLI builders.
 3. Review the draft's notes and all prepared files listed below.
 4. Complete Windows validation, then click **Publish release** on the release page.
-5. Wait for **Publish CLI to npm** to succeed before installing the CLI from npm.
+5. Wait for **Publish CLI to npm** to succeed before installing the CLI from npm. It publishes `@opentig/cli`, then its short name [`opentig`](#the-opentig-alias); for the first release that contains the alias, publish `opentig` by hand as described there.
+6. Check that both names are on npm at the new version before deploying the website, which tells visitors to run `npx opentig@latest`:
+
+   ```bash
+   npm view @opentig/cli@latest version
+   npm view opentig@latest version
+   ```
+
+   **Deploy website** runs the same check and refuses to deploy while they differ. For an urgent website fix that cannot wait for the alias, run it with **allow_missing_npm_alias** checked (locally, `OPENTIG_ALLOW_MISSING_NPM_ALIAS=1 pnpm run deploy:website`). The deployment then goes ahead with a warning in the log and the run summary naming what the site gets wrong: the `npx opentig@latest` commands on the home page, in `llms.txt`, and in the guides fail until the alias is published. Publish it and deploy again without the override as soon as you can.
+
+   `README.md` is read on GitHub as soon as it is merged, before any release, so it keeps the commands that work at any time (`npx --yes @opentig/cli@latest`). Once the first release with the alias is published and the website is deployed, it can show `npx opentig@latest` and the install scripts as the guides do.
 
 The prepared draft must contain:
 
@@ -73,6 +83,7 @@ The prepared draft must contain:
 | Windows installer | Install or update the Windows desktop app |
 | `.blockmap` and `latest.yml` | Windows update metadata |
 | `opentig-cli-<version>.tgz` | The prepared CLI package |
+| `opentig-<version>.tgz` | The `opentig` alias, which runs that CLI version |
 | `opentig-headless.json` | Integrity hashes and source tag/commit |
 
 OpenTig can replace GitHub's pages for both steps. Start **Prepare release** from **GitHub → Actions → [Run a workflow](github.md#follow-workflow-runs)** with **Branch** `main` and `dry_run` off; that run creates the version commit and tag. Publish the reviewed draft from [Releases](github.md#manage-releases). The steps stay the same, including reviewing the assets and completing Windows validation before publishing.
@@ -195,7 +206,7 @@ Enable its `release_mode` option to additionally build and verify unsigned relea
 
 ### Configure the trusted publisher
 
-Configure npm [Trusted publishing](https://docs.npmjs.com/trusted-publishers/) in the settings for `@opentig/cli`:
+Configure npm [Trusted publishing](https://docs.npmjs.com/trusted-publishers/) in the settings for `@opentig/cli`, and for `opentig` once its [first version](#first-publication-of-the-name) exists:
 
 | Field | Value |
 | --- | --- |
@@ -218,6 +229,37 @@ To retry a failed publication, or publish a release whose older tag predates thi
 After successful publication, install globally with `npm install -g @opentig/cli@<version>` and check `opentig --version`.
 
 Before publication, the downloaded draft tarball can be evaluated with `npm install -g /absolute/path/opentig-cli-<version>.tgz`; use a separate `--home` and port for evaluation. Installing the CLI does not start a server or install a service automatically.
+
+### The opentig alias
+
+`opentig` is the short npm name of `@opentig/cli`, so the documented commands read `npx opentig@latest`. It is not a second build: `opentig-<version>.tgz` holds only a `bin.mjs` that imports `@opentig/cli/bin`, the README in `packages/server/alias/`, and the license, and its manifest is generated from the CLI's at pack time. Its only dependency is `@opentig/cli` at exactly its own version, so arguments, output, exit codes, `service install`, service updates, and the commands the CLI prints are the CLI's own. A service installed through the alias stages and updates `@opentig/cli`, and an `npx` run still prints follow-up commands as `npx -y @opentig/cli@<version>`.
+
+Both tarballs come from the same tag. **CLI release draft** packs the alias beside the CLI, `release:inspect:headless` checks its version, content, and exact dependency, `opentig-headless.json` records its hashes, and `scripts/smoke-npm-alias.mjs` installs it together with the packed CLI and compares the two commands before the draft is uploaded. CI runs the same smoke check on Linux, macOS, and Windows.
+
+**The alias is published after the CLI**, because npm resolves its dependency only once that version exists. **Publish CLI to npm** does this in order, with the same idempotent byte checks and `latest` handling. Releases prepared before the alias existed publish only the CLI. Never publish an alias for an older CLI version: it imports `@opentig/cli/bin`, which earlier CLI versions do not export.
+
+#### First publication of the name
+
+npm can trust a workflow only for a package that already exists, so the first `opentig` version is published by hand. While `opentig` is not on npm, **Publish CLI to npm** publishes the CLI, then reports a warning and skips the alias. Then, for that release `vX.Y.Z`, from a checkout of `main`:
+
+```bash
+mkdir opentig-alias
+gh release download vX.Y.Z --repo jorgefl8/opentig --dir opentig-alias \
+  --pattern 'opentig-cli-X.Y.Z.tgz' --pattern 'opentig-X.Y.Z.tgz' --pattern 'opentig-headless.json'
+node scripts/headless-release.mjs verify opentig-alias vX.Y.Z
+npm view @opentig/cli@X.Y.Z version
+npm publish ./opentig-alias/opentig-X.Y.Z.tgz --access public --ignore-scripts
+npm view opentig@latest version
+npx --yes opentig@X.Y.Z --version
+```
+
+- `verify` checks both tarballs against the release's tag, commit, and recorded hashes, including the alias's exact dependency.
+- `npm view @opentig/cli@X.Y.Z version` must print `X.Y.Z` before you publish the alias.
+- Keep the `./` in front of the tarball: without it, npm reads `opentig-alias/opentig-X.Y.Z.tgz` as a GitHub repository and would publish whatever that repository holds.
+- `npm publish` asks for your two-factor code. This one version has no provenance statement, since it is not published from a workflow.
+- The last two commands must print `X.Y.Z`.
+
+Then add the trusted publisher to the new `opentig` package with the [same values](#configure-the-trusted-publisher) as `@opentig/cli`. From the next release on, **Publish CLI to npm** publishes both names. If it fails on the alias after publishing the CLI, run it again manually with the same tag: the CLI is recognized as already published and the alias follows.
 
 ## Windows signing and updates
 

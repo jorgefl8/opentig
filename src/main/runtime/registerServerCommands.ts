@@ -41,9 +41,11 @@ export function registerServerCommands(
       // Include filesystem-only mutations, which do not pass through Git's write queue.
       const first = args[0];
       const repositoryId = typeof first === 'object' && first !== null && 'repositoryId' in first ? first.repositoryId : first;
-      if (isRepositoryMutation(channel)) services.repositories.invalidateIfKnown(repositoryId);
+      // A fetch says so, so what ignores a fetch, such as GitHub's reads under way, goes on.
+      const command = definition.operation === 'fetch' ? 'fetch' : undefined;
+      if (isRepositoryMutation(channel)) services.repositories.invalidateIfKnown(repositoryId, command);
       try { return await handler(context, ...args); }
-      finally { if (isRepositoryMutation(channel)) services.repositories.invalidateIfKnown(repositoryId); }
+      finally { if (isRepositoryMutation(channel)) services.repositories.invalidateIfKnown(repositoryId, command); }
     });
   };
   const handle = <T>(channel: string, operation: string, handler: (...args: unknown[]) => Promise<T> | T) => {
@@ -615,9 +617,9 @@ export function registerServerCommands(
     fresh == null ? false : booleanArg(fresh, 'gh-pr-list'),
     context.kept,
   ));
-  handleWithContext(IPC.githubPrView, 'gh-pr-view', (context, id, prNumber) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view'), context.kept));
+  handleWithContext(IPC.githubPrView, 'gh-pr-view', (context, id, prNumber, fresh) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view'), fresh == null ? false : booleanArg(fresh, 'gh-pr-view'), context.kept));
   handleWithContext(IPC.githubPrLiveState, 'gh-pr-live-state', (context, id, prNumber) => services.github.getPullRequestLiveState(stringArg(id, 'gh-pr-live-state', 64), prNumberArg(prNumber, 'gh-pr-live-state'), context.kept));
-  handleWithContext(IPC.githubPrConversation, 'gh-pr-conversation', (context, id, prNumber) => services.github.getPullRequestConversation(stringArg(id, 'gh-pr-conversation', 64), prNumberArg(prNumber, 'gh-pr-conversation'), context.kept));
+  handleWithContext(IPC.githubPrConversation, 'gh-pr-conversation', (context, id, prNumber, fresh) => services.github.getPullRequestConversation(stringArg(id, 'gh-pr-conversation', 64), prNumberArg(prNumber, 'gh-pr-conversation'), fresh == null ? false : booleanArg(fresh, 'gh-pr-conversation'), context.kept));
   handle(IPC.githubPrAction, 'gh-pr-action', (input) => services.github.runPullRequestAction(pullRequestActionArg(input)));
   handle(IPC.githubPrUpdate, 'gh-pr-update', (input) => services.github.updatePullRequest(updatePullRequestArg(input)));
   handle(IPC.githubPrComment, 'gh-pr-comment', (input) => services.github.commentOnPullRequest(commentOnPullRequestArg(input)));

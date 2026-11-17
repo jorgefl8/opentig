@@ -1,5 +1,5 @@
 import type { CommentOnPullRequestInput, DeletePullRequestEntryInput, DiffResult, EditPullRequestEntryInput, PullRequestActionInput, PullRequestActionResult, PullRequestCheck, PullRequestCheckState, PullRequestConversationEntry, PullRequestDetails, PullRequestFile, PullRequestFileList, PullRequestLiveState, PullRequestParticipant, PullRequestStack, PullRequestStackMembership, PullRequestState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../src/shared/contracts';
-import { branchName, changedFiles, filePatch, initialFiles, mainOid, sampleDate, sampleHistory, type SampleCommit, type Tree } from './model.ts';
+import { branchName, changedFiles, filePatch, initialFiles, mainOid, sampleDate, sampleHistory, sampleOid, type SampleCommit, type Tree } from './model.ts';
 
 /** One commit of a pull request, as the trees before and after it. */
 type Layer = Pick<SampleCommit, 'oid' | 'subject' | 'author' | 'date' | 'before' | 'after' | 'renames'>;
@@ -70,7 +70,7 @@ function sample(number: number, title: string, state: PullRequestState, branch: 
     if ('oid' in commit) return commit;
     const before = tree;
     tree = { ...tree, ...commit.files };
-    return { oid: `${number.toString(16).padStart(6, '0')}${index}`.padEnd(40, 'b'), subject: commit.title, author: 'OpenTig Demo', date: sampleDate, before, after: tree, renames: {} };
+    return { oid: sampleOid(`Pull request ${number}, commit ${index}`), subject: commit.title, author: 'OpenTig Demo', date: sampleDate, before, after: tree, renames: {} };
   });
   const result: Sample = {
     details: {
@@ -90,7 +90,7 @@ function sample(number: number, title: string, state: PullRequestState, branch: 
       reviewDecision, latestReviews: reviewDecision === 'APPROVED' ? [{ author: maya, verdict: 'APPROVED', outdated: state === 'OPEN' }] : [], isCrossRepository: false, stack: 'none', autoMerge: null,
       mergeQueue: { enabled: false, queued: false }, behindBy: status.behindBy ?? 0,
       checks: { rollup: rollup(checks), items: checks, truncated: false, partial: false },
-      head: { repositoryId: 'demo-repository', owner: 'demo', defaultBranch: 'main', refOid: null },
+      head: { repositoryId: 'demo-repository', owner: 'opentig-demo', defaultBranch: 'main', refOid: null },
       repository: { methods: ['MERGE', 'SQUASH', 'REBASE'], defaultMethod: 'SQUASH', autoMergeAllowed: true, deleteBranchOnMerge: false },
       viewer: { canWrite: true, canUpdate: true, didAuthor: false, canUpdateBranch: true, canDeleteBranch: true },
     },

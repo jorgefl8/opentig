@@ -66,6 +66,8 @@ await build({
     alias: [
       { find: "@/lib/opentig-api", replacement: path.join(demo, "api.ts") },
       { find: "@/lib/websocket-transport", replacement: path.join(demo, "api.ts") },
+      // Links to the sample's own GitHub pages explain that it isn't there.
+      { find: "@/lib/browser-capabilities", replacement: path.join(demo, "browser-capabilities.ts") },
       {
         find: "@/features/settings/SettingsDialog",
         replacement: path.join(demo, "settings.tsx"),
