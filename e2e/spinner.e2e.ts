@@ -6,14 +6,14 @@ import { expect, test, type GitRepository } from './support/fixtures';
 
 /** How many angles of the turn are measured, evenly spaced. */
 const ANGLES = 12;
-/** The refresh icon takes this long to turn once, as the spinner does. */
+/** The spinner and the refresh icon take this long to turn once. */
 const TURN_MS = 1000;
 
 interface Circle { x: number; y: number; radius: number }
 
 /**
  * Makes fetching from `origin` wait until the returned function is called, so
- * the refresh icon keeps turning. Git runs this in place of
+ * what a fetch shows meanwhile, the turning Refresh icon or the Pull spinner, stays on screen. Git runs this in place of
  * `git upload-pack`; it also stops waiting once the test's folder is gone.
  */
 async function holdFetches(repository: GitRepository): Promise<() => Promise<void>> {
@@ -26,20 +26,21 @@ async function holdFetches(repository: GitRepository): Promise<() => Promise<voi
 }
 
 /**
- * Screenshots the icon with its turning group paused at each angle and fits
+ * Screenshots an icon with its turning group paused at each angle and fits
  * circles to what was drawn, in device pixels:
  *  - `perAngle`: the icon as drawn at each angle;
- *  - `swept`: the ring the arrows sweep, from the brightest each pixel gets.
+ *  - `track`: what stays still, from the darkest each pixel gets over the turn (a spinner's faint ring);
+ *  - `swept`: the ring the turning group sweeps, from the brightest each pixel gets.
  */
-async function measureTurn(page: Page, icon: Locator): Promise<{ perAngle: Circle[]; swept: Circle }> {
+async function measureTurn(page: Page, icon: Locator): Promise<{ perAngle: Circle[]; track: Circle; swept: Circle }> {
   const box = await icon.boundingBox();
-  if (!box) throw new Error('The refresh icon is not on screen.');
+  if (!box) throw new Error('The icon is not on screen.');
   const clip = { x: Math.floor(box.x) - 3, y: Math.floor(box.y) - 3, width: Math.ceil(box.width) + 6, height: Math.ceil(box.height) + 6 };
   const frames: string[] = [];
   for (let step = 0; step < ANGLES; step++) {
     await icon.locator('g').evaluate((group, time) => {
       const [turn] = group.getAnimations();
-      if (!turn) throw new Error('The refresh icon is not turning.');
+      if (!turn) throw new Error('The icon is not turning.');
       turn.pause();
       turn.currentTime = time;
     }, (step * TURN_MS) / ANGLES);
@@ -89,7 +90,7 @@ async function measureTurn(page: Page, icon: Locator): Promise<{ perAngle: Circl
         return { x: meanX + x, y: meanY + y, radius: Math.sqrt(x * x + y * y + (uu + vv) / total) };
       };
       const across = (pick: (...values: number[]) => number) => images[0]!.map((_, pixel) => pick(...images.map((ink) => ink[pixel]!)));
-      return { perAngle: images.map(fit), swept: fit(across(Math.max)) };
+      return { perAngle: images.map(fit), track: fit(across(Math.min)), swept: fit(across(Math.max)) };
     }, frames);
   } finally {
     await reader.close();
@@ -98,10 +99,42 @@ async function measureTurn(page: Page, icon: Locator): Promise<{ perAngle: Circl
 
 const distance = (a: Circle, b: Circle) => Math.hypot(a.x - b.x, a.y - b.y);
 
-// 1.25 is the display scale of the laptop the refresh icon was seen circling on.
+// 1.25 is the display scale of the laptop the spinner was seen circling on.
 for (const scale of [1, 1.25]) {
   test.describe(`at a display scale of ${scale}`, () => {
     test.use({ deviceScaleFactor: scale });
+
+    test('the spinner turns on its own center', async ({ pairedPage: page, repository }, testInfo) => {
+      const { other } = await repository.addRemote();
+      await other.commit('upstream.txt', 'upstream\n', 'Add upstream work');
+      await other.git('push', '-q', 'origin', 'main');
+      await repository.git('fetch', '-q', 'origin');
+      await openRepository(page, repository);
+      const release = await holdFetches(repository);
+      // A pull fetches first, so its button keeps the app's common spinner while the fetch is held.
+      const pull = page.getByRole('banner').getByRole('button', { name: 'Pull 1 commits' });
+      await pull.click();
+      await page.mouse.move(0, 0);
+      const spinner = pull.locator('[data-slot="spinner"]');
+      await expect(spinner).toBeVisible();
+
+      const { perAngle, track, swept } = await measureTurn(page, spinner);
+      const center = { x: perAngle.reduce((sum, circle) => sum + circle.x, 0) / ANGLES, y: perAngle.reduce((sum, circle) => sum + circle.y, 0) / ANGLES, radius: 0 };
+      const orbit = Math.max(...perAngle.map((circle) => distance(circle, center)));
+      const offCenter = distance(swept, track);
+      testInfo.annotations.push({ type: 'spinner geometry', description: `scale ${scale}: ring radius ${track.radius.toFixed(2)} device px, center moves at most ${orbit.toFixed(3)} device px over ${ANGLES} angles, the arc turns ${offCenter.toFixed(3)} device px off the ring's center` });
+
+      // A real ring was measured: the spinner draws its ring at 9 of its 24 units from the center.
+      const size = (await spinner.boundingBox())!.width;
+      expect(Math.abs(track.radius - (9 / 24) * size * scale)).toBeLessThan(scale);
+      // The ring stays where it is while the arc turns, and the arc turns about the ring's center.
+      expect(orbit).toBeLessThan(0.3);
+      expect(offCenter).toBeLessThan(0.3);
+
+      await release();
+      await expect(spinner).toBeHidden();
+      await expect.poll(() => repository.git('rev-parse', 'HEAD')).toBe(await other.git('rev-parse', 'HEAD'));
+    });
 
     test('the Refresh icon turns on its own center', async ({ pairedPage: page, repository }, testInfo) => {
       await repository.addRemote();
