@@ -5,7 +5,8 @@ export const npmUrl = 'https://www.npmjs.com/package/@opentig/cli';
 // The scripts first check Node.js and Git and say what is missing; they are served from public/.
 export const scriptInstallCommand = 'curl -fsSL https://opentig.com/install.sh | sh';
 export const powershellInstallCommand = 'irm https://opentig.com/install.ps1 | iex';
-export const npmInstallCommand = 'npx --yes @opentig/cli@latest service install';
+// opentig is the short name of @opentig/cli on npm, published at the same version.
+export const npmInstallCommand = 'npx opentig@latest service install';
 export const downloadUrl = fallbackDownload.url;
 export const downloadVersion = fallbackDownload.version;
 export const siteDescription = 'Browse files, review diffs, edit code, and commit changes. OpenTig brings branches, worktrees, and GitHub pull requests, Actions, and releases into one focused Git workspace.';

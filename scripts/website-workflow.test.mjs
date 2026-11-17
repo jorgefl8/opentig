@@ -43,3 +43,11 @@ it('submits the deployed pages to IndexNow without credentials or failing the de
   expect(steps[indexNow]['continue-on-error']).toBe(true);
   expect(steps[indexNow].env).toBeUndefined();
 });
+
+it('deploys only after npm has the opentig alias the site tells visitors to run', () => {
+  const steps = workflow.jobs.deploy.steps;
+  const check = steps.findIndex(step => step.run === 'node website/scripts/npm-alias.mjs');
+  expect(check).toBeGreaterThan(-1);
+  expect(check).toBeLessThan(steps.findIndex(step => step.run === 'pnpm exec wrangler deploy'));
+  expect(steps[check]['continue-on-error']).toBeUndefined();
+});

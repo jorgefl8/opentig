@@ -49,6 +49,9 @@ jobs:
       - run: pnpm run build:website
         env:
           WEBSITE_RELEASE_FILE: ${{ runner.temp }}/latest-release.json
+      # The site tells visitors to run npx opentig@latest; it must exist at the CLI's version.
+      - name: Require the opentig alias on npm at the CLI version
+        run: node website/scripts/npm-alias.mjs
       - name: Deploy the validated build with the pinned Wrangler CLI
         working-directory: website
         run: pnpm exec wrangler deploy
