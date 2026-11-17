@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { IconRefresh } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, PullRequestCommit, ThemePreference } from '@shared/contracts';
@@ -11,6 +11,7 @@ import { PierreWorkerPool } from '@/features/viewer/PierreWorkerPool';
 import { queryKeys } from '@/lib/query-client';
 import { opentig } from '@/lib/opentig-api';
 import { Spinner } from '@/components/ui/spinner';
+import { noteViewState, restoredViewState } from '@/features/viewer/viewer-memory';
 
 interface PullRequestDiffProps {
   diff: DiffResult;
@@ -30,8 +31,12 @@ interface PullRequestDiffProps {
 type CodeMode = 'all' | 'commit';
 
 export default function PullRequestDiff({ diff, prNumber, repositoryId, commits, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile }: PullRequestDiffProps) {
-  const [mode, setMode] = useState<CodeMode>('all');
-  const [selectedOid, setSelectedOid] = useState(commits[0]?.oid ?? '');
+  // Back brings the code back grouped as it was at that step, on the same commit.
+  const memoryKey = `${repositoryId}:pull:${prNumber}:code`;
+  const [restored] = useState(() => restoredCodeView(restoredViewState(memoryKey)));
+  const [mode, setMode] = useState<CodeMode>(restored?.mode ?? 'all');
+  const [selectedOid, setSelectedOid] = useState(restored?.commit ?? commits[0]?.oid ?? '');
+  useEffect(() => { noteViewState(memoryKey, { mode, commit: mode === 'commit' ? selectedOid : null }); }, [memoryKey, mode, selectedOid]);
   const selectedCommit = useMemo(() => commits.find((commit) => commit.oid === selectedOid) ?? commits[0] ?? null, [commits, selectedOid]);
   const commitDiffQuery = useQuery({
     queryKey: queryKeys.pullRequestCommitDiff(repositoryId, selectedCommit?.oid ?? ''),
@@ -98,6 +103,14 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
       />
     </PierreWorkerPool>
   );
+}
+
+function restoredCodeView(value: unknown): { mode: CodeMode; commit: string | null } | null {
+  if (!value || typeof value !== 'object') return null;
+  const view = value as Record<string, unknown>;
+  if (view.mode !== 'all' && view.mode !== 'commit') return null;
+  const commit = typeof view.commit === 'string' && /^[0-9a-f]{40,64}$/i.test(view.commit) ? view.commit : null;
+  return { mode: view.mode === 'commit' && commit ? 'commit' : 'all', commit };
 }
 
 function DiffLoadingShell({ scopeControl, children }: { scopeControl: React.ReactNode; children: React.ReactNode }) {

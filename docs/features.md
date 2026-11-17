@@ -153,7 +153,7 @@ Change and folder rows stay aligned as files load, sections empty or refill, con
 <details>
 <summary>Large diffs and highlighting limits</summary>
 
-Large diffs show **Preparing diff…** while a background worker parses their file models; smaller ones appear at once. Switching or closing the diff cancels that work; only complete results for the current revision appear. Background patch refreshes preserve collapsed files and the mounted scroll container, and keep the previous revision on screen until the new one is ready.
+Large diffs show **Preparing diff…** while a background worker parses their file models; smaller ones appear at once. The last parsed result of each closed diff is kept, within 8 MB for all of them, so the same diff opened again, by Back or otherwise, appears at once; a diff whose content changed is parsed again. Switching or closing the diff cancels that work; only complete results for the current revision appear. Background patch refreshes preserve collapsed files and the mounted scroll container, and keep the previous revision on screen until the new one is ready.
 
 Without workers, parsing yields between indexing batches and files, but a single large file can still pause the interface. Each mounted diff has a small byte-budgeted parse cache. Oversized entries still display; closing or changing the document releases the cache.
 

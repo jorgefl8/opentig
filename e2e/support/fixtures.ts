@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -14,7 +15,38 @@ export interface OpenTigServer {
   origin: string;
   /** The one-time pairing link the server printed at startup. */
   pairingLink: string;
+  /** Where the stand-in GitHub CLI reads its world from, when the journey asked for one. */
+  githubWorld: string | null;
 }
+
+/** A pull request the stand-in GitHub CLI reports, between two commits of the test's repository. */
+export interface StandInPullRequest {
+  number: number;
+  title: string;
+  headRefName: string;
+  headRefOid: string;
+  baseRefName: string;
+  baseRefOid: string;
+  commits: Array<{ oid: string; messageHeadline: string }>;
+  changedFiles?: number;
+  additions?: number;
+  deletions?: number;
+  body?: string;
+  /** Comments in the conversation, oldest first; `bot` marks an account GitHub reports as a bot. */
+  conversation?: Array<{ author: string; body: string; bot?: boolean }>;
+}
+
+/** What the stand-in GitHub CLI answers with: the signed-in account, the repository and its open pull requests. */
+export interface GitHubWorld {
+  login: string;
+  nameWithOwner: string;
+  pulls: StandInPullRequest[];
+  /** The clone whose Git answers `gh pr diff`, as GitHub's own diff would. */
+  clone?: string;
+}
+
+/** Sets what the stand-in GitHub CLI reports. Each of its runs reads it again, so a journey can change it as it goes. */
+export type PublishGitHubWorld = (world: GitHubWorld) => Promise<void>;
 
 export interface GitRepository {
   path: string;
@@ -89,6 +121,19 @@ async function gitRepository(root: string, work: string): Promise<GitRepository>
   return repository;
 }
 
+/**
+ * Puts a stand-in `gh` first on the server's PATH. It answers OpenTig's reads
+ * of an account, a repository and its pull requests from the world file a
+ * journey writes (see `stand-in-gh.mjs`), without GitHub or a network.
+ */
+async function standInGitHubCli(home: string, world: string): Promise<Record<string, string>> {
+  const bin = path.join(home, 'stand-in-gh-bin');
+  await mkdir(bin, { recursive: true });
+  const script = path.resolve(__dirname, 'stand-in-gh.mjs');
+  await writeFile(path.join(bin, 'gh'), `#!${process.execPath}\nimport(${JSON.stringify(pathToFileURL(script).href)});\n`, { mode: 0o755 });
+  return { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`, OPENTIG_E2E_GITHUB: world };
+}
+
 async function pair(page: Page, server: OpenTigServer): Promise<void> {
   await page.goto(server.pairingLink);
   await expect(page.getByRole('textbox', { name: 'Pairing code' })).not.toBeEmpty();
@@ -124,9 +169,12 @@ else if (args[0] === 'exec') {
   return { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`, CODEX_HOME: codexHome };
 }
 
-export const test = base.extend<{ aiAnswer: AiAnswer | null; countRequests: boolean; server: OpenTigServer; repository: GitRepository; pairedPage: Page; startFakeAgent: StartFakeAgent }>({
+export const test = base.extend<{ aiAnswer: AiAnswer | null; countRequests: boolean; standInGitHub: boolean; server: OpenTigServer; repository: GitRepository; pairedPage: Page; startFakeAgent: StartFakeAgent; github: PublishGitHubWorld }>({
   // Off unless a journey sets it with `test.use`, so the others see no AI CLI of the tests' making.
   aiAnswer: [null, { option: true }],
+
+  // Off unless a journey sets it with `test.use`; the journey then says what GitHub holds with `github`.
+  standInGitHub: [false, { option: true }],
 
   // Turns on the app's performance harness, which counts the requests each navigation makes
   // (see `requestsDuring`). Off unless a journey sets it with `test.use`.
@@ -135,16 +183,20 @@ export const test = base.extend<{ aiAnswer: AiAnswer | null; countRequests: bool
   // One isolated server per test: its own home, settings, and port, so tests
   // never share state and nothing touches a developer's OpenTig data. The
   // built server starts in about a second.
-  server: async ({ aiAnswer, countRequests }, use, testInfo) => {
+  server: async ({ aiAnswer, countRequests, standInGitHub }, use, testInfo) => {
     const serverEntry = path.resolve(path.dirname(testInfo.config.configFile ?? process.cwd()), 'packages/server/dist/bin.mjs');
     if (!existsSync(serverEntry)) throw new Error('The built OpenTig server is missing. Run "pnpm run build:server" before the end-to-end tests.');
     const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-e2e-home-'));
     const port = await freePort();
     const output = { text: '' };
+    const githubWorld = standInGitHub ? path.join(home, 'github-world.json') : null;
+    const aiCli: Record<string, string> = aiAnswer ? await standInAiCli(home, aiAnswer) : {};
+    const githubCli: Record<string, string> = githubWorld ? await standInGitHubCli(home, githubWorld) : {};
+    const searchPath = [githubCli.PATH, aiCli.PATH].filter(Boolean).join(path.delimiter);
     const child = spawn(process.execPath, [serverEntry, 'serve', '--home', home, '--host', '127.0.0.1', '--port', String(port)], {
       // A private HOME keeps the system Trash, CLI logins, and global Git
       // config of the developer's account out of the tests.
-      env: { ...process.env, NO_COLOR: '1', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_DATA_HOME: path.join(home, 'data'), XDG_CACHE_HOME: path.join(home, 'cache'), ...(aiAnswer ? await standInAiCli(home, aiAnswer) : {}), ...(countRequests ? { OPENTIG_PERF_AUTOMATION: '1' } : {}) },
+      env: { ...process.env, NO_COLOR: '1', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_DATA_HOME: path.join(home, 'data'), XDG_CACHE_HOME: path.join(home, 'cache'), ...aiCli, ...githubCli, ...(searchPath ? { PATH: searchPath } : {}), ...(countRequests ? { OPENTIG_PERF_AUTOMATION: '1' } : {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout.setEncoding('utf8');
@@ -154,7 +206,7 @@ export const test = base.extend<{ aiAnswer: AiAnswer | null; countRequests: bool
     try {
       const [, origin] = await waitForOutput(child, /Connection URL: (\S+)/, output);
       const [pairingLink] = await waitForOutput(child, /https?:\/\/\S+\/pair#token=\S+/, output);
-      await use({ origin: origin!, pairingLink });
+      await use({ origin: origin!, pairingLink, githubWorld });
     } finally {
       if (child.exitCode === null) {
         const exited = once(child, 'exit');
@@ -163,6 +215,13 @@ export const test = base.extend<{ aiAnswer: AiAnswer | null; countRequests: bool
       }
       await rm(home, { recursive: true, force: true, maxRetries: 3 });
     }
+  },
+
+  github: async ({ server }, use) => {
+    await use(async (world) => {
+      if (!server.githubWorld) throw new Error('Set `standInGitHub: true` with test.use to give this journey a stand-in GitHub.');
+      await writeFile(server.githubWorld, JSON.stringify(world));
+    });
   },
 
   pairedPage: async ({ page, server }, use) => {

@@ -8,7 +8,7 @@ import { DiffWorkspace } from './DiffWorkspace';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { largePatch, MIXED_PATCH } from './diff-parser.fixtures';
 import { buildDiffFileEntries } from './patch-utils';
-import { DiffParser, type DiffParseRequest, type DiffParseResponse } from './diff-parser';
+import { forgetClosedDiffs, type DiffParseRequest, type DiffParseResponse } from './diff-parser';
 
 const state = vi.hoisted(() => ({ workers: [] as Array<{ request?: DiffParseRequest; onmessage: ((event: MessageEvent<DiffParseResponse>) => void) | null; terminate: ReturnType<typeof vi.fn> }> }));
 vi.mock('./diff-parse.worker?worker', () => ({ default: class {
@@ -35,6 +35,7 @@ beforeEach(() => {
   });
   state.workers.length = 0;
   observers.clear();
+  forgetClosedDiffs();
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
@@ -263,8 +264,7 @@ it('shows parse failures instead of stale file rows', async () => {
   expect(container.querySelectorAll('.diff-file-section')).toHaveLength(0);
 });
 
-it('reuses results within a document and clears the cache on document changes and unmount', async () => {
-  const clear = vi.spyOn(DiffParser.prototype, 'clearCache');
+it('reuses results within a document, and keeps only the last one of a closed document for the next to open', async () => {
   const first = largePatch(10_001, 24, 'first.ts');
   const second = largePatch(10_001, 24, 'second.ts');
   await render(first);
@@ -274,14 +274,17 @@ it('reuses results within a document and clears the cache on document changes an
   await render(first);
   expect(state.workers).toHaveLength(2);
   expect(container.textContent).toContain('first.ts');
+  // Opened anew, as Back does, the diff the closed document showed last needs no parse.
   await render(first, false, 'other-document');
-  expect(clear).toHaveBeenCalledOnce();
+  expect(state.workers).toHaveLength(2);
+  expect(container.textContent).toContain('first.ts');
+  expect(container.textContent).not.toContain('Preparing diff…');
+  // What it had parsed before that was let go with it.
+  await render(second, false, 'third-document');
   expect(state.workers).toHaveLength(3);
   expect(container.textContent).toContain('Preparing diff…');
   await act(async () => root.unmount());
-  expect(clear).toHaveBeenCalledTimes(2);
   expect(state.workers[2]!.terminate).toHaveBeenCalledOnce();
-  clear.mockRestore();
 });
 
 it('preserves collapse choices and the scroll container across background patch refreshes', async () => {
@@ -309,7 +312,7 @@ it('preserves collapse choices and the scroll container across background patch 
   expect(scroll.scrollTop).toBe(600);
   expect(container.querySelector('.diff-file-toggle')?.getAttribute('aria-expanded')).toBe('false');
   await render(second, false, 'other-document');
-  await finish(2, second);
+  expect(state.workers).toHaveLength(2);
   expect(container.querySelector('.diff-workspace-scroll')).not.toBe(scroll);
   expect(container.querySelector('.diff-file-toggle')?.getAttribute('aria-expanded')).toBe('true');
 });
