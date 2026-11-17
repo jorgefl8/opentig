@@ -74,6 +74,8 @@ Before the first release, the draft uses the package version and includes eligib
 
    **Deploy website** runs the same check and refuses to deploy while they differ.
 
+   `README.md` is read on GitHub as soon as it is merged, before any release, so it keeps the commands that work at any time (`npx --yes @opentig/cli@latest`). Once the first release with the alias is published and the website is deployed, it can show `npx opentig@latest` and the install scripts as the guides do.
+
 The prepared draft must contain:
 
 | Artifact | Purpose |
