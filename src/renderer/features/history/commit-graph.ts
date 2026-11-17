@@ -21,6 +21,12 @@ export interface CommitGraphRow {
   continuations: number[];
   /** Which of those lanes carry a branch line. */
   branchLanes: number[];
+  /**
+   * How many lanes this row carries: those entering it from above or leaving it
+   * below. Each row's text starts after its own lanes, and a lane keeps its place
+   * from row to row, so lines stay joined between rows of different widths.
+   */
+  laneSpan: number;
 }
 
 export interface CommitGraphLayout {
@@ -84,6 +90,7 @@ export function buildCommitGraph(commits: readonly CommitGraphInput[]): CommitGr
       segments,
       continuations: outgoing.map((_, continuationLane) => continuationLane),
       branchLanes: outgoingBranch.flatMap((branch, continuationLane) => branch ? [continuationLane] : []),
+      laneSpan: Math.max(1, incoming.length, outgoing.length),
     });
     lanes = outgoing;
     laneBranch = outgoingBranch;

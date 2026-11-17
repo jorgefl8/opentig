@@ -178,6 +178,18 @@ it('draws the branch line in its own color down to where its base starts, and na
   expect(container.querySelector('.commit-graph')).toBeNull();
 });
 
+it('starts each row\'s text after its own lanes, so lanes further down leave the top rows alone', async () => {
+  await mount({ commits: [
+    commit('top', ['merge'], 'Top'), commit('merge', ['main', 'feature'], 'Merge feature'),
+    commit('feature', ['base'], 'Feature'), commit('main', ['base'], 'Main'), commit('base', [], 'Base'),
+  ] });
+  const widths = [...container.querySelectorAll<HTMLElement>('.commit-lane')].map((lane) => lane.style.width);
+  expect(widths).toEqual(['14px', '28px', '28px', '28px', '14px']);
+  // The graph of a row is as wide as its lane, and its lines use the same x on every row.
+  const graphWidths = [...container.querySelectorAll('.commit-graph')].map((graph) => graph.getAttribute('width'));
+  expect(graphWidths).toEqual(['14', '28', '28', '28', '14']);
+});
+
 it('selects a commit from anywhere in its row except the controls inside it', async () => {
   links.open.mockClear();
   const props = await mount({ commits: [{ ...commit('head', ['base'], 'Fix the thing (#87)') }, commit('base', [], 'Base')] });

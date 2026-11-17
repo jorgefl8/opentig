@@ -212,6 +212,31 @@ test('group merges folds a merged side branch under its merge commit', async ({ 
   await expect(page.getByText('This merge commit has no changes of its own.')).toBeVisible();
 });
 
+test('rows above a busy stretch of the graph start their text right after their own lane', async ({ pairedPage: page, repository }) => {
+  // Two branches open at once below, then plain commits on top: the top rows carry one lane.
+  for (const branch of ['left', 'right']) {
+    await repository.git('switch', '-q', '-c', branch, 'main');
+    await repository.commit(`${branch}.txt`, `${branch}\n`, `Work on ${branch}`);
+  }
+  await repository.git('switch', '-q', 'main');
+  await repository.commit('main.txt', 'main\n', 'Keep main moving');
+  await repository.git('merge', '-q', '--no-ff', '-m', 'Merge left', 'left');
+  await repository.git('merge', '-q', '--no-ff', '-m', 'Merge right', 'right');
+  await repository.commit('after.txt', 'after\n', 'Polish after the merges');
+
+  const list = await openHistory(page, repository);
+  const textStart = async (subject: string) => {
+    const row = await commitRow(list, subject).boundingBox();
+    const text = await list.getByRole('button', { name: subject, exact: true }).boundingBox();
+    return text!.x - row!.x;
+  };
+  const top = await textStart('Polish after the merges');
+  const starts = await Promise.all(['Merge right', 'Merge left', 'Work on left', 'Work on right', 'Keep main moving'].map(textStart));
+  // One 14px lane between the row's padding and the gap before its text.
+  expect(top).toBeCloseTo(28, 0);
+  expect(Math.max(...starts)).toBeGreaterThanOrEqual(top + 28);
+});
+
 test('the latest local commit can be undone, leaving its changes staged', async ({ pairedPage: page, repository }) => {
   await repository.addRemote();
   await repository.commit('src/app.js', 'const a = 1;\n', 'Add the app entry point');

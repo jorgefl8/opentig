@@ -366,7 +366,7 @@ Each row has a dot, the title, and one line with the date, author, short hash, a
 | Hollow | There is no upstream to compare with |
 | Ring | Merge commit, in the color of its state |
 
-When the loaded commits branch and rejoin, quiet lanes connect the dots; a linear history shows only the dots. The lanes follow current-branch history and actual parent relationships. OpenTig does not fetch in the background or include unmerged branches outside HEAD.
+When the loaded commits branch and rejoin, quiet lanes connect the dots; a linear history shows only the dots. The lanes follow current-branch history and actual parent relationships. OpenTig does not fetch in the background or include unmerged branches outside HEAD. Each row's text starts right after the lanes that row carries, so a stretch of crossed merges further down doesn't push the text of the rows above it, and **Load more** doesn't shift the rows already listed. A lane keeps its place from row to row, so the lines stay joined while the text follows them.
 
 On a branch other than its base, the line through the branch's own commits is drawn in the accent color, down to the commit where the base starts, and the branch's name takes the same color; from there the line is gray. This applies even to a linear history, so you can see what the branch adds. A base merged into the branch keeps its gray line, and a commit's dot hint says when it is only on this branch. The dots keep meaning only publication. On the base branch itself, or when no base is known, the history looks as described above. The base is the locally known default branch of the upstream's remote, usually `origin/main`.
 

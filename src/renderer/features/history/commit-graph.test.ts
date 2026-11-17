@@ -75,4 +75,35 @@ describe('commit graph', () => {
     ]);
     expect(graph.laneCount).toBe(1);
   });
+
+  describe('the lanes each row carries', () => {
+    // One lane on top, then a merge of a branch that itself merged another: three lanes at the bottom.
+    const graph = buildCommitGraph([
+      { oid: 'h', parentOids: ['g'] },
+      { oid: 'g', parentOids: ['m1'] },
+      { oid: 'm1', parentOids: ['a', 'b'] },
+      { oid: 'b', parentOids: ['c', 'd'] },
+      { oid: 'd', parentOids: ['c'] },
+      { oid: 'c', parentOids: ['a'] },
+      { oid: 'a', parentOids: [] },
+    ]);
+
+    it('counts only the lanes entering or leaving the row, not the widest point of the history', () => {
+      expect(graph.laneCount).toBe(3);
+      expect(graph.rows.map((row) => row.laneSpan)).toEqual([1, 1, 2, 3, 3, 2, 1]);
+    });
+
+    it('keeps every line, node and continuation inside its row, joined to the row below at the same lane', () => {
+      graph.rows.forEach((row, index) => {
+        const lanes = [row.lane, ...row.continuations, ...row.segments.flatMap((segment) => [segment.fromLane, segment.toLane])];
+        expect(Math.max(...lanes)).toBeLessThan(row.laneSpan);
+        const next = graph.rows[index + 1];
+        if (!next) return;
+        const leaving = new Set(row.segments.filter((segment) => segment.to === 'bottom').map((segment) => segment.toLane));
+        const entering = new Set(next.segments.filter((segment) => segment.from === 'top').map((segment) => segment.fromLane));
+        expect(entering).toEqual(leaving);
+        expect(new Set(row.continuations)).toEqual(leaving);
+      });
+    });
+  });
 });

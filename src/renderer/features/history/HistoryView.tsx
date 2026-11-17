@@ -75,7 +75,6 @@ export const HistoryView = memo(function HistoryView({ repositoryId, upstream, r
   // One plain lane says nothing, but a branch line marks where the base starts.
   const showGraph = !fileFilter && (graph.laneCount > 1 || graph.hasBranch);
   const matches = useMemo(() => rows.flatMap(({ commit }, index) => matchesHistory(commit, search) ? [index] : []), [rows, search]);
-  const graphWidth = graphWidthForLanes(graph.laneCount);
   // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
   const commitVirtualizer = useVirtualizer({
     count: rows.length,
@@ -142,7 +141,7 @@ export const HistoryView = memo(function HistoryView({ repositoryId, upstream, r
                 <div key={virtualRow.key} ref={commitVirtualizer.measureElement} data-index={virtualRow.index} className="virtual-row" style={{ transform: `translateY(${virtualRow.start}px)` }}
                   onPointerEnter={(event) => readAhead.rest(commit.oid, event)} onPointerLeave={readAhead.leave}>
                   <CommitRow phone={mobile} repositoryId={repositoryId} upstream={upstream} baseRef={baseRef} commit={commit}
-                    graphRow={graph.rows[virtualRow.index]!} showGraph={showGraph} branchRefs={graph.hasBranch} graphWidth={graphWidth} rowHeight={rowHeight}
+                    graphRow={graph.rows[virtualRow.index]!} showGraph={showGraph} branchRefs={graph.hasBranch} rowHeight={rowHeight}
                     active={activeOid === commit.oid || groupedCommits.some((item) => item.oid === activeOid)} match={matchesHistory(commit, search)} currentMatch={matches[currentMatch] === virtualRow.index}
                     groupedCount={groupedCommits.length} onRevealGroup={() => setGrouped(false)}
                     fileEntry={fileFilter?.entries.get(commit.oid) ?? null} filterPath={fileFilter?.path ?? null}
@@ -163,14 +162,14 @@ export const HistoryView = memo(function HistoryView({ repositoryId, upstream, r
   );
 });
 
-function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, showGraph, branchRefs, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, fileEntry, filterPath, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
+function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, showGraph, branchRefs, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, fileEntry, filterPath, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
   /** The whole row is the target there: what's on the row elsewhere is in the commit viewer. */
   phone: boolean;
   repositoryId: string; upstream: string | null; baseRef?: string | null | undefined; commit: CommitInfo; expanded: boolean; canUndo: boolean;
   graphRow: CommitGraphRow; showGraph: boolean;
   /** The current branch's name takes the branch line's color. */
   branchRefs: boolean;
-  graphWidth: number; rowHeight: number; active: boolean; match: boolean; currentMatch: boolean; groupedCount: number;
+  rowHeight: number; active: boolean; match: boolean; currentMatch: boolean; groupedCount: number;
   onRevealGroup(): void;
   /** In a file's history: how this commit changed the file, which the row shows instead of its files. */
   fileEntry: FileHistoryEntry | null;
@@ -198,6 +197,8 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
   const refLabels = refs.map((ref, index) => <span key={`${index}:${ref.name}`} className={branchRefs && ref.current ? 'commit-ref-branch' : undefined}>{index > 0 && ' '}{ref.name}</span>);
   const publication = commitPublication(commit, upstream, baseRef);
   const nodeY = graphNodeY(rowHeight);
+  // Only this row's own lanes: lanes further right elsewhere in the history don't push its text.
+  const graphWidth = graphWidthForLanes(graphRow.laneSpan);
   const additions = files?.reduce((total, file) => total + file.additions, 0) ?? 0;
   const deletions = files?.reduce((total, file) => total + file.deletions, 0) ?? 0;
   const open = expanded && !phone && !fileEntry;
