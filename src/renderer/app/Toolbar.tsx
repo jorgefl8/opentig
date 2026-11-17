@@ -403,7 +403,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
         groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({ item, agents: agentsAt(props.worktreeAgents, item.path) })).map(({ item, agents }) => ({
           value: item.path,
           label: item.path.split(/[\\/]/).pop() ?? item.path,
-          description: `${item.branch ?? detachedHeadLabel(item.oid)}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
+          description: `${item.branch ?? detachedHeadLabel(item.oid, props.branches)}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
           trailing: <AgentLabel agents={agents} compact />,
           search: item.path,
           // A locked worktree opens like any other; the lock says why it can't be removed, often a tool's session using it.

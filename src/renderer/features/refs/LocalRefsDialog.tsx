@@ -27,7 +27,7 @@ import { SearchablePicker } from '@/components/SearchablePicker';
 import { RemoteBranchDetailPanel } from './RemoteBranchDetailPanel';
 import { AgentLabel } from './AgentLabel';
 import { Spinner } from '@/components/ui/spinner';
-import { detachedHeadLabel } from './detached-head';
+import { detachedHeadLabel, shortCommitId } from './detached-head';
 
 const DISMISSED_NOTICES_KEY = 'opentig.dismissedWorktreeRemovalNotices';
 
@@ -397,7 +397,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                     <AgentLabel agents={agentsAt(props.worktreeAgents, item.path)} compact />
                   </span>
                   <small className="local-refs-row-meta">
-                    <span className="local-refs-row-branch">{item.branch ?? detachedHeadLabel(item.oid)}</span>
+                    <span className="local-refs-row-branch">{item.branch ?? detachedHeadLabel(item.oid, snapshot?.branches ?? [])}</span>
                     <span>{item.path}</span>
                   </small>
                 </button>
@@ -429,6 +429,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
             {!detailsLoading && !detailsError && tab === 'worktrees' && worktreeDetails && worktree && (
               <WorktreeDetailPanel
                 details={worktreeDetails}
+                shortOid={worktreeDetails.oid ? shortCommitId(worktreeDetails.oid, snapshot?.branches ?? []) : null}
                 agents={agentsAt(props.worktreeAgents, worktreeDetails.path)}
                 deleteBranchByDefault={Boolean(props.focus?.worktree && samePath(props.focus.worktree, worktreeDetails.path))}
                 removing={removingPaths.has(worktreeDetails.path)}
@@ -513,8 +514,11 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   );
 }
 
-function WorktreeDetailPanel({ details, agents, deleteBranchByDefault, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
-  details: WorktreeDetails; agents: string[]; deleteBranchByDefault: boolean; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
+function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
+  details: WorktreeDetails;
+  /** HEAD's commit, shortened as every commit id in OpenTig is. */
+  shortOid: string | null;
+  agents: string[]; deleteBranchByDefault: boolean; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
   onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean, cleanupOnly: boolean): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
 }) {
   const [deleteBranch, setDeleteBranch] = useState(deleteBranchByDefault);
@@ -535,8 +539,8 @@ function WorktreeDetailPanel({ details, agents, deleteBranchByDefault, removing,
         {agents.length > 0 && <Fact label="Agents"><AgentLabel agents={agents} /></Fact>}
         <Fact label="HEAD">
           {details.lastCommit
-            ? <><code>{details.lastCommit.shortOid}</code> {details.lastCommit.subject}</>
-            : <code>{details.oid ? details.oid.slice(0, 7) : '—'}</code>}
+            ? <><code>{shortOid ?? details.lastCommit.shortOid}</code> {details.lastCommit.subject}</>
+            : <code>{shortOid ?? '—'}</code>}
         </Fact>
         <Fact label="Committed">{details.lastCommit?.date ? formatDateTime(details.lastCommit.date) : '—'}</Fact>
         {!removing && <Fact label="Local changes">{details.available ? (changes ?? 'None') : 'Not readable'}</Fact>}

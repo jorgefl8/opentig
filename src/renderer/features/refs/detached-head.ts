@@ -1,9 +1,18 @@
 import type { BranchInfo, RepositoryStatus } from '../../../shared/git-types';
 
+/**
+ * A commit id shortened as Git abbreviates them in this repository, which its
+ * branch tips show: the shortest of their ids, never under 7. One rule for every
+ * commit, so the same one always reads the same, whether or not a branch is on it.
+ */
+export function shortCommitId(oid: string, branches: readonly Pick<BranchInfo, 'shortOid'>[]): string {
+  const lengths = branches.map((branch) => branch.shortOid.length).filter((length) => length > 0);
+  return oid.slice(0, Math.max(7, ...(lengths.length ? [Math.min(...lengths)] : [])));
+}
+
 /** Where a detached HEAD is, by its short commit id; "Detached HEAD" when the commit isn't known. */
-export function detachedHeadLabel(oid: string | null | undefined, shortOid?: string | null): string {
-  if (shortOid) return `Detached at ${shortOid}`;
-  return oid ? `Detached at ${oid.slice(0, 7)}` : 'Detached HEAD';
+export function detachedHeadLabel(oid: string | null | undefined, branches: readonly Pick<BranchInfo, 'shortOid'>[]): string {
+  return oid ? `Detached at ${shortCommitId(oid, branches)}` : 'Detached HEAD';
 }
 
 export interface DetachedHead {
@@ -26,9 +35,9 @@ export function describeDetachedHead(status: Pick<RepositoryStatus, 'detached' |
   // A remote's HEAD only names its default branch, which is listed on its own.
   const matches = oid ? branches.filter((branch) => branch.oid === oid && !(branch.remote && branch.fullName.endsWith('/HEAD'))) : [];
   const ordered = [...matches.filter((branch) => !branch.remote), ...matches.filter((branch) => branch.remote)];
-  const shortOid = ordered[0]?.shortOid || (oid ? oid.slice(0, 7) : null);
+  const shortOid = oid ? shortCommitId(oid, branches) : null;
   return {
-    label: detachedHeadLabel(oid, shortOid),
+    label: detachedHeadLabel(oid, branches),
     shortOid,
     subject: ordered.find((branch) => branch.subject)?.subject ?? null,
     branches: ordered.map((branch) => branch.name),

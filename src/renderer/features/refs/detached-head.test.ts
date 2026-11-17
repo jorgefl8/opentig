@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { BranchInfo } from '../../../shared/git-types';
-import { checkoutLabel, describeDetachedHead } from './detached-head';
+import { checkoutLabel, describeDetachedHead, detachedHeadLabel, shortCommitId } from './detached-head';
 
 const head = 'a'.repeat(40);
 const branch = (name: string, oid: string, extra: Partial<BranchInfo> = {}) => ({
@@ -21,8 +21,20 @@ it('names the commit and every branch whose tip it is, local ones first', () => 
 
 it('says only the commit when no branch points there, since its title would need a new read', () => {
   expect(describeDetachedHead({ detached: true, oid: head }, [branch('main', 'b'.repeat(40))])).toEqual({
-    label: 'Detached at aaaaaaa', shortOid: 'aaaaaaa', subject: null, branches: [],
+    label: 'Detached at aaaaaaaaa', shortOid: 'aaaaaaaaa', subject: null, branches: [],
   });
+});
+
+it('shortens every commit as Git does in the repository, so one commit reads the same whether or not a branch is on it', () => {
+  // A large repository: Git abbreviates to 10, and gave one ambiguous tip 11.
+  const branches = [branch('main', 'c'.repeat(40), { shortOid: 'c'.repeat(11) }), branch('release', 'd'.repeat(40), { shortOid: 'd'.repeat(10) })];
+  expect(shortCommitId(head, branches)).toBe('a'.repeat(10));
+  const away = describeDetachedHead({ detached: true, oid: head }, branches)!.label;
+  const shared = describeDetachedHead({ detached: true, oid: head }, [...branches, branch('topic', head, { shortOid: 'a'.repeat(12) })])!.label;
+  expect(shared).toBe(away);
+  // A worktree on that commit reads the same; with no branch to learn from, Git's minimum of 7.
+  expect(detachedHeadLabel(head, branches)).toBe(away);
+  expect(shortCommitId(head, [])).toBe('aaaaaaa');
 });
 
 it('names the branch when one is checked out, and the commit only when HEAD is detached', () => {
