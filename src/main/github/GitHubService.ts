@@ -106,8 +106,11 @@ export class GitHubService {
   readonly cache: GitHubReadCache;
   /** Reads started behind a kept answer, one per answer, so every client shown it waits for the same one. */
   private readonly refreshing = new Map<string, Promise<KeptRefreshOutcome>>();
-  /** When the read behind a kept answer stored its new answer, for `REFRESHED_GRACE_MS`. */
-  private readonly refreshedAt = new Map<string, number>();
+  /** The order reads began in, in this process, and for each kept answer the order of the read that gave it. */
+  private readSequence = 0;
+  private readonly keptFrom = new Map<string, number>();
+  /** Which answer the read behind a kept answer left kept, and when, for `REFRESHED_GRACE_MS`. */
+  private readonly refreshedAt = new Map<string, { readAt: number; at: number }>();
   /** The GitHub repository each checkout last read, so a change made through it reaches every copy kept of it. */
   private readonly nameWithOwnerByPath = new Map<string, string>();
   /** Bumped by every explicit invalidation, so a read that started before one isn't kept. */
@@ -231,14 +234,17 @@ export class GitHubService {
     // What this checkout read from a remote it no longer uses is not kept.
     if (scope) this.cache.dropWhere((entry) => entry.scope.path === repository.path && entry.scope.remote !== scope.remote);
     const cached = key ? await this.cache.get(key) : undefined;
-    const cachedAge = cached ? this.now() - cached.readAt : Infinity;
+    // Answers are kept on disk with the wall clock's time: one that clock now puts in the future is
+    // counted as too old, so a clock set back doesn't make every answer current until it catches up.
+    const cachedAge = cached && this.now() >= cached.readAt ? this.now() - cached.readAt : Infinity;
     // Pressing Refresh again a moment later asks GitHub nothing new.
     if (options.fresh && cached && cachedAge < FRESH_FLOOR_MS) return structuredClone(cached.value as T);
     const hit = options.fresh ? undefined : cached;
     const age = hit ? cachedAge : Infinity;
     // The client told of a refresh asks for it at once, without accepting a kept answer: it gets the
     // answer that refresh stored, as current, rather than a second read from GitHub.
-    const refreshed = hit !== undefined && this.refreshedAt.get(key!) === hit.readAt && age < REFRESHED_GRACE_MS;
+    const told = hit !== undefined ? this.refreshedAt.get(key!) : undefined;
+    const refreshed = told !== undefined && told.readAt === hit!.readAt && this.now() - told.at < REFRESHED_GRACE_MS;
     const current = hit !== undefined && (age < policy.freshMs(hit.value as T) || refreshed);
     const kept = hit !== undefined && !current && options.kept !== undefined;
     if (performanceLogging()) notePerformance({ kind: 'cache', cache: 'github-read', resource: performanceLabel(String(resource[0]), 'unknown'), outcome: current ? 'hit' : kept ? 'kept' : 'miss' });
@@ -255,7 +261,8 @@ export class GitHubService {
     const repository = this.repositories.get(repositoryId);
     const epoch = this.settledEpoch;
     const before = this.readKey(repository, []);
-    const value = await this.shareRead(repositoryId, resource, read, fresh);
+    // Readers that join a read share when it began, which is how old its answer can be.
+    const { began, order, value } = await this.shareRead(repositoryId, resource, async () => ({ began: this.now(), order: ++this.readSequence, value: await read() }), fresh);
     // An account change gives the read a new key, and so does another remote.
     if (before !== this.readKey(this.repositories.get(repositoryId), [])) return value;
     const { remote, info } = await this.routing(repositoryId);
@@ -265,10 +272,21 @@ export class GitHubService {
     const key = cacheKey(scope, resource);
     // A change made meanwhile that concerns this answer means the read may predate it.
     if (this.changedSince(epoch, scope, resource)) return value;
-    const readAt = this.now();
-    if (this.cache.set(key, scope, value, { readAt, noExpiry: policy.noExpiry?.(value) ?? false })) onKept?.(key, readAt);
+    // A fresh read doesn't wait for one already under way, so an older read can finish after a newer
+    // one: its answer never replaces one from a read that began later, and its reader gets the newer.
+    // Which began first is counted in this process, so a clock set back can't reorder them.
+    const newer = await this.cache.get(key);
+    if (newer && (this.keptFrom.get(key) ?? 0) > order) {
+      onKept?.(key, newer.readAt);
+      return structuredClone(newer.value as T);
+    }
+    // Kept as of when the read began: the answer is at least that recent.
+    if (this.cache.set(key, scope, value, { readAt: began, noExpiry: policy.noExpiry?.(value) ?? false })) {
+      this.keptFrom.set(key, order);
+      if (this.keptFrom.size > this.cache.size + 100) for (const kept of this.keptFrom.keys()) if (!this.cache.peek(kept)) this.keptFrom.delete(kept);
+      onKept?.(key, began);
     // Too large to keep: what was kept is older than what GitHub just said, and is not served again.
-    else this.cache.delete(key);
+    } else this.cache.delete(key);
     return value;
   }
 
@@ -287,8 +305,8 @@ export class GitHubService {
     if (pending) return pending;
     const refresh = this.readAndKeep(repositoryId, resource, policy, read, remoteUrl, (storedKey, readAt) => {
       const now = this.now();
-      for (const [other, at] of this.refreshedAt) if (now - at >= REFRESHED_GRACE_MS) this.refreshedAt.delete(other);
-      this.refreshedAt.set(storedKey, readAt);
+      for (const [other, told] of this.refreshedAt) if (now - told.at >= REFRESHED_GRACE_MS) this.refreshedAt.delete(other);
+      this.refreshedAt.set(storedKey, { readAt, at: now });
     })
       .then(() => ({ outcome: 'updated' as const }), (error: unknown): KeptRefreshOutcome => {
         const detail = serializeError(error, 'github-read');

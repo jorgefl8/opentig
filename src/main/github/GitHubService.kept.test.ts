@@ -126,6 +126,59 @@ describe('GitHub answers kept on the server', () => {
     expect(state.views).toBe(2);
   });
 
+  it('never lets an older read that finishes later replace the answer of a read that began after it', async () => {
+    const { service, state } = server(path.join(await folder(), 'github-cache.json'));
+    let openFirst!: () => void;
+    let openSecond!: () => void;
+    state.gate = new Promise<void>((resolve) => { openFirst = resolve; });
+    const older = service.getPullRequest('repo', 12);
+    await vi.waitFor(() => expect(state.views).toBe(1));
+    state.gate = new Promise<void>((resolve) => { openSecond = resolve; });
+    const newer = service.getPullRequest('repo', 12, true);
+    await vi.waitFor(() => expect(state.views).toBe(2));
+    openSecond();
+    expect((await newer).title).toBe('read 2');
+    openFirst();
+    // Its reader gets the newer answer, and so does everyone after, without asking GitHub again.
+    expect((await older).title).toBe('read 2');
+    expect((await service.getPullRequest('repo', 12)).title).toBe('read 2');
+    expect((await service.getPullRequest('repo', 12, true)).title).toBe('read 2');
+    expect(state.views).toBe(2);
+  });
+
+  it('tells a client shown a kept answer about the answer really kept, when a newer read got there first', async () => {
+    const { service, clock, state } = server(path.join(await folder(), 'github-cache.json'));
+    await service.getPullRequest('repo', 12);
+    clock.now += 2 * 60_000;
+    let openBehind!: () => void;
+    let openFresh!: () => void;
+    state.gate = new Promise<void>((resolve) => { openBehind = resolve; });
+    const client = keptSink();
+    expect((await service.getPullRequest('repo', 12, false, client.sink)).title).toBe('read 1');
+    await vi.waitFor(() => expect(state.views).toBe(2));
+    state.gate = new Promise<void>((resolve) => { openFresh = resolve; });
+    const fresh = service.getPullRequest('repo', 12, true);
+    await vi.waitFor(() => expect(state.views).toBe(3));
+    openFresh();
+    expect((await fresh).title).toBe('read 3');
+    openBehind();
+    await expect(client.answers[0]!.refresh).resolves.toEqual({ outcome: 'updated' });
+    // Told of the refresh, the client asks again: the newer answer, as current, with no other read.
+    const after = keptSink();
+    expect((await service.getPullRequest('repo', 12, false, after.sink)).title).toBe('read 3');
+    expect(after.answers).toHaveLength(0);
+    expect(state.views).toBe(3);
+  });
+
+  it('counts an answer the clock now puts in the future as too old, so a clock set back still reads GitHub', async () => {
+    const { service, clock, state } = server(path.join(await folder(), 'github-cache.json'));
+    await service.getPullRequest('repo', 12);
+    clock.now -= 60 * 60_000;
+    expect((await service.getPullRequest('repo', 12, true)).title).toBe('read 2');
+    expect((await service.getPullRequest('repo', 12)).title).toBe('read 2');
+    expect(state.views).toBe(2);
+  });
+
   it('keeps answers across a restart, for the same account only', async () => {
     const file = path.join(await folder(), 'github-cache.json');
     const clock = { now: Date.parse('2026-11-15T10:00:00Z') };
