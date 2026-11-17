@@ -429,7 +429,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
             {!detailsLoading && !detailsError && tab === 'worktrees' && worktreeDetails && worktree && (
               <WorktreeDetailPanel
                 details={worktreeDetails}
-                shortOid={worktreeDetails.oid ? shortCommitId(worktreeDetails.oid, snapshot?.branches ?? []) : null}
+                shortOid={worktreeDetails.oid ? shortCommitId(worktreeDetails.oid, snapshot?.branches ?? [], worktreeDetails.lastCommit?.shortOid) : null}
                 agents={agentsAt(props.worktreeAgents, worktreeDetails.path)}
                 deleteBranchByDefault={Boolean(props.focus?.worktree && samePath(props.focus.worktree, worktreeDetails.path))}
                 removing={removingPaths.has(worktreeDetails.path)}
@@ -516,7 +516,7 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
 
 function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
   details: WorktreeDetails;
-  /** HEAD's commit, shortened as every commit id in OpenTig is. */
+  /** HEAD's commit, shortened as Git abbreviates it (see `shortCommitId`). */
   shortOid: string | null;
   agents: string[]; deleteBranchByDefault: boolean; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
   onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean, cleanupOnly: boolean): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
@@ -539,7 +539,7 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
         {agents.length > 0 && <Fact label="Agents"><AgentLabel agents={agents} /></Fact>}
         <Fact label="HEAD">
           {details.lastCommit
-            ? <><code>{shortOid ?? details.lastCommit.shortOid}</code> {details.lastCommit.subject}</>
+            ? <><code>{details.lastCommit.shortOid}</code> {details.lastCommit.subject}</>
             : <code>{shortOid ?? '—'}</code>}
         </Fact>
         <Fact label="Committed">{details.lastCommit?.date ? formatDateTime(details.lastCommit.date) : '—'}</Fact>

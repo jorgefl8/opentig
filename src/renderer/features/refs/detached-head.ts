@@ -1,17 +1,20 @@
 import type { BranchInfo, RepositoryStatus } from '../../../shared/git-types';
 
 /**
- * A commit id shortened as Git abbreviates them in this repository, which its
- * branch tips show: the shortest of their ids, never under 7. One rule for every
- * commit, so the same one always reads the same, whether or not a branch is on it.
+ * A commit's id as Git abbreviates it, so it is one Git accepts: Git's own
+ * abbreviation of that very commit where one is known, `own` or a branch tip's on
+ * it, which Git lengthens where a shorter one would be ambiguous; otherwise as long
+ * as the longest Git uses in this repository, as its branch tips show, never under 7.
  */
-export function shortCommitId(oid: string, branches: readonly Pick<BranchInfo, 'shortOid'>[]): string {
-  const lengths = branches.map((branch) => branch.shortOid.length).filter((length) => length > 0);
-  return oid.slice(0, Math.max(7, ...(lengths.length ? [Math.min(...lengths)] : [])));
+export function shortCommitId(oid: string, branches: readonly Pick<BranchInfo, 'oid' | 'shortOid'>[], own?: string | null): string {
+  if (own && oid.startsWith(own)) return own;
+  const tip = branches.find((branch) => branch.oid === oid && branch.shortOid);
+  if (tip) return tip.shortOid;
+  return oid.slice(0, Math.max(7, ...branches.map((branch) => branch.shortOid.length)));
 }
 
 /** Where a detached HEAD is, by its short commit id; "Detached HEAD" when the commit isn't known. */
-export function detachedHeadLabel(oid: string | null | undefined, branches: readonly Pick<BranchInfo, 'shortOid'>[]): string {
+export function detachedHeadLabel(oid: string | null | undefined, branches: readonly Pick<BranchInfo, 'oid' | 'shortOid'>[]): string {
   return oid ? `Detached at ${shortCommitId(oid, branches)}` : 'Detached HEAD';
 }
 

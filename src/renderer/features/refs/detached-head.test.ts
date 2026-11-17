@@ -25,15 +25,16 @@ it('says only the commit when no branch points there, since its title would need
   });
 });
 
-it('shortens every commit as Git does in the repository, so one commit reads the same whether or not a branch is on it', () => {
-  // A large repository: Git abbreviates to 10, and gave one ambiguous tip 11.
+it('keeps Git\'s own abbreviation of a commit, and otherwise the longest Git uses in the repository', () => {
+  // A large repository: Git abbreviates to 10, and lengthened one ambiguous tip to 11.
   const branches = [branch('main', 'c'.repeat(40), { shortOid: 'c'.repeat(11) }), branch('release', 'd'.repeat(40), { shortOid: 'd'.repeat(10) })];
-  expect(shortCommitId(head, branches)).toBe('a'.repeat(10));
-  const away = describeDetachedHead({ detached: true, oid: head }, branches)!.label;
-  const shared = describeDetachedHead({ detached: true, oid: head }, [...branches, branch('topic', head, { shortOid: 'a'.repeat(12) })])!.label;
-  expect(shared).toBe(away);
-  // A worktree on that commit reads the same; with no branch to learn from, Git's minimum of 7.
-  expect(detachedHeadLabel(head, branches)).toBe(away);
+  // Git's own for that very commit, as a tip on it or a commit read with it, which `git checkout` takes.
+  expect(shortCommitId('c'.repeat(40), branches)).toBe('c'.repeat(11));
+  expect(shortCommitId(head, branches, 'a'.repeat(12))).toBe('a'.repeat(12));
+  expect(describeDetachedHead({ detached: true, oid: head }, [...branches, branch('topic', head, { shortOid: 'a'.repeat(12) })])!.label).toBe(`Detached at ${'a'.repeat(12)}`);
+  // Otherwise never shorter than Git needs elsewhere in the repository, nor than 7.
+  expect(shortCommitId(head, branches)).toBe('a'.repeat(11));
+  expect(detachedHeadLabel(head, branches)).toBe(`Detached at ${'a'.repeat(11)}`);
   expect(shortCommitId(head, [])).toBe('aaaaaaa');
 });
 
