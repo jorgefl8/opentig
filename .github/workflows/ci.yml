@@ -153,10 +153,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run release:pack:headless
-      - name: Check missing requirements, cut-short copies, and shellcheck
-        env:
-          OPENTIG_REQUIRE_INSTALL_SHELLS: ${{ runner.os == 'Linux' && 'sh,dash,bash,pwsh,shellcheck' || runner.os == 'Windows' && 'powershell,pwsh' || 'sh,bash,zsh' }}
-        run: node --test website/scripts/install-scripts.test.mjs
       - name: Prepare a login session that can enable lingering
         if: runner.os == 'Linux'
         shell: bash
@@ -173,26 +169,38 @@ jobs:
         shell: bash
         run: |
           artifact="$(node -p "require('node:path').resolve('dist/headless', require('./dist/headless/opentig-headless.json').filename)")"
+          failed=0
           for shell in dash bash; do
             # su - opens a login session for the runner's own user, as a terminal or SSH login does.
-            sudo su - "$(id -un)" -c "cd '$PWD' && PATH='$PATH' node website/scripts/verify-install.mjs --shell $shell --package '$artifact'"
+            sudo su - "$(id -un)" -c "cd '$PWD' && PATH='$PATH' node website/scripts/verify-install.mjs --shell $shell --package '$artifact'" || failed=1
           done
+          exit "$failed"
       - name: Install with install.sh under sh and zsh, then uninstall
-        if: runner.os == 'macOS'
+        if: ${{ !cancelled() && runner.os == 'macOS' }}
         shell: bash
         run: |
           artifact="$(node -p "require('node:path').resolve('dist/headless', require('./dist/headless/opentig-headless.json').filename)")"
+          failed=0
           for shell in sh zsh; do
-            node website/scripts/verify-install.mjs --shell "$shell" --package "$artifact"
+            node website/scripts/verify-install.mjs --shell "$shell" --package "$artifact" || failed=1
           done
+          exit "$failed"
       - name: Install with install.ps1 under Windows PowerShell and PowerShell 7, then uninstall
-        if: runner.os == 'Windows'
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
         shell: bash
         run: |
           artifact="$(node -p "require('node:path').resolve('dist/headless', require('./dist/headless/opentig-headless.json').filename)")"
+          failed=0
           for shell in powershell pwsh; do
-            node website/scripts/verify-install.mjs --shell "$shell" --package "$artifact"
+            node website/scripts/verify-install.mjs --shell "$shell" --package "$artifact" || failed=1
           done
+          exit "$failed"
+      # After the real installs, so a stand-in failure never hides their result.
+      - name: Check missing requirements, cut-short copies, and shellcheck
+        if: ${{ !cancelled() }}
+        env:
+          OPENTIG_REQUIRE_INSTALL_SHELLS: ${{ runner.os == 'Linux' && 'sh,dash,bash,pwsh,shellcheck' || runner.os == 'Windows' && 'powershell,pwsh' || 'sh,bash,zsh' }}
+        run: node --test website/scripts/install-scripts.test.mjs
 
   system-trash-smoke:
     needs: changes
