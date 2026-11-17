@@ -7,14 +7,19 @@
 // powershell or pwsh (install.ps1, piped from irm into iex). Without
 // --package, the script installs the published CLI it defaults to.
 //
+// With --package, the tarball is repacked with a random marker file, and the
+// running service must come from it: a script that ignored OPENTIG_PACKAGE
+// would install the published CLI, which can have the same version number.
+//
 // It registers the real per-user service, so run it only on a disposable
 // machine such as a CI runner or a container: the service's data directory and
 // port are temporary, but its name and the shell profile's PATH entry are the
 // user's own.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -30,7 +35,7 @@ const powershell = shell === 'powershell' || shell === 'pwsh';
 assert.ok(['sh', 'dash', 'bash', 'zsh', 'powershell', 'pwsh'].includes(shell), '--shell must be sh, dash, bash, zsh, powershell, or pwsh');
 const script = powershell ? 'install.ps1' : 'install.sh';
 
-// Serves the scripts with the content type the website's _headers gives them.
+// Serves the scripts with the content type the website's Worker gives them.
 async function serveScripts() {
   const server = createServer(async (request, response) => {
     const name = request.url?.slice(1);
@@ -67,15 +72,37 @@ function run(command, args, env, options = {}) {
 async function ready(port) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/readyz`, { signal: AbortSignal.timeout(3_000) });
-    return response.ok && (await response.json()).status === 'ready';
-  } catch { return false; }
+    const body = response.ok ? await response.json() : null;
+    return body?.status === 'ready' ? body : null;
+  } catch { return null; }
+}
+
+// A copy of the tarball with dist/install-check.txt added, and what that file holds.
+// tar runs in the copy's folder with relative names, which every tar on Windows reads.
+async function markedTarball(tarball) {
+  const folder = await mkdtemp(path.join(tmpdir(), 'opentig-install-package-'));
+  await copyFile(tarball, path.join(folder, 'given.tgz'));
+  execFileSync('tar', ['-xzf', 'given.tgz'], { cwd: folder, windowsHide: true });
+  const marker = randomUUID();
+  await writeFile(path.join(folder, 'package', 'dist', 'install-check.txt'), marker);
+  execFileSync('tar', ['-czf', 'marked.tgz', 'package'], { cwd: folder, windowsHide: true });
+  const { version } = JSON.parse(await readFile(path.join(folder, 'package', 'package.json'), 'utf8'));
+  return { folder, file: path.join(folder, 'marked.tgz'), marker, version };
+}
+
+async function publishedVersion() {
+  const response = await fetch('https://registry.npmjs.org/@opentig%2fcli/latest', { signal: AbortSignal.timeout(15_000) });
+  assert.ok(response.ok, `npm lookup failed: HTTP ${response.status}`);
+  return (await response.json()).version;
 }
 
 const home = await mkdtemp(path.join(tmpdir(), 'opentig-install-'));
 const port = await freePort();
 // Only this run's home, port, and package reach the script.
 const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) => !['OPENTIG_HOST', 'OPENTIG_VERSION', 'OPENTIG_PACKAGE'].includes(name)));
-const env = { ...inherited, OPENTIG_HOME: home, OPENTIG_PORT: String(port), ...values.package ? { OPENTIG_PACKAGE: path.resolve(values.package) } : {} };
+const packed = values.package ? await markedTarball(path.resolve(values.package)) : null;
+const expectedVersion = packed ? packed.version : await publishedVersion();
+const env = { ...inherited, OPENTIG_HOME: home, OPENTIG_PORT: String(port), ...packed ? { OPENTIG_PACKAGE: packed.file } : {} };
 const command = path.join(home, 'bin', windows ? 'opentig.cmd' : 'opentig');
 // The opentig command is a .cmd file on Windows, which only a shell can start.
 const opentig = (...args) => windows
@@ -93,7 +120,15 @@ try {
   assert.match(install.output, new RegExp(`OpenTig service installed and started on 127\\.0\\.0\\.1:${port}\\.`));
   assert.doesNotMatch(install.output, /Pair a device now\?/, 'Without a terminal the installer must not ask to pair.');
   assert.match(install.output, /One-time pairing link/, 'Without a terminal the installer prints the pairing link.');
-  assert.ok(await ready(port), 'The installed service does not answer /readyz.');
+  const readiness = await ready(port);
+  assert.ok(readiness, 'The installed service does not answer /readyz.');
+  assert.equal(readiness.appVersion, expectedVersion, 'The service runs another CLI version than the one given to the script.');
+  if (packed) {
+    // The service runs from its own copy of the package under <home>/service/app-<version>.
+    const copies = (await readdir(path.join(home, 'service'))).filter(name => name.startsWith('app-'));
+    const markers = await Promise.all(copies.map(name => readFile(path.join(home, 'service', name, 'dist', 'install-check.txt'), 'utf8').catch(() => null)));
+    assert.ok(markers.includes(packed.marker), 'The service was not installed from the tarball given to the script.');
+  }
   assert.ok(existsSync(command), `The opentig command is missing from ${command}.`);
   const status = await opentig('service', 'status', '--home', home);
   assert.equal(status.code, 0, 'opentig service status reports a problem.');
@@ -106,6 +141,7 @@ try {
   if (!failure && uninstall?.code !== 0) failure = new Error('opentig service uninstall failed.');
   if (!failure && await ready(port)) failure = new Error('The service still answers after uninstalling it.');
   await rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  if (packed) await rm(packed.folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }
 if (failure) throw failure;
 console.log('Removed the service and its temporary home.');
