@@ -3,7 +3,7 @@ import type {
   Preferences,
   GhCliStatus,
 } from "../../src/shared/contracts";
-import { branchName, DemoRepository, repository, sampleDate, upstreamName } from "./model";
+import { branchName, DemoRepository, repository, sampleDate, sampleNameWithOwner, upstreamName } from "./model";
 import { currentBranch, sampleBranches } from "./branches.ts";
 import { demoPulls } from "./pulls";
 import { demoReleases } from "./releases";
@@ -43,6 +43,19 @@ const changed = () => {
   for (const listener of listeners) listener(repository.id, "unknown");
 };
 const noop = async () => {};
+/**
+ * GitHub answers a first read and a Refresh after a moment, so the placeholder rows and the turning
+ * Refresh icon show as they do with a real repository. Later reads answer at once, as the app's cache does.
+ */
+const githubPause = () => new Promise((resolve) => setTimeout(resolve, 700));
+const firstReads = new Set<string>();
+async function fromGitHub<T>(list: string, fresh: boolean | undefined, read: () => T): Promise<T> {
+  if (fresh || !firstReads.has(list)) {
+    firstReads.add(list);
+    await githubPause();
+  }
+  return read();
+}
 const githubStatus: GhCliStatus = {
   installed: true,
   availability: "ready",
@@ -403,9 +416,10 @@ export const opentig: OpenTigApi = {
   }),
   github: group<OpenTigApi["github"]>({
     status: async () => githubStatus,
-    repositoryInfo: async () => ({ isGitHub: true, nameWithOwner: null }),
+    // Links into it open here; its GitHub pages explain they exist only in the demo.
+    repositoryInfo: async () => ({ isGitHub: true, nameWithOwner: sampleNameWithOwner }),
     findPullRequestForBranch: async (_id, branch) => demoPulls.forBranch(branch),
-    listPullRequests: async (_id, states) => demoPulls.list(states),
+    listPullRequests: async (_id, states, fresh) => fromGitHub(`pulls:${states.join()}`, fresh, () => demoPulls.list(states)),
     getPullRequest: async (_id, number) => demoPulls.get(number),
     getPullRequestLiveState: async (_id, number) => demoPulls.liveState(number),
     getPullRequestConversation: async (_id, number) => demoPulls.conversation(number),
@@ -429,18 +443,18 @@ export const opentig: OpenTigApi = {
     getPullRequestFiles: async (_id, number, scope) => demoPulls.files(number, scope.commitOid),
     getPullRequestFileDiff: async (_id, number, scope, file) => demoPulls.fileDiff(number, file.path, scope.commitOid),
     getPullRequestCommits: async (_id, number) => ({ commits: demoPulls.get(number).commits, complete: true }),
-    listReleases: async () => demoReleases.list(),
+    listReleases: async (_id, fresh) => fromGitHub("releases", fresh, () => demoReleases.list()),
     getRelease: async (_id, tagName) => demoReleases.get(tagName),
     checkReleaseTag: async (_id, tagName) => demoReleases.checkTag(tagName),
     listWorkflows: async () => demoReleases.workflows(),
     listRunnableWorkflows: async () => demoActions.runnable(),
     getWorkflowTriggers: async (_id, path) => demoActions.triggers(path),
-    listActionRuns: async (_id, workflowId) => demoActions.list(workflowId),
+    listActionRuns: async (_id, workflowId) => fromGitHub(`runs:${workflowId}`, false, () => demoActions.list(workflowId)),
     getActionRun: async (_id, runId) => demoActions.get(runId),
     getActionJobLog: async (_id, jobId) => demoActions.log(jobId),
     repositoryAccount: async () => ({
       selection: { mode: "default" },
-      nameWithOwner: "demo/launchpad",
+      nameWithOwner: sampleNameWithOwner,
       login: "opentig-demo",
       source: null,
       state: "ready",

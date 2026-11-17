@@ -4,7 +4,7 @@ import { applyPatch } from 'diff';
 import { demoPulls } from '../demo/pulls.ts';
 import { demoReleases } from '../demo/releases.ts';
 import { demoActions } from '../demo/actions.ts';
-import { DemoRepository, initialFiles, sampleHistory } from '../demo/model.ts';
+import { DemoRepository, initialFiles, mainOid, sampleHistory } from '../demo/model.ts';
 import { sampleBranches } from '../demo/branches.ts';
 
 /** The tree a patch leaves: each file section applied to the file it names. */
@@ -249,7 +249,7 @@ test('the sample branches end on their pull requests and have last commits of di
   const branches = sampleBranches(repo);
   const local = branches.filter(branch => !branch.remote);
   assert.deepEqual(local.filter(branch => branch.current).map(branch => [branch.name, branch.oid]), [['feature/task-filters', repo.status().oid]]);
-  assert.ok(local.some(branch => branch.name === 'main' && branch.oid === 'a'.repeat(40)));
+  assert.ok(local.some(branch => branch.name === 'main' && branch.oid === mainOid));
   for (const branch of branches.filter(item => !/(^|\/)main$/.test(item.name))) {
     const pull = demoPulls.forBranch(branch.name.replace(/^origin\//, ''));
     assert.equal(branch.oid, pull.headRefOid, branch.name);

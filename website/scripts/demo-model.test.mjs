@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyPatch } from "diff";
-import { DemoRepository, initialFiles, mainOid, patch, sampleHistory } from "../demo/model.ts";
+import { DemoRepository, initialFiles, isSampleGitHubLink, mainOid, patch, sampleHistory, sampleNameWithOwner, sampleOid } from "../demo/model.ts";
 const filter = "src/filter-tasks.js";
 const tests = "test/filter-tasks.test.js";
 /** Working changes the sample workflow leaves for later, including the untracked changelog. */
@@ -184,7 +184,7 @@ test("the first push runs into a teammate's commit, and pulling puts the local c
   assert.equal(repo.status().ahead, 2);
 
   const refused = repo.push();
-  assert.deepEqual(refused, { status: "behind", ahead: 2, behind: 1, incoming: ["4e7a1d3 Cover an empty task list"], refused: true });
+  assert.deepEqual(refused, { status: "behind", ahead: 2, behind: 1, incoming: [`${sampleOid("Cover an empty task list").slice(0, 7)} Cover an empty task list`], refused: true });
   assert.deepEqual([repo.status().ahead, repo.status().behind], [2, 1]);
   assert.equal(repo.commits[0].info.upstreamState, "local-only");
   // While the branch is behind, nothing is sent again.
@@ -325,4 +325,27 @@ test("file operations can be undone and redone", () => {
   repo.track("Create file", () => repo.createFile("", "NOTES.md"));
   assert.equal(repo.fileHistoryState().canRedo, false);
   assert.equal(repo.undoFileOperation("redo").status, "empty");
+});
+
+test("sample commits have distinct full hashes, also after commits made in the demo and a rebasing pull", () => {
+  const repo = new DemoRepository();
+  repo.stage([filter]);
+  repo.commit("Trim the task filter query");
+  repo.push();
+  repo.pull();
+  const oids = [...sampleHistory.map((commit) => commit.oid), ...repo.commits.map((commit) => commit.info.oid)];
+  for (const oid of oids) assert.match(oid, /^[0-9a-f]{40}$/);
+  assert.equal(new Set(repo.commits.map((commit) => commit.info.shortOid)).size, repo.commits.length);
+  assert.equal(new Set(sampleHistory.map((commit) => commit.oid)).size, sampleHistory.length);
+});
+
+test("only links to the sample's own GitHub pages are held back", () => {
+  assert.equal(isSampleGitHubLink(`https://github.com/${sampleNameWithOwner}`), true);
+  assert.equal(isSampleGitHubLink(`https://github.com/${sampleNameWithOwner}/pull/19`), true);
+  assert.equal(isSampleGitHubLink(`https://GitHub.com/${sampleNameWithOwner.toUpperCase()}/commit/${mainOid}`), true);
+  // The sample's pull requests and runs have no address of their own.
+  assert.equal(isSampleGitHubLink(""), true);
+  assert.equal(isSampleGitHubLink(`https://github.com/${sampleNameWithOwner}-fork/pull/1`), false);
+  assert.equal(isSampleGitHubLink("https://github.com/someone-else/launchpad"), false);
+  assert.equal(isSampleGitHubLink("https://git-scm.com/downloads"), false);
 });
