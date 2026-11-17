@@ -30,6 +30,10 @@ interface KnownStep {
 }
 
 interface PendingJump {
+  /** The step it is going to. */
+  trail: string;
+  target: number;
+  /** Running while the jump is waited for; null once it is taken as missed. */
   timer: number | null;
   /** What a jump taken as missed took out of the lists, to put back if it arrives after all. */
   missed: { steps: KnownStep[]; top: number } | null;
@@ -151,9 +155,13 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     jump = null;
     window.removeEventListener('beforeunload', abandonJump);
   };
-  /** A move arrived: if it was the jump taken as missed, its steps come back as they were. */
-  const jumpArrived = () => {
-    const missed = jump?.missed;
+  /**
+   * A move arrived. Only the jump's own step arriving puts back what its miss took out: any other move,
+   * as a Back pressed after a miss, says nothing about the steps the browser did not reach.
+   */
+  const moveArrived = (stored: StoredEntry | null) => {
+    const arrived = jump !== null && stored?.trail === jump.trail && stored.index === jump.target;
+    const missed = arrived ? jump?.missed : null;
     abandonJump();
     if (!missed) return;
     const ids = new Set(kept.steps.map((step) => `${step.trail}\n${step.index}`));
@@ -185,8 +193,8 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
   };
   const onPopState = (event: PopStateEvent) => {
     if (writeTimer !== null) { window.clearTimeout(writeTimer); writeTimer = null; }
-    jumpArrived();
     const stored = readStored(event.state);
+    moveArrived(stored);
     let entry: NavigationEntry;
     if (stored) {
       if (stored.trail !== trail) joinTrail(stored.trail, stored.index, false);
@@ -314,11 +322,12 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     },
     go(offset) {
       // The browser moves through its own history, so the address and what its Back and Forward do stay in step.
-      // One jump at a time: another asked for before the first arrives is ignored.
-      if (jump || !Number.isSafeInteger(offset) || offset === 0 || index + offset < 0 || index + offset > top) return;
+      // One jump at a time: another asked for before the first arrives is ignored. One taken as missed no
+      // longer holds the next back; it gives up its place, and the steps it took out stay out.
+      if (jump?.timer != null || !Number.isSafeInteger(offset) || offset === 0 || index + offset < 0 || index + offset > top) return;
       flush();
       const target = index + offset;
-      const pending: PendingJump = { timer: null, missed: null };
+      const pending: PendingJump = { trail, target, timer: null, missed: null };
       // A step the browser no longer holds is never reached: nothing moves, so the view and the address still
       // agree, and the step and those past it leave the lists.
       pending.timer = window.setTimeout(() => {

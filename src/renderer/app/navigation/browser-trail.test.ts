@@ -299,6 +299,26 @@ describe('a jump that takes its time', () => {
     expect(trail.steps().back).toHaveLength(3);
   });
 
+  it('leaves out what a missed jump took out when another move arrives, and lets the next jump go', async () => {
+    const trail = slowTrail();
+    const realGo = window.history.go.bind(window.history);
+    const go = vi.spyOn(window.history, 'go').mockImplementation(() => undefined);
+    const missed = new Promise<void>((resolve) => { trail.onMissedJump(resolve); });
+    trail.go(-3);
+    await missed;
+    expect(trail.steps().back.map((step) => step.location.view)).toEqual(['changes', 'history']);
+    // A Back of one step is not the jump arriving: the step the browser did not reach stays out.
+    const back = landed(trail);
+    trail.back();
+    expect((await back).location.view).toBe('changes');
+    expect(trail.steps().back.map((step) => step.location.view)).toEqual(['history']);
+    // And the missed jump no longer holds the next one back.
+    go.mockImplementation((offset) => realGo(offset));
+    const arrival = landed(trail);
+    trail.go(-1);
+    expect((await arrival).location.view).toBe('history');
+  });
+
   it('takes one jump at a time', () => {
     const trail = slowTrail();
     const go = vi.spyOn(window.history, 'go').mockImplementation(() => undefined);
