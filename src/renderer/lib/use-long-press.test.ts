@@ -215,3 +215,55 @@ it('does nothing while disabled', () => {
   expect(onLongPress).not.toHaveBeenCalled();
   expect(event.defaultPrevented).toBe(false);
 });
+
+describe('holding a button that a mouse holds too', () => {
+  const onHold = vi.fn<() => boolean | void>();
+  const onButtonClick = vi.fn();
+  function HeldButton() {
+    return createElement('button', { className: 'held', onClick: onButtonClick, ...useLongPress(onHold, { mouse: true }) }, 'Back');
+  }
+  beforeEach(() => {
+    onHold.mockReset();
+    act(() => root.render(createElement(HeldButton)));
+  });
+
+  it('lets the next click through when the press was let go elsewhere, as on a menu it opened', () => {
+    pointer('pointerdown', part('held'), { pointerType: 'mouse' });
+    hold(450);
+    expect(onHold).toHaveBeenCalledOnce();
+    pointer('pointerup', document.body, { pointerType: 'mouse' });
+    act(() => part('held').click());
+    expect(onButtonClick).toHaveBeenCalledOnce();
+  });
+
+  it('does not fire for a pointer that left before the delay, however little it moved', () => {
+    pointer('pointerdown', part('held'), { pointerType: 'mouse' });
+    const out = new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body });
+    Object.assign(out, { pointerType: 'mouse', isPrimary: true, pointerId: 1 });
+    act(() => { part('held').dispatchEvent(out); });
+    hold(1000);
+    expect(onHold).not.toHaveBeenCalled();
+  });
+
+  it('runs once when Windows follows a held finger or pen with contextmenu after it lifts', () => {
+    pointer('pointerdown', part('held'), { pointerType: 'pen' });
+    hold(450);
+    pointer('pointerup', part('held'), { pointerType: 'pen' });
+    act(() => { part('held').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); });
+    expect(onHold).toHaveBeenCalledOnce();
+    // A right click later is a gesture of its own.
+    hold(1000);
+    act(() => { part('held').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); });
+    expect(onHold).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the click when the hold had nothing to show', () => {
+    onHold.mockReturnValue(false);
+    pointer('pointerdown', part('held'), { pointerType: 'touch' });
+    hold(450);
+    pointer('pointerup', part('held'), { pointerType: 'touch' });
+    act(() => part('held').click());
+    expect(onHold).toHaveBeenCalledOnce();
+    expect(onButtonClick).toHaveBeenCalledOnce();
+  });
+});

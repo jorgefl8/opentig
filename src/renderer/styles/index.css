@@ -340,6 +340,16 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-history [data-size^="icon"]:disabled { opacity: 0.4; }
   /* A path quoted in a notice reads as a path, not as part of the message. */
   .notice-path { padding: 0 4px; border-radius: 4px; background: color-mix(in oklch, currentColor 12%, transparent); font-family: var(--font-mono); overflow-wrap: anywhere; }
+  /* The steps Back and Forward list: what each shows, and under it where. */
+  .trail-menu { width: min(380px, calc(100vw - 24px)); max-height: min(480px, calc(100vh - 80px)); overflow-y: auto; }
+  .trail-menu-heading { padding: 6px 8px 4px; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .trail-menu .trail-step { min-height: 40px; padding-block: 4px; }
+  .trail-menu .trail-step > svg { align-self: flex-start; margin-top: 3px; color: var(--muted-foreground); }
+  .trail-step-text { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+  /* Wrapped rather than cut, so a long title is read whole without a tooltip of its own. */
+  .trail-menu .trail-step-text > strong, .trail-menu .trail-step-text > small { overflow-wrap: anywhere; }
+  .trail-menu .trail-step-text > strong { font-weight: var(--weight-medium); }
+  .trail-menu .trail-step-text > small { color: var(--muted-foreground); font-size: var(--text-meta); }
   .toolbar-history-divider { width: 1px; height: 18px; flex: none; margin-inline: 4px; background: var(--border); }
   .toolbar-branch-pr-group { display: inline-flex; align-items: center; gap: 2px; flex: none; }
   .toolbar-branch-pr-group.is-mobile { display: flex; width: 100%; }
@@ -2008,6 +2018,14 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   .pr-commit-menu { width: min(40rem, var(--available-width)); }
   .pr-commit-select:focus-visible { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 30%, transparent); }
   .diff-file-count { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
+  /* Narrows a pull request's files by path; the list keeps its place in the toolbar. */
+  .diff-file-filter { display: flex; width: min(220px, 30%); min-width: 120px; flex: 0 1 auto; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); padding: 0 8px; }
+  .diff-file-filter:focus-within { border-color: color-mix(in oklch, var(--primary) 45%, var(--border)); }
+  .diff-file-filter > svg { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
+  .diff-file-filter input { min-width: 0; height: 28px; flex: 1; border: 0; background: transparent; color: var(--foreground); font-size: var(--text-ui); outline: none; }
+  .diff-file-filter input::-webkit-search-cancel-button { display: none; }
+  .diff-file-size { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
+  .pr-files-omitted { margin: 0; border-bottom: 1px solid var(--border); padding: 8px 16px; color: var(--muted-foreground); font-size: var(--text-meta); }
   .diff-total-stats, .diff-file-stats { display: inline-flex; flex: none; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-medium); }
   .diff-total-stats .add, .diff-file-stats .add { color: var(--diff-added); }
   .diff-total-stats .del, .diff-file-stats .del { color: var(--diff-deleted); }

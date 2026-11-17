@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { useQuery } from '@tanstack/react-query';
 import { IconExternalLink, IconRefresh } from '@tabler/icons-react';
@@ -16,6 +16,7 @@ import { PullRequestComposer } from './PullRequestComposer';
 import { PullRequestEntryEditor, PullRequestEntryMenu } from './PullRequestEntryActions';
 import { hasViewerDraft, pullRequestEntryEditDraft } from './viewer-drafts';
 import { Spinner } from '@/components/ui/spinner';
+import { noteViewState, restoredViewState } from '@/features/viewer/viewer-memory';
 
 
 const VERDICT_TEXT: Record<NonNullable<PullRequestConversationEntry['verdict']>, { text: string; className?: string }> = {
@@ -38,7 +39,10 @@ export function PullRequestConversationView({ repositoryId, number, url, live, a
   draft: string;
   onDraftChange(value: string): void;
 }) {
-  const [hideBots, setHideBots] = useState(false);
+  // Back brings the conversation back with bots hidden if they were at that step.
+  const memoryKey = `${repositoryId}:pull:${number}:conversation`;
+  const [hideBots, setHideBots] = useState(() => restoredHideBots(restoredViewState(memoryKey)));
+  useEffect(() => { noteViewState(memoryKey, { hideBots }); }, [hideBots, memoryKey]);
   const query = useQuery(pullRequestConversationQueryOptions(repositoryId, number));
   const conversation = query.data;
   const entries = conversation?.entries ?? [];
@@ -64,6 +68,10 @@ export function PullRequestConversationView({ repositoryId, number, url, live, a
       {live && active && <PullRequestComposer repositoryId={repositoryId} number={number} live={live} draft={draft} onDraftChange={onDraftChange} onRefresh={() => void query.refetch()} />}
     </section>
   );
+}
+
+function restoredHideBots(value: unknown): boolean {
+  return Boolean(value) && typeof value === 'object' && (value as Record<string, unknown>).hideBots === true;
 }
 
 function ConversationEntry({ entry, repositoryId, number }: { entry: PullRequestConversationEntry; repositoryId: string; number: number }) {

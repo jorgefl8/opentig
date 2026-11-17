@@ -93,13 +93,15 @@ describe('GitHub data between visits', () => {
     const pullRequest = queryKeys.pullRequest('repo', 1);
     const runs = queryKeys.actionRuns('repo', null);
     const code = [...queryKeys.pullRequestDiff('repo', 1), 'base', 'head'];
+    const files = [...queryKeys.pullRequestFiles('repo', 1), 'base', 'head', null];
     const status = queryKeys.status('repo');
-    await Promise.all([pullRequest, runs, code, status].map(read));
+    await Promise.all([pullRequest, runs, code, files, status].map(read));
     // Past the five minutes everything else is kept for.
     await vi.advanceTimersByTimeAsync(6 * 60_000);
     expect(client.getQueryData(pullRequest)).toBe('read');
     expect(client.getQueryData(runs)).toBe('read');
     expect(client.getQueryData(code)).toBeUndefined();
+    expect(client.getQueryData(files)).toBeUndefined();
     expect(client.getQueryData(status)).toBeUndefined();
     // Reading it again with the app's usual options doesn't shorten its life.
     await client.fetchQuery({ queryKey: pullRequest, queryFn: async () => 'read again', gcTime: 5 * 60_000 });

@@ -117,3 +117,35 @@ it('does not retain cancelled or cleared in-flight models', async () => {
   finalController.abort();
   await expect(final).rejects.toMatchObject({ name: 'AbortError' });
 });
+
+it('keeps what a closed document parsed last, so the same diff opened again needs no parse, and never for a changed one', async () => {
+  const workers: DiffParseWorker[] = [];
+  const factory = () => { const worker = fakeWorker(); workers.push(worker); return worker; };
+  const patch = largePatch(10_001, 24, 'kept-after-closing.ts');
+  const closing = new DiffParser(factory);
+  const pending = closing.parse(patch, new AbortController().signal);
+  deliver(workers[0]!, { revision: 1, files: buildDiffFileEntries(patch) });
+  await pending;
+  closing.release();
+
+  // Back opens the same document anew, with a parser of its own.
+  const reopened = new DiffParser(factory);
+  expect(reopened.parsed(patch)).toEqual(buildDiffFileEntries(patch));
+  expect(workers).toHaveLength(1);
+  // The same file with other content is not the diff that was parsed.
+  expect(reopened.parsed(largePatch(10_002, 24, 'kept-after-closing.ts'))).toBeUndefined();
+});
+
+it('keeps for the next document the parse as it was made, not as the viewer has since changed it', async () => {
+  const workers: DiffParseWorker[] = [];
+  const factory = () => { const worker = fakeWorker(); workers.push(worker); return worker; };
+  const patch = largePatch(10_001, 24, 'changed-by-the-viewer.ts');
+  const closing = new DiffParser(factory);
+  const pending = closing.parse(patch, new AbortController().signal);
+  deliver(workers[0]!, { revision: 1, files: buildDiffFileEntries(patch) });
+  const shown = await pending;
+  // The renderer may change the metadata it was given.
+  shown[0]!.fileDiff.additionLines.length = 0;
+  closing.release();
+  expect(new DiffParser(factory).parsed(patch)).toEqual(buildDiffFileEntries(patch));
+});

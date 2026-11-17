@@ -4,11 +4,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MobileChromeContext, NO_MOBILE_CHROME_HOSTS } from '@/components/mobile-chrome-context';
-import { DiffWorkspace } from './DiffWorkspace';
+import { DiffWorkspace, PullRequestFilesWorkspace } from './DiffWorkspace';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { largePatch, MIXED_PATCH } from './diff-parser.fixtures';
 import { buildDiffFileEntries } from './patch-utils';
-import { DiffParser, type DiffParseRequest, type DiffParseResponse } from './diff-parser';
+import { forgetClosedDiffs, type DiffParseRequest, type DiffParseResponse } from './diff-parser';
 
 const state = vi.hoisted(() => ({ workers: [] as Array<{ request?: DiffParseRequest; onmessage: ((event: MessageEvent<DiffParseResponse>) => void) | null; terminate: ReturnType<typeof vi.fn> }> }));
 vi.mock('./diff-parse.worker?worker', () => ({ default: class {
@@ -35,6 +35,7 @@ beforeEach(() => {
   });
   state.workers.length = 0;
   observers.clear();
+  forgetClosedDiffs();
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
@@ -263,8 +264,7 @@ it('shows parse failures instead of stale file rows', async () => {
   expect(container.querySelectorAll('.diff-file-section')).toHaveLength(0);
 });
 
-it('reuses results within a document and clears the cache on document changes and unmount', async () => {
-  const clear = vi.spyOn(DiffParser.prototype, 'clearCache');
+it('reuses results within a document, and keeps only the last one of a closed document for the next to open', async () => {
   const first = largePatch(10_001, 24, 'first.ts');
   const second = largePatch(10_001, 24, 'second.ts');
   await render(first);
@@ -274,14 +274,17 @@ it('reuses results within a document and clears the cache on document changes an
   await render(first);
   expect(state.workers).toHaveLength(2);
   expect(container.textContent).toContain('first.ts');
+  // Opened anew, as Back does, the diff the closed document showed last needs no parse.
   await render(first, false, 'other-document');
-  expect(clear).toHaveBeenCalledOnce();
+  expect(state.workers).toHaveLength(2);
+  expect(container.textContent).toContain('first.ts');
+  expect(container.textContent).not.toContain('Preparing diff…');
+  // What it had parsed before that was let go with it.
+  await render(second, false, 'third-document');
   expect(state.workers).toHaveLength(3);
   expect(container.textContent).toContain('Preparing diff…');
   await act(async () => root.unmount());
-  expect(clear).toHaveBeenCalledTimes(2);
   expect(state.workers[2]!.terminate).toHaveBeenCalledOnce();
-  clear.mockRestore();
 });
 
 it('preserves collapse choices and the scroll container across background patch refreshes', async () => {
@@ -309,7 +312,7 @@ it('preserves collapse choices and the scroll container across background patch 
   expect(scroll.scrollTop).toBe(600);
   expect(container.querySelector('.diff-file-toggle')?.getAttribute('aria-expanded')).toBe('false');
   await render(second, false, 'other-document');
-  await finish(2, second);
+  expect(state.workers).toHaveLength(2);
   expect(container.querySelector('.diff-workspace-scroll')).not.toBe(scroll);
   expect(container.querySelector('.diff-file-toggle')?.getAttribute('aria-expanded')).toBe('true');
 });
@@ -420,4 +423,67 @@ describe('file fold animation', () => {
     expect(animatesFileToggle({ additions: 380, deletions: 40 }, 6)).toBe(false);
     expect(animatesFileToggle({ additions: 3, deletions: 1 }, 41)).toBe(false);
   });
+});
+
+describe('as a pull request’s files', () => {
+  it('stops Expand all at its budget, leaving the rest folded with a line that says so', async () => {
+    // Each diff about 640 KB by its changed lines, though each file is small.
+    const file = (index: number) => ({ path: `src/part-${index}.ts`, oldPath: null, kind: 'modified' as const, additions: 2000, deletions: 2000, binary: false, size: 200 * 1024 });
+    // Still on their way, so Expand all goes by its estimates.
+    const readFile = vi.fn(() => new Promise<never>(() => {}));
+    await act(async () => root.render(createElement(TooltipProvider, null, createElement(PullRequestFilesWorkspace, {
+      contentKey: 'pull', files: Array.from({ length: 10 }, (_, index) => file(index)), diffView: 'unified', themeType: 'light', wrapLines: false,
+      scopeControl: null, foldMemoryKey: 'repo:pull:1:all', readFile,
+    }))));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand all files"]')!.click());
+    // Six such diffs fit in 4 MB; a seventh would not.
+    const toggles = [...container.querySelectorAll<HTMLButtonElement>('.diff-file-toggle')];
+    expect(toggles.map((toggle) => toggle.getAttribute('aria-expanded'))).toEqual([...Array(6).fill('true'), ...Array(4).fill('false')]);
+    expect(container.textContent).toContain('4 more files were left folded, so Expand all reads at most 4.0 MB.');
+    expect(container.querySelector('[aria-label="Collapse all files"]')).not.toBeNull();
+    // One held back still unfolds by hand.
+    await act(async () => toggles[8]!.click());
+    expect(toggles[8]!.getAttribute('aria-expanded')).toBe('true');
+  });
+});
+
+describe('the budget of Expand all for a pull request', () => {
+  const listed = (path: string, overrides: object = {}) => ({ path, oldPath: null, kind: 'modified' as const, additions: 1, deletions: 1, binary: false, size: 120 * 1024, ...overrides });
+  async function renderFiles(files: ReturnType<typeof listed>[], patchOf: (path: string) => string) {
+    const readFile = vi.fn(async (file: { path: string }) => ({ path: file.path, patch: patchOf(file.path), binary: false, truncated: false, lineCount: 4 }));
+    await act(async () => root.render(createElement(TooltipProvider, null, createElement(PullRequestFilesWorkspace, {
+      contentKey: 'budget', files, diffView: 'unified', themeType: 'light', wrapLines: false, scopeControl: null, foldMemoryKey: 'repo:pull:2:all', readFile,
+    }))));
+  }
+  const expanded = () => [...container.querySelectorAll('.diff-file-toggle')].filter((toggle) => toggle.getAttribute('aria-expanded') === 'true').length;
+
+  it('counts a diff by its changed lines, not by the size of its file, so small changes to large files all unfold', async () => {
+    await renderFiles([
+      ...Array.from({ length: 40 }, (_, index) => listed(`src/card-${index}.ts`)),
+      listed('logo.png', { binary: true, additions: 0, deletions: 0, size: 900 * 1024 }),
+      listed('moved.ts', { oldPath: 'old.ts', kind: 'renamed', additions: 0, deletions: 0, size: 900 * 1024 }),
+    ], (path) => largePatch(1, 4, path));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand all files"]')!.click());
+    expect(expanded()).toBe(42);
+  });
+
+  it('counts what a diff weighed once read, so a large one unfolded by hand leaves less for the rest', async () => {
+    // The first file's diff is nearly 4 MB though it changes few lines.
+    await renderFiles(Array.from({ length: 5 }, (_, index) => listed(`src/part-${index}.ts`)), (path) => largePatch(1, path === 'src/part-0.ts' ? 4_193_000 : 4, path));
+    const toggles = [...container.querySelectorAll<HTMLButtonElement>('.diff-file-toggle')];
+    await act(async () => toggles[0]!.click());
+    for (let tick = 0; tick < 3; tick++) await act(async () => { await Promise.resolve(); });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand all files"]')!.click());
+    expect(expanded()).toBe(2);
+  });
+});
+
+it('writes out a tab or a newline in a file’s name rather than laying it out', async () => {
+  await act(async () => root.render(createElement(TooltipProvider, null, createElement(PullRequestFilesWorkspace, {
+    contentKey: 'names', files: [{ path: 'src/tab\there\nname.ts', oldPath: null, kind: 'added', additions: 1, deletions: 0, binary: false, size: 10 }],
+    diffView: 'unified', themeType: 'light', wrapLines: false, scopeControl: null, foldMemoryKey: 'repo:pull:3:all', readFile: () => new Promise<never>(() => {}),
+  }))));
+  const shown = container.querySelector('.diff-file-path')!.textContent!;
+  expect(shown).toBe('src/tab\\there\\nname.ts');
+  expect(shown).not.toMatch(/[\t\n]/);
 });

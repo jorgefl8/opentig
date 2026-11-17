@@ -1,4 +1,4 @@
-import type { CommentOnPullRequestInput, DeletePullRequestEntryInput, DiffResult, EditPullRequestEntryInput, PullRequestActionInput, PullRequestActionResult, PullRequestCheck, PullRequestCheckState, PullRequestConversationEntry, PullRequestDetails, PullRequestLiveState, PullRequestParticipant, PullRequestStack, PullRequestStackMembership, PullRequestState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../src/shared/contracts';
+import type { CommentOnPullRequestInput, DeletePullRequestEntryInput, DiffResult, EditPullRequestEntryInput, PullRequestActionInput, PullRequestActionResult, PullRequestCheck, PullRequestCheckState, PullRequestConversationEntry, PullRequestDetails, PullRequestFile, PullRequestFileList, PullRequestLiveState, PullRequestParticipant, PullRequestStack, PullRequestStackMembership, PullRequestState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../src/shared/contracts';
 import { branchName, changedFiles, filePatch, initialFiles, mainOid, sampleDate, sampleHistory, type SampleCommit, type Tree } from './model.ts';
 
 /** One commit of a pull request, as the trees before and after it. */
@@ -156,6 +156,24 @@ function requireSample(number: number) {
 function result(text: string): DiffResult {
   return { path: '', patch: text, binary: false, truncated: false, lineCount: text.split('\n').length };
 }
+/** Each file's section of a sample patch, with what a file list says of it. */
+function patchSections(patch: string): Array<{ file: PullRequestFile; patch: string }> {
+  return patch.split(/^(?=diff --git )/m).filter(Boolean).map(section => {
+    const header = /^diff --git a\/(.+?) b\/(.+)$/m.exec(section);
+    const renamedFrom = /^rename from (.+)$/m.exec(section)?.[1] ?? null;
+    const path = /^rename to (.+)$/m.exec(section)?.[1] ?? header?.[2] ?? '';
+    const lines = section.slice(Math.max(0, section.indexOf('\n@@'))).split('\n');
+    const kind = /^new file mode/m.test(section) ? 'added' : /^deleted file mode/m.test(section) ? 'deleted' : renamedFrom ? 'renamed' : 'modified';
+    return {
+      patch: section,
+      file: {
+        path, oldPath: renamedFrom, kind, binary: false, size: section.length,
+        additions: lines.filter(line => line.startsWith('+') && !line.startsWith('+++')).length,
+        deletions: lines.filter(line => line.startsWith('-') && !line.startsWith('---')).length,
+      },
+    };
+  });
+}
 /** The demo's signed-in GitHub account, which authors simulated comments and reviews. */
 const viewer = person('opentig-demo');
 const unsupported = (what: string): never => {
@@ -287,6 +305,18 @@ export const demoPulls = {
       if (layer) return result(changedFiles(layer.before, layer.after, layer.renames).map(file => filePatch(file, layer.before, layer.after)).join(''));
     }
     throw new Error('Choose a commit from a sample pull request.');
+  },
+  /** The files of a pull request, or of one of its commits, listed from the same sample patch its whole diff shows. */
+  files(number: number, commitOid?: string): PullRequestFileList {
+    const patch = commitOid ? this.commitDiff(commitOid).patch : this.diff(number).patch;
+    return { source: 'git', omitted: 0, complete: true, files: patchSections(patch).map(({ file }) => file) };
+  },
+  /** One file's part of that patch. */
+  fileDiff(number: number, path: string, commitOid?: string): DiffResult {
+    const patch = commitOid ? this.commitDiff(commitOid).patch : this.diff(number).patch;
+    const section = patchSections(patch).find(({ file }) => file.path === path);
+    if (!section) throw new Error('Choose a file from the sample pull request.');
+    return { ...result(section.patch), path };
   },
   /** A push reached the branch: while its pull request is open, the pull request has those commits too. */
   branchPushed(commits: SampleCommit[]) {

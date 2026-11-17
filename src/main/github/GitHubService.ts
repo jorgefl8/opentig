@@ -5,8 +5,8 @@ import type { CliDetection } from '../ai/cli-selection';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { ActionJobLog, ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLineCounts, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
-import { AiOperationError, GhOperationError, serializeError } from '../../shared/errors';
+import type { ActionJobLog, ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, PullRequestFileList, PullRequestFilesScope, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLineCounts, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import { AiOperationError, GhOperationError, GitOperationError, serializeError } from '../../shared/errors';
 import type { KeptAnswerSink, KeptRefreshOutcome } from '../../shared/kept-reads';
 import { GitHubReadCache, remoteFingerprint, type GitHubReadScope } from './GitHubReadCache';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
@@ -761,6 +761,46 @@ export class GitHubService {
     return this.shareRead(repositoryId, ['diff', range], () => local
       ? this.localGit.rangeDiff(local.cwd, local)
       : this.readGitHubDiff(repositoryId, prNumber, fetchFailure));
+  }
+
+  /**
+   * The files a pull request, or one of its commits, changes, read from Git in the clone after
+   * downloading the PR's commits if needed. Without them, GitHub's whole diff, as `getPullRequestDiff`
+   * gives it, which is all GitHub can offer.
+   */
+  async getPullRequestFiles(repositoryId: string, prNumber: number, scope: PullRequestFilesScope): Promise<PullRequestFileList> {
+    const range = { number: prNumber, baseOid: scope.baseOid, headOid: scope.headOid };
+    let fetchFailure = '';
+    const local = await this.localRange(repositoryId, range, (message) => { fetchFailure = message; });
+    return this.shareRead(repositoryId, ['files', scope], async (): Promise<PullRequestFileList> => {
+      if (local) {
+        try { return { source: 'git', ...await this.localGit.files(local.cwd, scope) }; }
+        catch (error) {
+          // A commit missing from the downloaded history can still come from GitHub; the range itself cannot,
+          // nor a commit that is not the pull request's.
+          if (!scope.commitOid || (error instanceof GitOperationError && error.detail.code === 'INVALID_ARGUMENT')) throw error;
+        }
+      }
+      if (scope.commitOid) return { source: 'github', diff: await this.getPullRequestCommitDiff(repositoryId, scope.commitOid) };
+      // GitHub diffs the pull request as it is now, which is the code asked for while its head is the same: the
+      // base's tip moves with every merge into it, but the diff is from where the head branched off. The details
+      // were read moments ago to ask for this code, so they come from what the server kept.
+      const details = await this.getPullRequest(repositoryId, prNumber);
+      if (details.headRefOid !== scope.headOid) {
+        throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation: 'gh-pr-files', message: 'This pull request has new commits. Refresh to see them.', retryable: true });
+      }
+      return { source: 'github', diff: await this.readGitHubDiff(repositoryId, prNumber, fetchFailure) };
+    });
+  }
+
+  /**
+   * One file's diff in a pull request or one of its commits, from Git in the clone. The list read
+   * downloaded the commits, so this goes straight to Git: a commit gone since is an error, which a
+   * client answers by reading the list again.
+   */
+  async getPullRequestFileDiff(repositoryId: string, prNumber: number, scope: PullRequestFilesScope, file: { path: string; oldPath: string | null }): Promise<DiffResult> {
+    const cwd = this.repositories.get(repositoryId).path;
+    return this.shareRead(repositoryId, ['file-diff', prNumber, scope, file.path, file.oldPath], () => this.localGit.fileDiff(cwd, scope, file.path, file.oldPath));
   }
 
   /** Without the commits locally (offline remote, shallow history, an unusual remote layout) GitHub's own diff still covers PRs within its limits. */

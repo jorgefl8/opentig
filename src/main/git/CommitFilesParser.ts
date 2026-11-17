@@ -34,7 +34,7 @@ export function parseCommitFiles(nameStatusOutput: string, numstatOutput: string
   return files;
 }
 
-function parseNumstat(output: string): Map<string, NumstatEntry> {
+export function parseNumstat(output: string): Map<string, NumstatEntry> {
   const stats = new Map<string, NumstatEntry>();
   const tokens = output.split('\0');
   for (let index = 0; index < tokens.length; index += 1) {
@@ -57,4 +57,43 @@ function parseNumstat(output: string): Map<string, NumstatEntry> {
     if (path) stats.set(path, entry);
   }
   return stats;
+}
+
+/** A changed file with the blobs on either side, which tell its size without reading its diff. */
+export interface RawCommitFile extends CommitFile {
+  oldBlob: string | null;
+  newBlob: string | null;
+}
+
+const NO_BLOB = /^0+$/;
+/** A submodule's entry names a commit, not a blob. */
+const GITLINK_MODE = '160000';
+
+/**
+ * Combines the NUL-delimited outputs of `--raw -z --no-abbrev` and `--numstat -z`
+ * for the same comparison into a per-file summary with each side's blob.
+ */
+export function parseRawCommitFiles(rawOutput: string, numstatOutput: string): RawCommitFile[] {
+  const stats = parseNumstat(numstatOutput);
+  const files: RawCommitFile[] = [];
+  const tokens = rawOutput.split('\0');
+  for (let index = 0; index < tokens.length; index += 1) {
+    const meta = tokens[index];
+    if (!meta?.startsWith(':')) continue;
+    const [oldMode = '', newMode = '', oldOid = '', newOid = '', status = ''] = meta.slice(1).split(' ');
+    const kind = STATUS_KINDS[status[0]?.toUpperCase() ?? ''];
+    const renamed = /^(?:R|C)\d*$/.test(status);
+    const first = tokens[index + 1];
+    const second = renamed ? tokens[index + 2] : undefined;
+    index += renamed ? 2 : 1;
+    const path = renamed ? second : first;
+    if (!kind || !path) continue;
+    const blob = (oid: string, mode: string) => /^[0-9a-f]{40,64}$/i.test(oid) && !NO_BLOB.test(oid) && mode !== GITLINK_MODE ? oid : null;
+    const stat = stats.get(path) ?? { additions: 0, deletions: 0, binary: false };
+    files.push({
+      path, oldPath: renamed ? first ?? null : null, kind, additions: stat.additions, deletions: stat.deletions, binary: stat.binary,
+      oldBlob: blob(oldOid, oldMode), newBlob: blob(newOid, newMode),
+    });
+  }
+  return files;
 }

@@ -173,6 +173,8 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.listPullRequestLineCounts': command(IPC.githubPrListLineCounts, 'gh-pr-list-line-counts', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.getPullRequestDiff': command(IPC.githubPrDiff, 'gh-pr-diff', false, { timeoutMs: PULL_REQUEST_DIFF_TIMEOUT_MS }),
   'github.getPullRequestCommitDiff': command(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
+  'github.getPullRequestFiles': command(IPC.githubPrFiles, 'gh-pr-files', false, { timeoutMs: PULL_REQUEST_DIFF_TIMEOUT_MS }),
+  'github.getPullRequestFileDiff': command(IPC.githubPrFileDiff, 'gh-pr-file-diff', false, { timeoutMs: PULL_REQUEST_DIFF_TIMEOUT_MS }),
   'github.getPullRequestCommits': command(IPC.githubPrCommits, 'gh-pr-commits', false, { timeoutMs: PULL_REQUEST_COMMITS_TIMEOUT_MS }),
   'github.createPullRequest': command(IPC.githubPrCreate, 'gh-pr-create', true, { timeoutMs: PULL_REQUEST_CREATE_TIMEOUT_MS }),
   'github.listReleases': command(IPC.githubReleaseList, 'gh-release-list', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),

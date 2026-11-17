@@ -191,7 +191,7 @@ describe('pull request live state refresh', () => {
 describe('queriesOutdatedByLiveState', () => {
   it('refreshes details, commits and code when the head changes', () => {
     expect(queriesOutdatedByLiveState('repo', live(), live({ headRefOid: 'b', updatedAt: '2' }))).toEqual([
-      queryKeys.pullRequest('repo', 1), queryKeys.pullRequestConversation('repo', 1), queryKeys.pullRequestCommits('repo', 1), queryKeys.pullRequestDiff('repo', 1),
+      queryKeys.pullRequest('repo', 1), queryKeys.pullRequestConversation('repo', 1), queryKeys.pullRequestCommits('repo', 1), queryKeys.pullRequestDiff('repo', 1), queryKeys.pullRequestFiles('repo', 1),
     ]);
   });
 

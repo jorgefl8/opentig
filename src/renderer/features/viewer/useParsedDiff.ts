@@ -14,9 +14,13 @@ const failure = (reason: unknown) => reason instanceof Error ? reason.message : 
  */
 export function useParsedDiff(patch: string, contentKey: string): ParsedDiffState | null {
   const { parser } = useMemo(() => ({ contentKey, parser: new DiffParser() }), [contentKey]);
-  useEffect(() => () => parser.clearCache(), [parser]);
+  useEffect(() => () => parser.release(), [parser]);
   const immediate = useMemo<ParsedDiffState | null>(() => {
-    if (patch.length >= DIFF_PARSE_WORKER_THRESHOLD) return null;
+    // A large patch parsed before, here or in a document closed since, needs no wait either.
+    if (patch.length >= DIFF_PARSE_WORKER_THRESHOLD) {
+      const files = parser.parsed(patch);
+      return files ? { parser, patch, files } : null;
+    }
     try { return { parser, patch, files: parser.parseNow(patch) }; }
     catch (reason) { return { parser, patch, error: failure(reason) }; }
   }, [parser, patch]);

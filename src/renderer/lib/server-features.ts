@@ -11,6 +11,8 @@ export interface ServerFeatures {
   actionJobLogs: boolean;
   /** `commits.fileHistory`. */
   fileHistory: boolean;
+  /** `github.getPullRequestFiles` and `github.getPullRequestFileDiff`: a pull request's code read file by file. */
+  pullRequestFiles: boolean;
   /**
    * Each tab or window has its own open repository: opening one changes no other client, and an
    * address opens its repository at once instead of offering to.
@@ -18,12 +20,13 @@ export interface ServerFeatures {
   repositoryPerClient: boolean;
 }
 
-export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, repositoryPerClient: false };
+export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, pullRequestFiles: false, repositoryPerClient: false };
 
 export function serverFeatures(identity: OpenTigServerIdentity | undefined): ServerFeatures {
   return {
     actionJobLogs: identity?.actionJobLogs === true,
     fileHistory: identity?.fileHistory === true,
+    pullRequestFiles: identity?.pullRequestFiles === true,
     repositoryPerClient: identity?.repositoryPerClient === true,
   };
 }

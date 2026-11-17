@@ -8,6 +8,21 @@ export interface TrailState {
   canGoForward: boolean;
 }
 
+/** A step away from the current one, for the lists Back and Forward open. */
+export interface TrailStep {
+  key: string;
+  location: NavigationLocation;
+  memory: EntryMemory;
+  /** How far it is: -1 is the step Back goes to, 1 the one Forward goes to. */
+  offset: number;
+}
+
+/** The steps either way of the current one, nearest first. */
+export interface TrailSteps {
+  back: TrailStep[];
+  forward: TrailStep[];
+}
+
 /**
  * The steps the user took, and where in them they are. Moving somewhere new
  * adds a step after the current one and drops what was ahead; Back and Forward
@@ -26,6 +41,12 @@ export interface NavigationTrail {
   remember(key: string, memory: Partial<EntryMemory>): void;
   back(): void;
   forward(): void;
+  /** The steps Back and Forward would walk, nearest first. Read when a list of them opens. */
+  steps(): TrailSteps;
+  /** Moves straight to the step `offset` away, as that many Backs (negative) or Forwards would. */
+  go(offset: number): void;
+  /** Called when a step `go` was asked for could not be reached, and nothing moved. */
+  onMissedJump(listener: () => void): () => void;
   /** Called with the step Back or Forward moved to. */
   onRestore(listener: (entry: NavigationEntry) => void): () => void;
   /** For `useSyncExternalStore`: `state()` returns the same object until it changes. */
@@ -45,6 +66,7 @@ export function newEntryKey(): string {
 export function createTrailSignals() {
   const restoreListeners = new Set<(entry: NavigationEntry) => void>();
   const stateListeners = new Set<() => void>();
+  const missedListeners = new Set<() => void>();
   let snapshot: TrailState = { canGoBack: false, canGoForward: false };
   return {
     state: () => snapshot,
@@ -55,6 +77,13 @@ export function createTrailSignals() {
     },
     restore(entry: NavigationEntry) {
       for (const listener of [...restoreListeners]) listener(entry);
+    },
+    missed() {
+      for (const listener of [...missedListeners]) listener();
+    },
+    onMissed(listener: () => void) {
+      missedListeners.add(listener);
+      return () => { missedListeners.delete(listener); };
     },
     onRestore(listener: (entry: NavigationEntry) => void) {
       restoreListeners.add(listener);
@@ -107,6 +136,19 @@ export function createMemoryTrail(limit = MAX_TRAIL_ENTRIES): NavigationTrail {
     },
     back: () => move(index - 1),
     forward: () => move(index + 1),
+    steps() {
+      const step = (position: number): TrailStep => ({ ...entries[position]!, offset: position - index });
+      const back: TrailStep[] = [];
+      for (let position = index - 1; position >= 0; position -= 1) back.push(step(position));
+      const forward: TrailStep[] = [];
+      for (let position = index + 1; position < entries.length; position += 1) forward.push(step(position));
+      return { back, forward };
+    },
+    go(offset) {
+      if (Number.isSafeInteger(offset) && offset !== 0) move(index + offset);
+    },
+    // Every step it lists is in memory, so every jump arrives.
+    onMissedJump: signals.onMissed,
     onRestore: signals.onRestore,
     subscribe: signals.subscribe,
     attach: () => undefined,

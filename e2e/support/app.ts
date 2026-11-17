@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -117,4 +117,37 @@ export async function requestsDuring(page: Page, navigate: () => Promise<void>, 
 
 export function requestTotal(requested: Record<string, number>): number {
   return Object.values(requested).reduce((sum, count) => sum + count, 0);
+}
+
+/**
+ * Makes the repository look like a clone of `nameWithOwner` on GitHub. Nothing
+ * reaches GitHub: fetching from `origin` goes to a proxy that refuses at once.
+ */
+export async function cloneOfGitHub(repository: GitRepository, nameWithOwner = 'e2e/sample-project'): Promise<void> {
+  await repository.git('remote', 'add', 'origin', `https://github.com/${nameWithOwner}.git`);
+  await repository.git('config', 'remote.origin.proxy', 'http://127.0.0.1:9');
+}
+
+/**
+ * A branch off `main` with one commit per entry, each writing its files, as a
+ * pull request's head; `main` stays checked out. Its commits are in the clone,
+ * so OpenTig reads the pull request's code from Git without fetching.
+ */
+export async function pullRequestBranch(repository: GitRepository, branch: string, commits: Array<{ message: string; files: Record<string, string> }>): Promise<{
+  baseRefOid: string; headRefOid: string; commits: Array<{ oid: string; messageHeadline: string }>;
+}> {
+  const baseRefOid = await repository.git('rev-parse', 'main');
+  await repository.git('checkout', '-q', '-b', branch);
+  const made: Array<{ oid: string; messageHeadline: string }> = [];
+  for (const commit of commits) {
+    for (const [file, content] of Object.entries(commit.files)) {
+      await mkdir(path.dirname(path.join(repository.path, file)), { recursive: true });
+      await writeFile(path.join(repository.path, file), content);
+    }
+    await repository.git('add', '-A');
+    await repository.git('commit', '-q', '-m', commit.message);
+    made.push({ oid: await repository.git('rev-parse', 'HEAD'), messageHeadline: commit.message });
+  }
+  await repository.git('checkout', '-q', 'main');
+  return { baseRefOid, headRefOid: made.at(-1)!.oid, commits: made };
 }

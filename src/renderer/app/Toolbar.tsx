@@ -30,6 +30,7 @@ import { useShortcuts } from './useShortcuts';
 import { useNavigationKeys } from './navigation-keys';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar, type MobileViewerBarProps } from './MobileToolbar';
+import { TrailButton, type ListTrailSteps } from './TrailMenu';
 import { RepositoryLoadIndicator, type RepositoryLoadPhase } from './RepositoryLoadIndicator';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
 import type { RemoteAccessProblem, UpstreamNameMismatch } from '@shared/repository-access';
@@ -75,6 +76,9 @@ export interface ToolbarProps {
   canGoForward: boolean;
   onBack(): void;
   onForward(): void;
+  /** The steps each way, for the lists Back and Forward open, and a jump to one of them. */
+  listTrailSteps: ListTrailSteps;
+  onGo(offset: number): void;
   onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
   onRelocateRepository(repository: RepositoryOption, path: string): Promise<void>;
   /** Saved repositories whose folder no longer exists; picking one asks for its new folder. */
@@ -468,14 +472,8 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
         </Tooltip>
       )}
       <div className="toolbar-history" role="group" aria-label="Navigation history">
-        <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Back" aria-keyshortcuts={navigation.backAria} focusableWhenDisabled disabled={!props.canGoBack} onClick={props.onBack} />}><IconChevronLeft /></TooltipTrigger>
-          <TooltipContent>Back <Kbd>{navigation.back}</Kbd></TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Forward" aria-keyshortcuts={navigation.forwardAria} focusableWhenDisabled disabled={!props.canGoForward} onClick={props.onForward} />}><IconChevronRight /></TooltipTrigger>
-          <TooltipContent>Forward <Kbd>{navigation.forward}</Kbd></TooltipContent>
-        </Tooltip>
+        <TrailButton direction="back" enabled={props.canGoBack} keys={navigation.back} keysAria={navigation.backAria} onStep={props.onBack} listSteps={props.listTrailSteps} onGo={props.onGo}><IconChevronLeft /></TrailButton>
+        <TrailButton direction="forward" enabled={props.canGoForward} keys={navigation.forward} keysAria={navigation.forwardAria} onStep={props.onForward} listSteps={props.listTrailSteps} onGo={props.onGo}><IconChevronRight /></TrailButton>
       </div>
       <span className="toolbar-history-divider" aria-hidden="true" />
       <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <Spinner /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>

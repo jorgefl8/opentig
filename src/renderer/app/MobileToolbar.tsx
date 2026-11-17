@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconFolder, IconGitBranch, IconHierarchy2, IconPlus, IconRefresh, IconSelector, IconSettings } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowUp, IconBrandGithub, IconFolder, IconGitBranch, IconHierarchy2, IconPlus, IconRefresh, IconSelector, IconSettings } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { isDevProfile } from '@/lib/app-identity';
 import { AppName } from '@/components/AppName';
@@ -13,21 +13,26 @@ import type { ToolbarProps } from './Toolbar';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 import { Spinner } from '@/components/ui/spinner';
+import { TrailBackArrow, type TrailListItem } from './TrailMenu';
 
 export interface MobileViewerBarProps {
   onBack(): void;
+  /** The steps behind this one, which holding the arrow lists, and a jump to one of them. */
+  listBackSteps?: (() => TrailListItem[]) | undefined;
+  onGo?: ((offset: number) => void) | undefined;
   /** Where the viewer's title and actions go. */
   setTitleHost(element: HTMLElement | null): void;
   setActionsHost(element: HTMLElement | null): void;
 }
 
 /** Focus lands on the arrow when a viewer opens, so a keyboard or screen reader starts from the way out. */
-function MobileViewerBar({ onBack, setTitleHost, setActionsHost, indicators, loadIndicator }: MobileViewerBarProps & { indicators: ReactNode; loadIndicator: ReactNode }) {
+function MobileViewerBar({ onBack, listBackSteps, onGo, setTitleHost, setActionsHost, indicators, loadIndicator }: MobileViewerBarProps & { indicators: ReactNode; loadIndicator: ReactNode }) {
   const backRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { backRef.current?.focus(); }, []);
   return (
     <header className="mobile-toolbar in-viewer">
-      <button ref={backRef} type="button" className="mobile-bar-button" aria-label="Back" onClick={onBack}><IconArrowLeft aria-hidden="true" /></button>
+      {/* Holding the arrow lists the steps behind, to go back several at once. */}
+      <TrailBackArrow buttonRef={backRef} onBack={onBack} listBackSteps={listBackSteps} onGo={onGo} />
       <div ref={setTitleHost} className="mobile-viewer-title-slot" />
       <div className="mobile-toolbar-actions">
         <div ref={setActionsHost} className="contents" />

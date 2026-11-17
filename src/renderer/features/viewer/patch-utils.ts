@@ -128,3 +128,10 @@ export function splitCommitPatch(whole: DiffResult, files: readonly CommitFile[]
     return { path: file.path, patch: section, binary: /^(?:Binary files .* differ|GIT binary patch)$/m.test(section), truncated: false, lineCount: section.split('\n').length };
   });
 }
+
+/** A path as it is shown: a tab, a newline or another control character in a name is written out, never laid out. */
+export function visiblePath(path: string): string {
+  // oxlint-disable-next-line no-control-regex -- control characters are exactly what is written out.
+  return path.replace(/[\u0000-\u001f\u007f]/g, (character) => character === '\t' ? '\\t' : character === '\n' ? '\\n' : character === '\r' ? '\\r'
+    : `\\x${character.charCodeAt(0).toString(16).padStart(2, '0')}`);
+}

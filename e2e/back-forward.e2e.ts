@@ -116,3 +116,123 @@ test('on a phone, the back arrow walks the trail and only at its start returns t
   await expect(list).toBeVisible();
   await expect(page.getByRole('button', { name: 'Repository and branch' })).toBeVisible();
 });
+
+test('right-clicking or holding Back lists the steps behind, and choosing one goes straight there', async ({ pairedPage: page, repository }) => {
+  await repository.commit('src/app.js', 'const total = 1;\n', 'Add app');
+  await repository.commit('notes.md', '# Notes\n', 'Write the notes');
+  const oid = await repository.git('rev-parse', 'HEAD~1');
+  await openRepository(page, repository);
+
+  await section(page, 'History').click();
+  const list = page.getByRole('list', { name: 'Commit history' });
+  await list.getByRole('button', { name: 'Add app', exact: true }).click();
+  const viewer = page.getByRole('main');
+  await expect(viewer.getByRole('heading', { name: 'Add app', level: 2 })).toBeVisible();
+  await section(page, 'Changes').click();
+  await section(page, 'Search').click();
+
+  // Enter takes a step, so the button is not announced as opening a menu; how to list the steps is its description.
+  await expect(back(page)).not.toHaveAttribute('aria-haspopup');
+  await expect(back(page)).toHaveAccessibleDescription('Press Down, right-click or hold to list every step');
+  // A plain click would take one step: a right click lists them all, nearest first.
+  await back(page).click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Go back to' });
+  await expect(menu.getByRole('menuitem')).toHaveText([/^Changes/, /^Add app.*History · Commit/, /^History/, /^Files/]);
+  await expect(section(page, 'Search')).toHaveAttribute('aria-current', 'page');
+  await menu.getByRole('menuitem', { name: /^Add app/ }).click();
+
+  // Two steps at once, to the commit as it was, with its address.
+  await expect(viewer.getByRole('heading', { name: 'Add app', level: 2 })).toBeVisible();
+  await expect(section(page, 'History')).toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveURL(new RegExp(`/commit/${oid}$`));
+
+  // Held down, Forward lists what is ahead; letting go does not take a step.
+  await forward(page).hover();
+  await page.mouse.down();
+  const ahead = page.getByRole('menu', { name: 'Go forward to' });
+  await expect(ahead).toBeVisible();
+  await page.mouse.up();
+  await expect(ahead.getByRole('menuitem')).toHaveText([/^Changes/, /^Search/]);
+  await expect(page).toHaveURL(new RegExp(`/commit/${oid}$`));
+  // Escape gives the focus back to the button it came from.
+  await page.keyboard.press('Escape');
+  await expect(ahead).toBeHidden();
+  await expect(forward(page)).toBeFocused();
+
+  // From the keyboard: the down arrow opens the list, and Enter takes the highlighted step.
+  await page.keyboard.press('ArrowDown');
+  await expect(ahead.getByRole('menuitem').first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(section(page, 'Search')).toHaveAttribute('aria-current', 'page');
+  await expect(forward(page)).toBeDisabled();
+
+  // The menu key opens the list as the down arrow does, on its first step. Choosing a row gave the focus back
+  // to Forward, as the list closed: Back is focused only after that.
+  await expect(forward(page)).toBeFocused();
+  await back(page).focus();
+  await page.keyboard.press('Shift+F10');
+  const behind = page.getByRole('menu', { name: 'Go back to' });
+  await expect(behind.getByRole('menuitem').first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(back(page)).toBeFocused();
+
+  // The browser's own Back walks the same steps: one step behind Search is Changes.
+  await page.goBack();
+  await expect(section(page, 'Changes')).toHaveAttribute('aria-current', 'page');
+});
+
+test('on a phone, holding the back arrow lists the steps behind in a sheet', async ({ pairedPage: page, repository }) => {
+  await repository.commit('docs/guide.md', '# Guide\n\nRead me first.\n', 'Write the guide');
+  await openRepository(page, repository);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const nav = page.getByRole('navigation', { name: 'Repository views' });
+  await nav.getByRole('button', { name: 'History' }).click();
+  const list = page.getByRole('list', { name: 'Commit history' });
+  await list.getByRole('button', { name: 'Write the guide', exact: true }).click();
+  const viewer = page.getByRole('main');
+  await viewer.getByRole('button', { name: 'Open file' }).first().click();
+  await expect(viewer.getByRole('heading', { name: 'Write the guide', level: 2 })).toBeHidden();
+
+  const arrow = page.getByRole('banner').getByRole('button', { name: 'Back', exact: true });
+  await arrow.hover();
+  await page.mouse.down();
+  const sheet = page.getByRole('dialog', { name: 'Go back to' });
+  await expect(sheet).toBeVisible();
+  await page.mouse.up();
+  await expect(sheet.getByRole('button', { name: /^(Write the guide|History|Files)/ })).toHaveText([/^Write the guide/, /^History/, /^Files/]);
+  // Holding did not take a step: the file is still open behind the sheet.
+  await expect(viewer.getByRole('heading', { name: 'Write the guide', level: 2 })).toBeHidden();
+  await sheet.getByRole('button', { name: /^History/ }).click();
+  await expect(sheet).toBeHidden();
+  await expect(list).toBeVisible();
+});
+
+test.describe('with a touch screen', () => {
+  test.use({ hasTouch: true });
+
+  test('on a phone, a finger held on the back arrow lists the steps behind without taking one', async ({ pairedPage: page, repository }) => {
+    await repository.commit('docs/guide.md', '# Guide\n\nRead me first.\n', 'Write the guide');
+    await openRepository(page, repository);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('navigation', { name: 'Repository views' }).getByRole('button', { name: 'History' }).click();
+    await page.getByRole('list', { name: 'Commit history' }).getByRole('button', { name: 'Write the guide', exact: true }).click();
+    const viewer = page.getByRole('main');
+    await viewer.getByRole('button', { name: 'Open file' }).first().click();
+    await expect(viewer.getByRole('heading', { name: 'Write the guide', level: 2 })).toBeHidden();
+
+    // A finger, through the browser's own touch input: down, held, then lifted.
+    const box = (await page.getByRole('banner').getByRole('button', { name: 'Back', exact: true }).boundingBox())!;
+    const touch = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touch] });
+    const sheet = page.getByRole('dialog', { name: 'Go back to' });
+    await expect(sheet).toBeVisible();
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(sheet.getByRole('button', { name: /^Write the guide/ })).toBeVisible();
+    // Lifting the finger took no step: the file is still open behind the sheet.
+    await expect(viewer.getByRole('heading', { name: 'Write the guide', level: 2 })).toBeHidden();
+    await sheet.getByRole('button', { name: /^Write the guide/ }).tap();
+    await expect(viewer.getByRole('heading', { name: 'Write the guide', level: 2 })).toBeVisible();
+  });
+});

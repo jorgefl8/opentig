@@ -58,17 +58,53 @@ function yieldToUI(signal: AbortSignal): Promise<void> {
   });
 }
 
+/**
+ * What closed documents parsed last, so the same diff opened again, by Back or
+ * by returning to its tab, shows at once instead of being parsed again. Keyed
+ * by the whole patch, so a diff whose content changed never matches.
+ */
+const closedDocuments = new ParsedDiffCache();
+
+/** Forgets what closed documents parsed, as a new session would. */
+export function forgetClosedDiffs(): void {
+  closedDocuments.clear();
+}
+
 /** One parser per mounted workspace. Cancellation releases worker-held text
  * and metadata, rather than leaving superseded work queued behind a big file. */
 export class DiffParser {
   private revision = 0;
   private cacheGeneration = 0;
   private readonly cache = new ParsedDiffCache();
+  /** The patch parsed last, which outlives the document when it closes. */
+  private latest: string | null = null;
   constructor(private readonly workerFactory: DiffParseWorkerFactory = () => new ParseWorker()) {}
 
   clearCache() {
     this.cacheGeneration++;
     this.cache.clear();
+    this.latest = null;
+  }
+
+  /** The document closed: its last parsed diff is kept among the closed documents', the rest let go. */
+  release() {
+    // The copy this document's cache kept, never the one handed to the viewer, which the renderer may change.
+    const clean = this.latest === null ? undefined : this.cache.get(this.latest);
+    const patch = this.latest;
+    this.clearCache();
+    if (patch !== null && clean) closedDocuments.set(patch, clean);
+  }
+
+  /** The files of a patch already parsed, by this document or by one closed since; undefined otherwise. */
+  parsed(patch: string): DiffFileEntry[] | undefined {
+    const files = this.cache.get(patch) ?? closedDocuments.get(patch);
+    if (files) this.keep(patch, files);
+    return files;
+  }
+
+  private keep(patch: string, files: DiffFileEntry[]) {
+    this.cache.set(patch, files);
+    this.latest = patch;
   }
 
   /**
@@ -76,21 +112,21 @@ export class DiffParser {
    * which take a few milliseconds: their files are there on the first render.
    */
   parseNow(patch: string): DiffFileEntry[] {
-    const cached = this.cache.get(patch);
+    const cached = this.parsed(patch);
     if (cached) return cached;
     const files = buildDiffFileEntries(patch);
-    this.cache.set(patch, files);
+    this.keep(patch, files);
     return files;
   }
 
   async parse(patch: string, signal: AbortSignal): Promise<DiffFileEntry[]> {
     signal.throwIfAborted();
-    const cached = this.cache.get(patch);
+    const cached = this.parsed(patch);
     if (cached) return cached;
     const generation = this.cacheGeneration;
     const files = await this.parseUncached(patch, signal);
     signal.throwIfAborted();
-    if (generation === this.cacheGeneration) this.cache.set(patch, files);
+    if (generation === this.cacheGeneration) this.keep(patch, files);
     return files;
   }
 

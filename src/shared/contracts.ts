@@ -62,6 +62,43 @@ export interface DiffResult {
   watchId?: string;
 }
 
+/** A file a pull request, or one of its commits, changes, as Git in the local clone lists it. */
+export interface PullRequestFile extends CommitFile {
+  /** Bytes of its larger version, which tells a large file before its diff is read; null when Git could not say. */
+  size: number | null;
+}
+
+/** Which changes of a pull request: all of them, or one of its commits against its first parent. */
+export interface PullRequestFilesScope {
+  baseOid: string;
+  headOid: string;
+  /** One commit of the pull request; absent for all of its changes. */
+  commitOid?: string;
+}
+
+/**
+ * A pull request's changed files. `git` lists them, each one's diff read on its own; `github`
+ * means Git in the clone could not provide the commits, so this is GitHub's whole diff, within
+ * its limits, as the pull request showed before files were read one by one.
+ */
+export type PullRequestFileList =
+  | {
+    source: 'git'; files: PullRequestFile[];
+    /** Files left out past the most a list carries. */
+    omitted: number;
+    /** False when Git's listing was larger than a list is read in full: more files changed than it counts. */
+    complete: boolean;
+  }
+  | { source: 'github'; diff: DiffResult };
+
+/** Past either, a file's diff is read only when it is unfolded on its own, never by Expand all. */
+export const PULL_REQUEST_LARGE_FILE_BYTES = 1024 * 1024;
+export const PULL_REQUEST_LARGE_FILE_LINES = 10_000;
+
+export function isLargePullRequestFile(file: Pick<PullRequestFile, 'size' | 'additions' | 'deletions'>): boolean {
+  return (file.size ?? 0) > PULL_REQUEST_LARGE_FILE_BYTES || file.additions + file.deletions > PULL_REQUEST_LARGE_FILE_LINES;
+}
+
 export interface FileResult {
   path: string;
   content: string;
@@ -1189,6 +1226,10 @@ export interface OpenTigApi {
     /** `range` is the base and head from the PR's details, which spares asking GitHub for them again. */
     getPullRequestDiff(repositoryId: string, number: number, range?: { baseOid: string; headOid: string }): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
+    /** The files a pull request, or one of its commits, changes. Only on a server whose identity has `pullRequestFiles`. */
+    getPullRequestFiles(repositoryId: string, number: number, scope: PullRequestFilesScope): Promise<PullRequestFileList>;
+    /** One file's diff in a pull request or one of its commits. Only on a server whose identity has `pullRequestFiles`. */
+    getPullRequestFileDiff(repositoryId: string, number: number, scope: PullRequestFilesScope, file: { path: string; oldPath?: string | null }): Promise<DiffResult>;
     getPullRequestCommits(repositoryId: string, number: number): Promise<PullRequestCommitList>;
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;
     listReleases(repositoryId: string, fresh?: boolean): Promise<ReleaseSummary[]>;
@@ -1265,5 +1306,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review', githubPrEntryEdit: 'github:pr-entry-edit', githubPrEntryDelete: 'github:pr-entry-delete',
-  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrListLineCounts: 'github:pr-list-line-counts', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubActionJobLog: 'github:action-job-log', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrListLineCounts: 'github:pr-list-line-counts', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrFiles: 'github:pr-files', githubPrFileDiff: 'github:pr-file-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubActionJobLog: 'github:action-job-log', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

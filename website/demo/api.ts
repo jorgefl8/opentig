@@ -98,7 +98,7 @@ export const opentig: OpenTigApi = {
       preferences,
       performanceAutomation: false,
       // The sample answers the commands of these features as an installed server would.
-      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true, fileHistory: true },
+      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true, fileHistory: true, pullRequestFiles: true },
     }),
     capabilities: async () => ({
       runtimeMode: "headless",
@@ -426,6 +426,8 @@ export const opentig: OpenTigApi = {
     deletePullRequestEntry: async (input) => demoPulls.deleteEntry(input),
     getPullRequestDiff: async (_id, number) => demoPulls.diff(number),
     getPullRequestCommitDiff: async (_id, oid) => demoPulls.commitDiff(oid),
+    getPullRequestFiles: async (_id, number, scope) => demoPulls.files(number, scope.commitOid),
+    getPullRequestFileDiff: async (_id, number, scope, file) => demoPulls.fileDiff(number, file.path, scope.commitOid),
     getPullRequestCommits: async (_id, number) => ({ commits: demoPulls.get(number).commits, complete: true }),
     listReleases: async () => demoReleases.list(),
     getRelease: async (_id, tagName) => demoReleases.get(tagName),
