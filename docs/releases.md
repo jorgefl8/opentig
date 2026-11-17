@@ -248,13 +248,14 @@ gh release download vX.Y.Z --repo jorgefl8/opentig --dir opentig-alias \
   --pattern 'opentig-cli-X.Y.Z.tgz' --pattern 'opentig-X.Y.Z.tgz' --pattern 'opentig-headless.json'
 node scripts/headless-release.mjs verify opentig-alias vX.Y.Z
 npm view @opentig/cli@X.Y.Z version
-npm publish opentig-alias/opentig-X.Y.Z.tgz --access public --ignore-scripts
+npm publish ./opentig-alias/opentig-X.Y.Z.tgz --access public --ignore-scripts
 npm view opentig@latest version
 npx --yes opentig@X.Y.Z --version
 ```
 
 - `verify` checks both tarballs against the release's tag, commit, and recorded hashes, including the alias's exact dependency.
 - `npm view @opentig/cli@X.Y.Z version` must print `X.Y.Z` before you publish the alias.
+- Keep the `./` in front of the tarball: without it, npm reads `opentig-alias/opentig-X.Y.Z.tgz` as a GitHub repository and would publish whatever that repository holds.
 - `npm publish` asks for your two-factor code. This one version has no provenance statement, since it is not published from a workflow.
 - The last two commands must print `X.Y.Z`.
 
