@@ -44,10 +44,14 @@ export default function PullRequestDiff({ code, range, changedFiles, prNumber, r
   // Back brings the code back grouped as it was at that step, on the same commit.
   const memoryKey = `${repositoryId}:pull:${prNumber}:code`;
   const [restored] = useState(() => restoredCodeView(restoredViewState(memoryKey)));
-  const [mode, setMode] = useState<CodeMode>(restored?.mode ?? 'all');
+  const [chosenMode, setMode] = useState<CodeMode>(restored?.mode ?? 'all');
   const [selectedOid, setSelectedOid] = useState(restored?.commit ?? commits[0]?.oid ?? '');
-  useEffect(() => { noteViewState(memoryKey, { mode, commit: mode === 'commit' ? selectedOid : null }); }, [memoryKey, mode, selectedOid]);
   const selectedCommit = useMemo(() => commits.find((commit) => commit.oid === selectedOid) ?? commits[0] ?? null, [commits, selectedOid]);
+  // A pull request with no commits left, after a force push, has nothing to show by commit.
+  const mode: CodeMode = chosenMode === 'commit' && !selectedCommit ? 'all' : chosenMode;
+  const shownOid = selectedCommit?.oid ?? null;
+  // What Back brings back is what is shown: a commit gone since gave way to the first one.
+  useEffect(() => { noteViewState(memoryKey, { mode, commit: mode === 'commit' ? shownOid : null }); }, [memoryKey, mode, shownOid]);
   const byFile = 'files' in code;
   // A server that reads files one by one does so for a commit too; an older one sends the commit's whole diff.
   const commitFilesQuery = useQuery({
@@ -69,13 +73,22 @@ export default function PullRequestDiff({ code, range, changedFiles, prNumber, r
   const missing = mode === 'all' && active && 'files' in active && active.files.source === 'github' && !active.files.diff.truncated
     ? Math.max(0, changedFiles - (active.files.diff.patch.match(/^diff --git /gm)?.length ?? 0)) : 0;
   const commitError = commitQuery.error instanceof Error ? commitQuery.error.message : commitQuery.error ? 'Could not load the commit’s changes.' : null;
-  const scope = useMemo<PullRequestFilesScope>(() => mode === 'commit' && selectedCommit ? { ...range, commitOid: selectedCommit.oid } : range, [mode, range, selectedCommit]);
+  // Only the commits make the scope, so a new read of the details or the commit list doesn't read the open files again.
+  const { baseOid, headOid } = range;
+  const scope = useMemo<PullRequestFilesScope>(() => mode === 'commit' && shownOid ? { baseOid, headOid, commitOid: shownOid } : { baseOid, headOid }, [baseOid, headOid, mode, shownOid]);
   const [gate] = useState(() => createReadGate(FILE_READS_AT_ONCE));
   const readFile = useCallback((file: ListedFile, signal: AbortSignal, urgent: boolean) => {
     const key = pullRequestFileDiffKey(repositoryId, scope, file.path, file.oldPath);
     const read = () => immutableDiff(key, () => opentig.github.getPullRequestFileDiff(repositoryId, prNumber, scope, { path: file.path, oldPath: file.oldPath }), signal);
     // What was read already shows at once, without waiting its turn.
-    return hasImmutableDiff(key) ? read() : gate(read, signal, urgent);
+    const first = hasImmutableDiff(key) ? read() : gate(read, signal, urgent);
+    // A file's diff is read straight from Git: if the commits have gone from the clone since the list was
+    // read, reading the list again brings them back, and the file is read once more.
+    return first.catch(async (reason: unknown) => {
+      if (signal.aborted) throw reason;
+      await opentig.github.getPullRequestFiles(repositoryId, prNumber, scope);
+      return gate(read, signal, true);
+    });
   }, [gate, prNumber, repositoryId, scope]);
   const contentKey = mode === 'all' ? `pull:${prNumber}:all` : `pull:${prNumber}:commit:${selectedCommit?.oid ?? ''}`;
 
@@ -130,7 +143,7 @@ export default function PullRequestDiff({ code, range, changedFiles, prNumber, r
           themeType={themeType}
           wrapLines={wrapLines}
           scopeControl={scopeControl}
-          notice={listed.omitted > 0 && <p className="pr-files-omitted" role="status">{listed.omitted} more {listed.omitted === 1 ? 'file is' : 'files are'} not listed: a pull request’s list stops at {listed.files.length.toLocaleString('en-US')} files.</p>}
+          notice={<UnlistedFiles listed={listed} changedFiles={mode === 'all' ? changedFiles : null} />}
           foldMemoryKey={`${repositoryId}:${contentKey}`}
           readFile={readFile}
           onDiffViewChange={onDiffViewChange}
@@ -159,6 +172,18 @@ export default function PullRequestDiff({ code, range, changedFiles, prNumber, r
         onOpenFile={onOpenFile}
       />
     </PierreWorkerPool>
+  );
+}
+
+/** Says how many files the list leaves out: past the most it carries, or past what Git's listing could be read of. */
+function UnlistedFiles({ listed, changedFiles }: { listed: Extract<PullRequestFileList, { source: 'git' }>; changedFiles: number | null }) {
+  const missing = Math.max(listed.omitted, changedFiles === null ? 0 : changedFiles - listed.files.length);
+  if (listed.complete && listed.omitted === 0) return null;
+  const count = missing > 0 ? `${missing.toLocaleString('en-US')} more ${missing === 1 ? 'file is' : 'files are'}` : 'More files are';
+  return (
+    <p className="pr-files-omitted" role="status">
+      {count} not listed: {listed.complete ? `a pull request’s list stops at ${listed.files.length.toLocaleString('en-US')} files.` : 'this pull request changes too many files to list them all.'}
+    </p>
   );
 }
 

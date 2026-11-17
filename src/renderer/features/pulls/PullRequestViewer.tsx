@@ -119,7 +119,10 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const wantsCode = details !== null && (visited.has('diff') || downloadsAhead());
   // A server that reads the code file by file lists the files first; an older one sends the whole diff.
   const byFile = useServerFeatures().pullRequestFiles;
-  const range = useMemo(() => details ? { baseOid: details.baseRefOid, headOid: details.headRefOid } : null, [details]);
+  // Only the two commits make the range: another read of the details with new comments or a new title is the same code.
+  const baseOid = details?.baseRefOid;
+  const headOid = details?.headRefOid;
+  const range = useMemo(() => baseOid !== undefined && headOid !== undefined ? { baseOid, headOid } : null, [baseOid, headOid]);
   const filesScope = range ?? { baseOid: '', headOid: '' };
   const filesQuery = useQuery({
     // Keyed by the range too, so a new head shows its own files rather than those read before the details caught up.

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MobileChromeContext, NO_MOBILE_CHROME_HOSTS } from '@/components/mobile-chrome-context';
-import { DiffWorkspace } from './DiffWorkspace';
+import { DiffWorkspace, PullRequestFilesWorkspace } from './DiffWorkspace';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { largePatch, MIXED_PATCH } from './diff-parser.fixtures';
 import { buildDiffFileEntries } from './patch-utils';
@@ -422,5 +422,25 @@ describe('file fold animation', () => {
     expect(animatesFileToggle({ additions: 120, deletions: 30 }, 6)).toBe(true);
     expect(animatesFileToggle({ additions: 380, deletions: 40 }, 6)).toBe(false);
     expect(animatesFileToggle({ additions: 3, deletions: 1 }, 41)).toBe(false);
+  });
+});
+
+describe('as a pull request’s files', () => {
+  it('stops Expand all at its budget, leaving the rest folded with a line that says so', async () => {
+    const file = (index: number) => ({ path: `src/part-${index}.ts`, oldPath: null, kind: 'modified' as const, additions: 1, deletions: 1, binary: false, size: 600 * 1024 });
+    const readFile = vi.fn(async (listed: { path: string }) => ({ path: listed.path, patch: largePatch(1, 4, listed.path), binary: false, truncated: false, lineCount: 4 }));
+    await act(async () => root.render(createElement(TooltipProvider, null, createElement(PullRequestFilesWorkspace, {
+      contentKey: 'pull', files: Array.from({ length: 10 }, (_, index) => file(index)), diffView: 'unified', themeType: 'light', wrapLines: false,
+      scopeControl: null, foldMemoryKey: 'repo:pull:1:all', readFile,
+    }))));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand all files"]')!.click());
+    // Six files of 600 KB fit in 4 MB; a seventh would not.
+    const toggles = [...container.querySelectorAll<HTMLButtonElement>('.diff-file-toggle')];
+    expect(toggles.map((toggle) => toggle.getAttribute('aria-expanded'))).toEqual([...Array(6).fill('true'), ...Array(4).fill('false')]);
+    expect(container.textContent).toContain('4 more files were left folded, so Expand all reads at most 4.0 MB.');
+    expect(container.querySelector('[aria-label="Collapse all files"]')).not.toBeNull();
+    // One held back still unfolds by hand.
+    await act(async () => toggles[8]!.click());
+    expect(toggles[8]!.getAttribute('aria-expanded')).toBe('true');
   });
 });

@@ -77,7 +77,7 @@ export class DiffParser {
   private cacheGeneration = 0;
   private readonly cache = new ParsedDiffCache();
   /** The patch parsed last, which outlives the document when it closes. */
-  private latest: { patch: string; files: DiffFileEntry[] } | null = null;
+  private latest: string | null = null;
   constructor(private readonly workerFactory: DiffParseWorkerFactory = () => new ParseWorker()) {}
 
   clearCache() {
@@ -88,9 +88,11 @@ export class DiffParser {
 
   /** The document closed: its last parsed diff is kept among the closed documents', the rest let go. */
   release() {
-    const latest = this.latest;
+    // The copy this document's cache kept, never the one handed to the viewer, which the renderer may change.
+    const clean = this.latest === null ? undefined : this.cache.get(this.latest);
+    const patch = this.latest;
     this.clearCache();
-    if (latest) closedDocuments.set(latest.patch, latest.files);
+    if (patch !== null && clean) closedDocuments.set(patch, clean);
   }
 
   /** The files of a patch already parsed, by this document or by one closed since; undefined otherwise. */
@@ -102,7 +104,7 @@ export class DiffParser {
 
   private keep(patch: string, files: DiffFileEntry[]) {
     this.cache.set(patch, files);
-    this.latest = { patch, files };
+    this.latest = patch;
   }
 
   /**

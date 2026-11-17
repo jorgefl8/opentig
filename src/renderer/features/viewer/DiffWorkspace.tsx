@@ -383,6 +383,26 @@ type FilesLayout =
   | ({ kind: 'commit' } & DiffCommitLayout)
   | { kind: 'toolbar'; scopeControl: React.ReactNode; notice: React.ReactNode; onClose: (() => void) | undefined };
 
+/**
+ * What Expand all reads at most, by the files' sizes: about what the whole diff of a pull request could
+ * be before it was read file by file, so unfolding everything never holds much more than that did.
+ */
+const EXPAND_ALL_BYTES = 4 * 1024 * 1024;
+/** Lines of a file whose size is not known, at a generous width. */
+const BYTES_PER_LINE = 80;
+
+/** The first files, in order, whose sizes together stay within what Expand all reads. */
+function withinExpandBudget(files: readonly ListedFile[]): ListedFile[] {
+  let total = 0;
+  const kept: ListedFile[] = [];
+  for (const file of files) {
+    total += file.size ?? (file.additions + file.deletions) * BYTES_PER_LINE;
+    if (total > EXPAND_ALL_BYTES) break;
+    kept.push(file);
+  }
+  return kept;
+}
+
 /** A file's size as its header says it. */
 function sizeLabel(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -432,8 +452,11 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
   const large = (file: ListedFile) => pullRequest && isLargePullRequestFile({ size: file.size ?? null, additions: file.additions, deletions: file.deletions });
   const needle = filter.trim().toLowerCase();
   const shown = needle ? files.filter((file) => file.path.toLowerCase().includes(needle) || file.oldPath?.toLowerCase().includes(needle)) : files;
-  // Large files stay folded under Expand all, so it is about the others.
-  const expandable = shown.filter((file) => !large(file));
+  // Large files stay folded under Expand all, so it is about the others, and only as many of them as its
+  // budget holds, in the list's order; the rest stay folded, each still unfolded by hand.
+  const candidates = shown.filter((file) => !large(file));
+  const expandable = pullRequest ? withinExpandBudget(candidates) : candidates;
+  const heldBack = candidates.length - expandable.length;
   const allUnfolded = expandable.length > 0 && expandable.every((file) => unfolded.has(commitFileKey(file)));
   const additions = files.reduce((total, file) => total + file.additions, 0);
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
@@ -510,6 +533,11 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
         <ColorSwatchLayer registry={colorSwatches} />
         {toolbarScrollsAway && toolbar}
         {layout.kind === 'toolbar' && layout.notice}
+        {allUnfolded && heldBack > 0 && (
+          <p className="pr-files-omitted" role="status">
+            {heldBack} more {heldBack === 1 ? 'file was' : 'files were'} left folded, so Expand all reads at most {sizeLabel(EXPAND_ALL_BYTES)}. Unfold {heldBack === 1 ? 'it' : 'them'} one by one to read {heldBack === 1 ? 'it' : 'them'}.
+          </p>
+        )}
         {layout.kind === 'commit' && <div className="diff-workspace-lead">{layout.lead}</div>}
         {layout.kind === 'commit' && files.length > 1 && (
           <div className="diff-file-list">

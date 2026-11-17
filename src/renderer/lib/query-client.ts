@@ -39,10 +39,11 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 export const GITHUB_DATA_GC_MS = 30 * 60_000;
 const GITHUB_RESOURCES = new Set(['push-context', 'github-account', 'pulls', 'pull-stacks', 'pull-line-counts', 'pull-request', 'pull-request-state', 'pull-request-conversation', 'pull-request-stack', 'pull-request-diff', 'pull-request-files', 'pull-request-commits', 'pull-request-commit-diff', 'branch-pull-request', 'releases', 'release', 'release-tag', 'workflows', 'workflows-runnable', 'workflow-triggers', 'action-runs', 'action-run', 'action-job-log']);
 /**
- * A pull request's code can be megabytes, and Git reads it again from the clone: it keeps the usual five minutes.
+ * A pull request's code can be megabytes, and Git reads it again from the clone: it keeps the usual five minutes,
+ * as does its file list, which is GitHub's whole diff when Git could not read the commits.
  * A job's log is large and may hold what a workflow printed: it sets its own, shorter life (see `JOB_LOG_GC_MS`).
  */
-const GITHUB_CODE = new Set(['pull-request-diff', 'pull-request-commit-diff', 'action-job-log']);
+const GITHUB_CODE = new Set(['pull-request-diff', 'pull-request-files', 'pull-request-commit-diff', 'action-job-log']);
 
 /** Gives every GitHub read made through `client` the longer life of `GITHUB_DATA_GC_MS`. A query's lifetime only ever grows, so later options don't shorten it. */
 export function keepGitHubData(client: QueryClient): () => void {
