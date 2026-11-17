@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cliCommandDirectory, installCliCommand, removeCliCommand } from './cli-command';
+import { cliCommandDirectory, installCliCommand, removeAfterParentExits, removeCliCommand } from './cli-command';
 
 const execute = promisify(execFile);
 let root: string, home: string, userHome: string;
@@ -119,6 +119,7 @@ describe('managed opentig command on Windows', () => {
     expect(script).toMatch(/^[\x20-\x7e\r\n]*$/);
     expect(script).toContain('if not exist "%LOCALAPPDATA%\\fnm 100%%\\node.exe" goto missing\r\n');
     expect(script).toContain('"%LOCALAPPDATA%\\fnm 100%%\\node.exe" "%~dp0opentig-launcher.mjs" %*\r\n');
+    expect(script).toContain('set "OPENTIG_COMMAND_SCRIPT=%~f0"\r\n');
     await installWindows('C:\\Program Files\\nodejs\\node.exe', { userPath: userPath() });
     expect(await readFile(path.join(directory(), 'opentig.cmd'), 'utf8')).toContain('"%ProgramFiles%\\nodejs\\node.exe"');
     await expect(installWindows('D:\\Herramientas\\Señal\\node.exe')).rejects.toMatchObject({ code: 'COMMAND_INSTALL_FAILED' });
@@ -152,6 +153,24 @@ describe('managed opentig command on Windows', () => {
     expect(JSON.parse(stdout)).toEqual({ version: '1.2.3', entry: flat, args: ['pair', '--flag', 'two words'], home });
   });
 
+  it('leaves the opentig.cmd that started an uninstall for after its cmd.exe exits', async () => {
+    const fake = userPath();
+    await installWindows('C:\\Program Files\\nodejs\\node.exe', { userPath: fake });
+    const script = path.join(directory(), 'opentig.cmd');
+    const deferred: [string, number][] = [];
+    const later = (file: string, parent: number) => { deferred.push([file, parent]); };
+    // Started through opentig.cmd: the shim names itself (Windows variable names ignore case).
+    await removeCliCommand(home, { ...windowsEnvironment, opentig_command_script: script }, 'win32', fake, later);
+    expect(deferred).toEqual([[script, process.ppid]]);
+    expect(await readFile(script, 'utf8')).toContain('@echo off');
+    await expect(readFile(path.join(directory(), 'opentig-launcher.mjs'))).rejects.toMatchObject({ code: 'ENOENT' });
+    // Started any other way, everything goes at once.
+    await installWindows('C:\\Program Files\\nodejs\\node.exe', { userPath: fake });
+    await removeCliCommand(home, { ...windowsEnvironment, OPENTIG_COMMAND_SCRIPT: path.join(root, 'other.cmd') }, 'win32', fake, later);
+    expect(deferred).toHaveLength(1);
+    await expect(readFile(script)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   // Opt-in: edits the real user Path with a unique temporary entry and restores it.
   it.skipIf(process.platform !== 'win32' || process.env.OPENTIG_SERVICE_INTEGRATION !== '1')('updates the registry user Path without expanding existing entries', async () => {
     const query = () => execute('reg', ['query', 'HKCU\\Environment', '/v', 'Path']).then(result => result.stdout, () => null);
@@ -168,3 +187,27 @@ describe('managed opentig command on Windows', () => {
     } finally { await removeCliCommand(commandHome, environment, 'win32').catch(() => undefined); }
   }, 60_000);
 });
+
+it('removes a file and its emptied folder only after the given process has exited', async () => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'OpenTig removal-'));
+  const file = path.join(folder, 'opentig.cmd');
+  await writeFile(file, '@echo off');
+  const { spawn } = await import('node:child_process');
+  const parent = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], { stdio: 'ignore' });
+  const exited = new Promise(resolve => parent.once('exit', resolve));
+  try {
+    removeAfterParentExits(file, parent.pid!);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    expect(await readFile(file, 'utf8')).toBe('@echo off');
+    await exited;
+    // Two seconds after the parent exits, and within a few more.
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    expect(await readFile(file, 'utf8')).toBe('@echo off');
+    for (let attempt = 0; attempt < 50 && await readFile(file).then(() => true, () => false); attempt++) await new Promise(resolve => setTimeout(resolve, 200));
+    await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(folder)).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally {
+    parent.kill();
+    await rm(folder, { recursive: true, force: true });
+  }
+}, 20_000);
