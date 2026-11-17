@@ -25,11 +25,11 @@ Use the Windows desktop app or run the CLI on another machine and reach the same
 | Workflow | Features |
 | --- | --- |
 | [Review changes](docs/features.md#changes-diffs-and-commits) | Syntax-highlighted split or unified diffs, staging, commits, and merge-conflict resolution. |
-| [Browse and edit](docs/features.md#files-and-editing) | File tabs, find and replace, repository search, and Markdown, image, HTML, and SVG previews. |
-| [Work with Git](docs/features.md#safe-pull-and-push) | Safe pull and push, branch publication, commit graphs, branches, and worktrees. |
+| [Browse and edit](docs/features.md#files-and-editing) | File tabs, find and replace, repository search, a command palette, and Markdown, image, HTML, and SVG previews. |
+| [Work with Git](docs/features.md#safe-pull-and-push) | Safe pull and push, branch publication, commit graphs, a file's history, branches, and worktrees. |
 | [Keep repositories together](docs/features.md#repositories-and-projects) | Saved repositories, project groups, and relocation without moving files. |
 | [Create, review, and merge GitHub PRs](docs/github.md) | Create PRs, read diffs, checks, and conversations, comment and review, and merge with auto-merge or merge queues. Native stacks, shared repository accounts, and direct pushes using server configuration. |
-| [Releases](docs/github.md#manage-releases) and [Actions](docs/github.md#follow-workflow-runs) | Draft, edit, and publish GitHub releases. Follow workflow runs as a graph of their jobs, and run workflows manually. |
+| [Releases](docs/github.md#manage-releases) and [Actions](docs/github.md#follow-workflow-runs) | Draft, edit, and publish GitHub releases. Follow workflow runs as a graph of their jobs, read a finished job's log, and run workflows manually. |
 | [Use a remote server](docs/web-access.md) | Browser pairing, trusted remote access, and a touch-friendly phone interface. |
 
 **AI is optional.** Reviewing, editing, and committing need no AI account. Locally installed Codex, Claude Code, OpenCode 2, or Grok Build can draft commit messages, propose commit splits, and write PR descriptions. You review and confirm every commit or PR. See [AI assistance](docs/ai-assistance.md) and [AI privacy](docs/security-and-privacy.md#ai-privacy).

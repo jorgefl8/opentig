@@ -40,10 +40,10 @@ opentig
 | | |
 | --- | --- |
 | **Review changes** | Split or unified diffs, staged and unstaged files, and merge-conflict resolution. [Details](https://opentig.com/docs/features/#changes-diffs-and-commits) |
-| **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, and Markdown, image, HTML, and SVG previews. [Details](https://opentig.com/docs/features/#files-and-editing) |
-| **Work with Git** | Stage files, commit, pull and push, inspect history, and switch branches and worktrees. [Details](https://opentig.com/docs/features/#safe-pull-and-push) |
+| **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, a command palette, and Markdown, image, HTML, and SVG previews. [Details](https://opentig.com/docs/features/#files-and-editing) |
+| **Work with Git** | Stage files, commit, pull and push, inspect history and a file's history, and switch branches and worktrees. [Details](https://opentig.com/docs/features/#safe-pull-and-push) |
 | **Organize repositories** | Recent repositories, project groups, and manual relocation without moving files. [Details](https://opentig.com/docs/features/#repositories-and-projects) |
-| **Work with GitHub** | Create, review, and merge pull requests, follow Actions runs and start workflows, and manage releases through your authenticated `gh` CLI. [Details](https://opentig.com/docs/github/) |
+| **Work with GitHub** | Create, review, and merge pull requests, follow Actions runs, read their jobs' logs, and start workflows, and manage releases through your authenticated `gh` CLI. [Details](https://opentig.com/docs/github/) |
 | **Use a remote server** | Pair a browser on your laptop or phone and work with repositories on the server. [Details](https://opentig.com/docs/web-access/) |
 
 **AI is optional.** Normal Git work needs no AI account or OpenTig account. If you choose to use AI assistance, a supported CLI installed and authenticated on the host can draft commit messages and pull-request descriptions for you to review. The selected CLI may send the supplied context to its provider. OpenTig does not run an autonomous coding agent or create commits on its own. See the [feature guide](https://opentig.com/docs/features/) and [privacy details](https://opentig.com/docs/security-and-privacy/).
