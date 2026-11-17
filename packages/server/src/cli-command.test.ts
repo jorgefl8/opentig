@@ -188,6 +188,27 @@ describe('managed opentig command on Windows', () => {
   }, 60_000);
 });
 
+it('leaves a file written again while it waited, as by installing once more', async () => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'OpenTig removal-'));
+  const file = path.join(folder, 'opentig.cmd');
+  await writeFile(file, '@echo off');
+  const { spawn } = await import('node:child_process');
+  const parent = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], { stdio: 'ignore' });
+  const exited = new Promise(resolve => parent.once('exit', resolve));
+  try {
+    removeAfterParentExits(file, parent.pid!);
+    // The same content, written later: another install's file, though nothing in it differs.
+    await new Promise(resolve => setTimeout(resolve, 300));
+    await writeFile(file, '@echo off');
+    await exited;
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    expect(await readFile(file, 'utf8')).toBe('@echo off');
+  } finally {
+    parent.kill();
+    await rm(folder, { recursive: true, force: true });
+  }
+}, 20_000);
+
 it('removes a file and its emptied folder only after the given process has exited', async () => {
   const folder = await mkdtemp(path.join(os.tmpdir(), 'OpenTig removal-'));
   const file = path.join(folder, 'opentig.cmd');

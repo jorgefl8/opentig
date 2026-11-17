@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { CliError, errorCode } from './cli-errors';
@@ -96,16 +96,26 @@ export async function removeCliCommand(home: string, environment: NodeJS.Process
 /**
  * Deletes a file, and then its folder if that is empty, from a detached
  * process once the parent process has exited and two more seconds have
- * passed, or after a minute when the parent is an interactive window.
+ * passed, or after a minute when the parent is an interactive window. The
+ * file is deleted only if it is still the one seen now: a file written
+ * since, as by installing again in the meantime, is another install's.
  */
 export function removeAfterParentExits(file: string, parent: number): void {
+  let seen: string;
+  try { seen = fileVersion(statSync(file)); } catch { return; }
   const script = `const fs = require('node:fs'); const path = require('node:path');
-const [file, parent] = process.argv.slice(1); const started = Date.now();
+const [file, parent, seen] = process.argv.slice(1); const started = Date.now();
 const alive = () => { try { process.kill(Number(parent), 0); return true; } catch { return false; } };
-const remove = () => { fs.rmSync(file, { force: true }); try { fs.rmdirSync(path.dirname(file)); } catch {} };
+const version = () => { try { const stats = fs.statSync(file); return stats.mtimeMs + ':' + stats.size + ':' + stats.ino; } catch { return null; } };
+const remove = () => { if (version() !== seen) return; fs.rmSync(file, { force: true }); try { fs.rmdirSync(path.dirname(file)); } catch {} };
 const wait = () => alive() && Date.now() - started < 60000 ? setTimeout(wait, 200) : setTimeout(remove, 2000);
 wait();`;
-  spawn(process.execPath, ['-e', script, file, String(parent)], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  spawn(process.execPath, ['-e', script, file, String(parent), seen], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+}
+
+/** What tells one writing of a file from the next: when it was written, its size and the file it is on disk. */
+function fileVersion(stats: { mtimeMs: number; size: number; ino: number }): string {
+  return `${stats.mtimeMs}:${stats.size}:${stats.ino}`;
 }
 
 function sameFile(candidate: string | undefined, file: string): boolean {
