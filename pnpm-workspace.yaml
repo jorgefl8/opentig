@@ -22,3 +22,11 @@ allowBuilds:
   fsevents: true
   uiohook-napi: true
   workerd: true
+
+auditConfig:
+  ignoreGhsas:
+    # picomatch: a crafted glob pattern can take very long to match. Every
+    # version is affected and none is patched yet. It reaches this workspace only
+    # through the website's build tools, which match patterns written in this
+    # repository. Remove this entry once a patched picomatch is installed.
+    - GHSA-fc5q-39xc-vjpf
