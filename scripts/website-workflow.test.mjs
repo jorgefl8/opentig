@@ -51,3 +51,13 @@ it('deploys only after npm has the opentig alias the site tells visitors to run'
   expect(check).toBeLessThan(steps.findIndex(step => step.run === 'pnpm exec wrangler deploy'));
   expect(steps[check]['continue-on-error']).toBeUndefined();
 });
+
+it('lets a deployment skip the alias check only through an explicit input that defaults to off', () => {
+  const input = workflow.on.workflow_dispatch.inputs.allow_missing_npm_alias;
+  expect(input).toMatchObject({ type: 'boolean', default: false });
+  const steps = workflow.jobs.deploy.steps;
+  const users = steps.filter(step => JSON.stringify(step).includes('OPENTIG_ALLOW_MISSING_NPM_ALIAS'));
+  expect(users).toEqual([steps.find(step => step.run === 'node website/scripts/npm-alias.mjs')]);
+  expect(users[0].env.OPENTIG_ALLOW_MISSING_NPM_ALIAS).toBe("${{ inputs.allow_missing_npm_alias && '1' || '' }}");
+  expect(workflow.jobs.deploy.env).not.toHaveProperty('OPENTIG_ALLOW_MISSING_NPM_ALIAS');
+});

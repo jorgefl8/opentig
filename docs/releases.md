@@ -72,7 +72,7 @@ Before the first release, the draft uses the package version and includes eligib
    npm view opentig@latest version
    ```
 
-   **Deploy website** runs the same check and refuses to deploy while they differ.
+   **Deploy website** runs the same check and refuses to deploy while they differ. For an urgent website fix that cannot wait for the alias, run it with **allow_missing_npm_alias** checked (locally, `OPENTIG_ALLOW_MISSING_NPM_ALIAS=1 pnpm run deploy:website`). The deployment then goes ahead with a warning in the log and the run summary naming what the site gets wrong: the `npx opentig@latest` commands on the home page, in `llms.txt`, and in the guides fail until the alias is published. Publish it and deploy again without the override as soon as you can.
 
    `README.md` is read on GitHub as soon as it is merged, before any release, so it keeps the commands that work at any time (`npx --yes @opentig/cli@latest`). Once the first release with the alias is published and the website is deployed, it can show `npx opentig@latest` and the install scripts as the guides do.
 
