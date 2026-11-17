@@ -7,7 +7,7 @@ import SmartScreenNotice from './SmartScreenNotice.astro';
 import InstallerScan from './InstallerScan.astro';
 import SectionHeading from './SectionHeading.astro';
 
-import { downloadUrl, downloadVersion, npmUrl, repositoryUrl } from '@/site';
+import { downloadUrl, downloadVersion, npmInstallCommand, npmUrl, powershellInstallCommand, repositoryUrl, scriptInstallCommand } from '@/site';
 ---
 
 <section id="install" data-install class="px-4 sm:px-6 py-28 scroll-mt-20" aria-labelledby="install-heading">
@@ -32,7 +32,11 @@ import { downloadUrl, downloadVersion, npmUrl, repositoryUrl } from '@/site';
         <p class="eyebrow">On any host</p>
         <h3 class="text-xl font-medium">Install the CLI server.</h3>
         <p class="text-sm text-muted-foreground leading-relaxed">Linux, macOS, or Windows, with Node.js 24+ and Git. It keeps running in the background on the machine with your repositories.</p>
-        <CopyCommand />
+        <div class="rounded-lg border border-border/60 bg-background/80 divide-y divide-border/60">
+          <CopyCommand bare label="macOS and Linux" command={scriptInstallCommand} />
+          <CopyCommand bare label="Windows (server only)" command={powershellInstallCommand} />
+          <CopyCommand bare label="Any system, with npm" command={npmInstallCommand} />
+        </div>
         <div class="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-2">
           <Button href={`${installationPath}#run-the-headless-cli`} data-analytics-placement="install-cli" variant="outline" class="px-4!">Set up OpenTig CLI</Button>
           <a href={npmUrl} class="font-mono text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">View on npm <span aria-hidden="true">↗</span></a>

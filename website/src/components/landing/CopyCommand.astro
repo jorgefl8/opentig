@@ -2,33 +2,39 @@
 import CopyIcon from '@tabler/icons/outline/copy.svg';
 import CheckIcon from '@tabler/icons/outline/check.svg';
 import NpmIcon from '@/assets/icons/npm.svg';
-import { cliInstallCommand, npmUrl } from '@/site';
+import { npmUrl, scriptInstallCommand } from '@/site';
 interface Props {
   command?: string;
+  /** Heading of the full layout, such as the systems the command is for. */
+  label?: string;
+  /** Full layout without its own border, for several commands in one box. */
+  bare?: boolean;
+  /** Compact layout: link the npm package after the Copy button. */
+  npmLink?: boolean;
   placement?: 'hero' | 'install';
   compact?: boolean;
   /** Primary action: a visible, filled Copy button instead of the icon-only control. */
   emphasis?: boolean;
 }
-const { command = cliInstallCommand, placement = 'install', compact = false, emphasis = false } = Astro.props;
+const { command = scriptInstallCommand, label = 'Terminal', bare = false, npmLink = true, placement = 'install', compact = false, emphasis = false } = Astro.props;
 ---
 
-<div data-copy-command class:list={['rounded-lg border bg-background/80', emphasis ? 'copy-emphasis border-white/15' : 'border-border/60', compact ? 'flex items-center gap-1 p-1.5 text-left' : 'p-3']}>
+<div data-copy-command class:list={[!bare && 'rounded-lg border bg-background/80', !bare && (emphasis ? 'copy-emphasis border-white/15' : 'border-border/60'), compact ? 'flex items-center gap-1 p-1.5 text-left' : 'p-3']}>
   {compact && <code class="min-w-0 flex-1 break-words px-2 font-mono text-xs sm:text-sm leading-relaxed text-foreground">{command}</code>}
   <div class={compact ? 'contents' : 'flex items-center justify-between gap-2'}>
-    {!compact && <span class="font-mono text-xs text-muted-foreground">Terminal</span>}
-    <button hidden data-copy-cli={command} data-copy-placement={placement} data-copy-compact={compact && !emphasis ? 'true' : undefined} type="button" aria-label="Copy CLI install command"
+    {!compact && <span class="font-mono text-xs text-muted-foreground">{label}</span>}
+    <button hidden data-copy-cli={command} data-copy-placement={placement} data-copy-compact={compact && !emphasis ? 'true' : undefined} type="button" aria-label={`Copy ${label === 'Terminal' ? 'CLI install' : label} command`}
       class:list={['items-center justify-center gap-1.5 rounded-md text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary', emphasis ? 'copy-emphasis-button min-h-10 shrink-0 px-3 font-semibold text-white' : 'text-foreground hover:bg-muted', !emphasis && (compact ? 'min-h-10 min-w-10 shrink-0 px-2' : 'border border-border bg-secondary px-2 py-1')]}>
       <span data-copy-icon><CopyIcon width={16} height={16} aria-hidden="true" /></span>
       <span data-copy-success hidden><CheckIcon width={16} height={16} aria-hidden="true" /></span>
       <span data-copy-label class:list={{ 'sr-only': compact && !emphasis }}>Copy</span>
     </button>
   </div>
-  {compact && <>
+  {compact && npmLink && <>
     <span aria-hidden="true" class="h-6 w-px shrink-0 bg-white/15"></span>
     <a href={npmUrl} target="_blank" rel="noopener noreferrer" aria-label="View OpenTig CLI on npm (opens in a new tab)" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><NpmIcon width={24} height={24} aria-hidden="true" /></a>
   </>}
-  {!compact && <code class="mt-3 block break-all font-mono text-xs leading-relaxed text-foreground">{command}</code>}
+  {!compact && <code class:list={['block break-all font-mono text-xs leading-relaxed text-foreground', bare ? 'mt-1.5' : 'mt-3']}>{command}</code>}
   <span data-copy-status role="status" class="sr-only"></span>
 </div>
 
