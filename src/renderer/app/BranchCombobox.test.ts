@@ -144,3 +144,15 @@ it('opens a detached HEAD by saying where it is, outside the choices, and marks 
   expect(notice.closest('[role="listbox"]')).toBeNull();
   expect(document.querySelector('[role="option"][aria-selected="true"]')).toBeNull();
 });
+
+it('names a few of the branches on a detached HEAD\'s commit and counts the rest, so the note leaves room for the list', async () => {
+  const names = Array.from({ length: 24 }, (_, index) => `release/${index}`);
+  const detached = { label: 'Detached at 823a26e', shortOid: '823a26e', subject: null, branches: names };
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(BranchCombobox, {
+    branches: [branchInfo('main')], currentLabel: detached.label, detached, onBranch, onManage,
+  }))));
+  await act(async () => trigger().click());
+  const notice = document.querySelector<HTMLElement>('[role="note"]')!;
+  expect([...notice.querySelectorAll('.branch-detached-ref')].map(ref => ref.textContent)).toEqual(names.slice(0, 4));
+  expect(notice.textContent).toContain('and 20 more');
+});

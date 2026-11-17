@@ -106,12 +106,19 @@ export function BranchCombobox({ branches, currentLabel, detached, disabled, rea
  * where HEAD is instead. It informs and isn't a choice, so it sits outside the listbox.
  */
 function DetachedHeadNotice({ head }: { head: DetachedHead }) {
+  // A commit dozens of branches share would otherwise fill the menu with the note.
+  const shown = head.branches.slice(0, DETACHED_NOTICE_BRANCHES);
+  const more = head.branches.length - shown.length;
   return <div className="branch-detached-notice" role="note" aria-label={head.label}>
     <IconGitCommit aria-hidden="true" />
     <strong>{head.shortOid ? <>Detached at <code>{head.shortOid}</code></> : head.label}</strong>
     {head.subject && <span className="branch-detached-subject">{head.subject}</span>}
-    {head.branches.length > 0 && <span className="branch-detached-refs">
-      Not on a branch. Same commit as {head.branches.map((name) => <span key={name} className="branch-detached-ref"><IconGitBranch aria-hidden="true" />{name}</span>)}
+    {shown.length > 0 && <span className="branch-detached-refs">
+      Not on a branch. Same commit as {shown.map((name) => <span key={name} className="branch-detached-ref"><IconGitBranch aria-hidden="true" /><span>{name}</span></span>)}
+      {more > 0 && <span className="branch-detached-more">and {more} more</span>}
     </span>}
   </div>;
 }
+
+/** How many of the branches on a detached HEAD's commit its note names; local ones come first. */
+const DETACHED_NOTICE_BRANCHES = 4;

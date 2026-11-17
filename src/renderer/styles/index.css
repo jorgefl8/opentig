@@ -2138,6 +2138,8 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
 .searchable-picker [data-slot="combobox-input"] > svg { width: 14px; height: 14px; }
 .searchable-picker-list { max-height: 292px; padding: 4px; }
 .repository-picker[data-slot="combobox-content"] { max-height: min(80dvh, var(--available-height)); }
+/* The detached HEAD's note sits above the branches; the menu grows by about its height rather than taking it from the list. */
+.searchable-picker[data-slot="combobox-content"]:has(.branch-detached-notice) { max-height: min(36rem, var(--available-height)); }
 .repository-picker .searchable-picker-list { max-height: none; }
 .searchable-picker-group { padding: 6px 8px 3px; font-size: var(--text-meta); font-weight: var(--weight-strong); line-height: 14px; }
 .searchable-picker-item { min-height: 32px; padding: 5px 28px 5px 8px; gap: 7px; border-radius: 5px; color: var(--popover-foreground); }
@@ -2179,6 +2181,7 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
 .branch-detached-refs { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; }
 .branch-detached-ref { display: inline-flex; max-width: 100%; align-items: center; gap: 3px; height: 18px; padding: 0 6px; overflow: hidden; border-radius: 4px; background: color-mix(in oklch, var(--foreground) 8%, transparent); color: var(--popover-foreground); font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .branch-detached-ref svg { width: 11px; height: 11px; flex: none; }
+.branch-detached-ref span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .searchable-picker-footer { border-top: 1px solid var(--border); padding: 4px; }
 .searchable-picker-footer button { display: flex; width: 100%; min-height: 30px; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; color: var(--muted-foreground); font-size: var(--text-ui); text-align: left; cursor: pointer; }
 .searchable-picker-footer button:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--popover)); color: var(--popover-foreground); }
