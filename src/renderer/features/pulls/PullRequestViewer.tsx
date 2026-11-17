@@ -94,8 +94,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
     // The live state reloads them as soon as GitHub reports a change.
     staleTime: PULL_REQUEST_STALE_MS,
-    queryFn: async ({ queryKey, signal }) => {
-      const details = await readFresh(queryKey, signal, (fresh) => opentig.github.getPullRequest(repositoryId, prNumber, fresh));
+    queryFn: async ({ queryKey }) => {
+      const details = await readFresh(queryKey, (fresh) => opentig.github.getPullRequest(repositoryId, prNumber, fresh));
       const bodyHtml = details.body.trim()
         ? await import('@/features/markdown/render-markdown')
           .then(({ renderMarkdown }) => renderMarkdown(details.body))

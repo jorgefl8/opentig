@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { cloneOfGitHub, openRepository, pullRequestBranch } from './support/app';
 import { expect, test } from './support/fixtures';
@@ -131,7 +132,7 @@ test('the pull request list shows placeholder rows while GitHub answers, and its
   expect(Math.abs(arrived!.height - placeholder!.height)).toBeLessThanOrEqual(1);
 });
 
-test('Refresh on the GitHub section reads the pull request list from GitHub again, without holding the app for it', async ({ pairedPage: page, repository, github }) => {
+test('Refresh on the GitHub section reads the pull request list from GitHub again, without holding the app for it', async ({ pairedPage: page, repository, github, server }) => {
   await cloneOfGitHub(repository);
   const first = await pullRequestBranch(repository, 'feature/status-filter', [
     { message: 'Filter tasks by status', files: { 'src/filter-tasks.js': 'export const filterTasks = (list) => list;\n' } },
@@ -139,6 +140,10 @@ test('Refresh on the GitHub section reads the pull request list from GitHub agai
   const pull = (number: number, title: string, headRefName: string, branch: typeof first) => ({ number, title, headRefName, baseRefName: 'main', ...branch });
   const world = { login: 'e2e-tester', nameWithOwner: 'e2e/sample-project', pulls: [pull(24, 'Filter tasks by status', 'feature/status-filter', first)] };
   await github(world);
+  // The list reads the stand-in GitHub has answered, with when each began; a branch's own pull request is another read.
+  const listReads = async () => (await readFile(`${server.githubWorld}.log`, 'utf8')).trim().split('\n')
+    .map((line) => JSON.parse(line) as { at: number; args: string[] })
+    .filter(({ args }) => args[0] === 'pr' && args[1] === 'list' && !args.includes('--head'));
   await openRepository(page, repository);
   await section(page, 'GitHub').click();
   const list = page.getByRole('list', { name: /pull requests$/ });
@@ -148,20 +153,21 @@ test('Refresh on the GitHub section reads the pull request list from GitHub agai
   const second = await pullRequestBranch(repository, 'feature/due-dates', [
     { message: 'Sort tasks by due date', files: { 'src/sort-tasks.js': 'export const sortTasks = (list) => list;\n' } },
   ]);
-  // GitHub is slow to answer this time.
-  await github({ ...world, pullListDelayMs: 3_000, pulls: [...world.pulls, pull(25, 'Sort tasks by due date', 'feature/due-dates', second)] });
-  // Refresh asks GitHub again only for what it answered more than a few seconds ago.
-  await page.waitForTimeout(5_500);
+  // GitHub is slow to answer this time, far slower than the Git part of a refresh.
+  await github({ ...world, pullListDelayMs: 8_000, pulls: [...world.pulls, pull(25, 'Sort tasks by due date', 'feature/due-dates', second)] });
+  // Refresh asks GitHub again only for what it answered more than five seconds ago.
+  await expect.poll(async () => Date.now() - Math.max(...(await listReads()).map(({ at }) => at)), { timeout: 20_000 }).toBeGreaterThan(5_000);
+  const readsBefore = (await listReads()).length;
   const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
   const turning = refresh.locator('g.refresh-icon-turn');
   await refresh.click();
 
   // The Git part is done long before GitHub answers: the app is usable again while the icon still turns.
-  await expect(refresh).toBeEnabled({ timeout: 2_500 });
+  await expect(refresh).toBeEnabled({ timeout: 5_000 });
   await expect(turning).toHaveCount(1);
-  // Pressed again meanwhile, it refreshes Git and leaves GitHub's reads to finish.
+  // Pressed again meanwhile, it refreshes Git and leaves GitHub's reads to finish, without reading the list again.
   await refresh.click();
-  // GitHub commands run one at a time, after the branch's own pull request that the Git refresh reads.
-  await expect(list.getByRole('button', { name: /Sort tasks by due date/ })).toBeVisible({ timeout: 15_000 });
-  await expect(turning).toHaveCount(0);
+  await expect(list.getByRole('button', { name: /Sort tasks by due date/ })).toBeVisible({ timeout: 30_000 });
+  await expect(turning).toHaveCount(0, { timeout: 10_000 });
+  expect((await listReads()).length).toBe(readsBefore + 1);
 });

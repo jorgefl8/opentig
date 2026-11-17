@@ -9,7 +9,8 @@ import process from 'node:process';
 
 const worldPath = process.env.OPENTIG_E2E_GITHUB;
 const args = process.argv.slice(2);
-if (worldPath) appendFileSync(`${worldPath}.log`, `${JSON.stringify(args)}\n`);
+// Each call, with when it began, so a journey can count them and tell how old GitHub's last answer is.
+if (worldPath) appendFileSync(`${worldPath}.log`, `${JSON.stringify({ at: Date.now(), args })}\n`);
 const world = worldPath ? JSON.parse(readFileSync(worldPath, 'utf8')) : null;
 
 function done(value) {

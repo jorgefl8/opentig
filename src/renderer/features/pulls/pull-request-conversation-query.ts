@@ -10,7 +10,7 @@ import { readFresh } from '@/lib/fresh-reads';
 export function pullRequestConversationQueryOptions(repositoryId: string, number: number) {
   return queryOptions({
     queryKey: queryKeys.pullRequestConversation(repositoryId, number),
-    queryFn: ({ queryKey, signal }) => readFresh(queryKey, signal, (fresh) => opentig.github.getPullRequestConversation(repositoryId, number, fresh)),
+    queryFn: ({ queryKey }) => readFresh(queryKey, (fresh) => opentig.github.getPullRequestConversation(repositoryId, number, fresh)),
     // The PR's live state reloads it as soon as GitHub reports a change.
     staleTime: 60_000,
   });

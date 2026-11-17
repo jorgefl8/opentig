@@ -7,7 +7,7 @@ import { readFresh } from '@/lib/fresh-reads';
 export function releasesQueryOptions(repositoryId: string) {
   return queryOptions({
     queryKey: queryKeys.releases(repositoryId),
-    queryFn: ({ queryKey, signal }) => readFresh(queryKey, signal, (fresh) => opentig.github.listReleases(repositoryId, fresh)),
+    queryFn: ({ queryKey }) => readFresh(queryKey, (fresh) => opentig.github.listReleases(repositoryId, fresh)),
     staleTime: 60_000,
     gcTime: 30 * 60_000,
   });

@@ -78,7 +78,7 @@ import { LineBlameContext, type LineBlameSettings } from '@/features/viewer/line
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
 import {
-  mergeRefreshRequests, refreshOperationsForScope, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest, type RefreshView,
+  mergeRefreshRequests, refreshOperationsForScope, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
@@ -496,9 +496,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
   const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
-    queryFn: async ({ queryKey, signal }) => {
+    queryFn: async ({ queryKey }) => {
       // Asked by an explicit refresh, so the read skips the list the backend keeps for a few seconds.
-      try { return pullRequestStates.length ? await readFresh(queryKey, signal, (fresh) => opentig.github.listPullRequests(repository!.id, pullRequestStates, fresh)) : []; }
+      try { return pullRequestStates.length ? await readFresh(queryKey, (fresh) => opentig.github.listPullRequests(repository!.id, pullRequestStates, fresh)) : []; }
       catch (error) {
         if (serializedErrorFromReason(error)?.code === 'GH_CLI_NOT_FOUND') {
           void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubCliStatus });
@@ -1030,11 +1030,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   // GitHub's part of a manual refresh runs beside the Git part, outside `busy` and the refresh cycle,
   // so the app is usable as soon as Git is read, as before; only the Refresh icon keeps turning.
-  const [githubRefreshingId, setGitHubRefreshingId] = useState<string | null>(null);
-  const [githubRefresher] = useState(() => createGitHubRefresher(setGitHubRefreshingId));
-  const refreshGitHub = useCallback((repositoryId: string, view: RefreshView) => {
-    const onScreen = githubOnScreen({ view, viewer: viewerSelectionRef.current, ...githubScreenRef.current });
-    githubRefresher.run(repositoryId, () => refreshGitHubOnScreen(appQueryClient, repositoryId, onScreen));
+  const [githubRefreshingIds, setGitHubRefreshingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [githubRefresher] = useState(() => createGitHubRefresher(setGitHubRefreshingIds));
+  const refreshGitHub = useCallback((repositoryId: string) => {
+    // What is on screen is taken when the reads start, which for a follow-up is when the reads before it end.
+    githubRefresher.run(repositoryId, () => refreshGitHubOnScreen(appQueryClient, repositoryId,
+      githubOnScreen({ view: viewRef.current, viewer: viewerSelectionRef.current, ...githubScreenRef.current })));
   }, [appQueryClient, githubRefresher]);
 
   const performRefresh = useCallback(async (repositoryId: string, request: RefreshRequest) => {
@@ -1049,7 +1050,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       void appQueryClient.invalidateQueries({ queryKey: queryKeys.histories(repositoryId), refetchType: 'none' });
     }
     if (!background) { busyRef.current = 'refresh'; setBusy('refresh'); }
-    if (manual) refreshGitHub(repositoryId, refreshView);
+    if (manual) refreshGitHub(repositoryId);
     try {
       if (manual) {
         // Explicit checks bypass the automatic interval; update state stays in
@@ -3972,7 +3973,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           worktreeAgents={worktreeAgents}
           preferences={settingsPreferences}
           busy={busy}
-          githubRefreshing={githubRefreshingId === repository.id}
+          githubRefreshing={githubRefreshingIds.has(repository.id)}
           repositorySyncOperations={repositorySyncOperations}
           remoteProblem={remoteProblem?.repositoryId === repository.id ? remoteProblem : null}
           pendingRepositoryId={pendingRepositoryId}

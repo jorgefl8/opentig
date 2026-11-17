@@ -63,16 +63,17 @@ export function githubRefreshReads(repositoryId: string, onScreen: GitHubOnScree
 /** A query a refresh read this recently isn't read again by the next one, so pressing Refresh twice reads once. */
 export const GITHUB_REFRESH_FLOOR_MS = 5_000;
 
-/** When a refresh last read each query, by query client. */
+/** When a refresh last got an answer for each query, by query client, on a clock that only moves forward. */
 const refreshes = new WeakMap<QueryClient, Map<string, number>>();
 
 /**
  * Reads again what of GitHub is on screen, and settles when those reads do.
- * Only queries something shows are read, and not those a refresh read in the last
- * `GITHUB_REFRESH_FLOOR_MS`. One that fails keeps what it showed, and says so where
- * that query's notices do, so this doesn't throw.
+ * Only queries something shows are read, and not those a refresh got an answer
+ * for in the last `GITHUB_REFRESH_FLOOR_MS`: one that failed or was cancelled is
+ * read again by the next Refresh. A read that fails keeps what it showed, and
+ * says so where that query's notices do, so this doesn't throw.
  */
-export async function refreshGitHubOnScreen(client: QueryClient, repositoryId: string, onScreen: GitHubOnScreen, now: () => number = Date.now): Promise<void> {
+export async function refreshGitHubOnScreen(client: QueryClient, repositoryId: string, onScreen: GitHubOnScreen, now: () => number = () => performance.now()): Promise<void> {
   const refreshedAt = refreshes.get(client) ?? new Map<string, number>();
   refreshes.set(client, refreshedAt);
   for (const [key, at] of refreshedAt) if (now() - at >= GITHUB_REFRESH_FLOOR_MS) refreshedAt.delete(key);
@@ -81,18 +82,27 @@ export async function refreshGitHubOnScreen(client: QueryClient, repositoryId: s
       .filter((query) => !refreshedAt.has(query.queryHash))
       .map(async (query) => {
         const queryKey = query.queryKey;
-        const asks = askFreshReads(fresh ? [queryKey] : []);
-        try {
-          // Cancels a read under way, which may predate the refresh; a first load can't be cancelled and is waited for.
-          await client.refetchQueries({ queryKey, exact: true, type: 'active' });
-          // That first load, or a read that replaced a cancelled one and isn't done, leaves the ask unanswered: read until it is.
-          for (let attempt = 0; attempt < 2 && !asks.answered(queryKey); attempt++) {
-            await client.refetchQueries({ queryKey, exact: true, type: 'active' }, { cancelRefetch: false });
+        const startedWith = query.state.dataUpdateCount;
+        // A first load under way isn't fresh, and a fresh read can be cancelled with nothing in its
+        // place: read again until a fresh read completed and the query took its answer, or failed.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const answeredBefore = { data: query.state.dataUpdateCount, error: query.state.errorUpdateCount };
+          const asks = askFreshReads(fresh ? [queryKey] : []);
+          try {
+            // The first attempt cancels a read under way, which may predate the refresh; a first load can't be
+            // cancelled and is waited for. A read that replaced a cancelled one is waited for, not cancelled again.
+            await client.refetchQueries({ queryKey, exact: true, type: 'active' }, { cancelRefetch: attempt === 0 });
+            for (let wait = 0; wait < 3 && query.state.fetchStatus === 'fetching'; wait++) {
+              await client.refetchQueries({ queryKey, exact: true, type: 'active' }, { cancelRefetch: false });
+            }
+          } finally {
+            asks.drop();
           }
-          refreshedAt.set(query.queryHash, now());
-        } finally {
-          asks.drop();
+          const landed = query.state.dataUpdateCount !== answeredBefore.data || query.state.errorUpdateCount !== answeredBefore.error;
+          if (asks.answered(queryKey) && landed) break;
         }
+        // Only an answer counts, so a Refresh after one that failed or was cancelled tries again.
+        if (query.state.status === 'success' && query.state.dataUpdateCount !== startedWith) refreshedAt.set(query.queryHash, now());
       })));
   const { first, then } = githubRefreshReads(repositoryId, onScreen);
   await read(first);
@@ -100,24 +110,32 @@ export async function refreshGitHubOnScreen(client: QueryClient, repositoryId: s
 }
 
 /**
- * Runs GitHub's part of manual refreshes beside their Git part, one at a time per
- * repository: a Refresh pressed while it still reads leaves it to finish rather
- * than starting more reads. `onRunning` says which repository's part runs, for
- * the Refresh icon, which keeps turning until it is done.
+ * Runs GitHub's part of manual refreshes beside their Git part, one at a time for
+ * each repository. A Refresh pressed while that repository's part still reads
+ * doesn't start more reads beside it: it leaves one follow-up, which reads what
+ * is on screen when the running part ends; what that part just read is skipped
+ * then, so only what it didn't cover, such as a pull request opened meanwhile, is
+ * read. `onRunning` says which repositories' parts run, for the Refresh icon.
  */
-export function createGitHubRefresher(onRunning: (repositoryId: string | null) => void) {
-  let running: { repositoryId: string; reads: Promise<void> } | null = null;
+export function createGitHubRefresher(onRunning: (repositoryIds: ReadonlySet<string>) => void) {
+  const runs = new Map<string, { again: (() => Promise<void>) | null }>();
+  const announce = () => onRunning(new Set(runs.keys()));
   return {
     run(repositoryId: string, read: () => Promise<void>): void {
-      if (running?.repositoryId === repositoryId) return;
-      // A read that fails says so where its list or viewer shows it.
-      const reads: Promise<void> = read().catch(() => undefined).finally(() => {
-        if (running?.reads !== reads) return;
-        running = null;
-        onRunning(null);
+      const running = runs.get(repositoryId);
+      if (running) { running.again = read; return; }
+      const run = { again: null as (() => Promise<void>) | null };
+      runs.set(repositoryId, run);
+      announce();
+      void (async () => {
+        for (let next: (() => Promise<void>) | null = read; next; next = run.again, run.again = null) {
+          // A read that fails says so where its list or viewer shows it.
+          await next().catch(() => undefined);
+        }
+      })().finally(() => {
+        runs.delete(repositoryId);
+        announce();
       });
-      running = { repositoryId, reads };
-      onRunning(repositoryId);
     },
   };
 }

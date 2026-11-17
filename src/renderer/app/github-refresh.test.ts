@@ -34,15 +34,17 @@ function screen() {
   clients.push(client);
   const reads: Array<{ key: string; fresh: boolean; release(): void }> = [];
   let hold = false;
+  let failing = false;
   const watch = (queryKey: readonly unknown[]) => {
-    const observer = new QueryObserver(client, { queryKey, queryFn: ({ queryKey: key, signal }) => readFresh(key, signal, async (fresh) => {
+    const observer = new QueryObserver(client, { queryKey, queryFn: ({ queryKey: key }) => readFresh(key, async (fresh) => {
+      if (failing) throw new Error('GitHub did not answer');
       const held = hold ? new Promise<void>((resolve) => reads.push({ key: String(key[2]), fresh, release: resolve })) : (reads.push({ key: String(key[2]), fresh, release: () => undefined }), undefined);
       await held;
       return `${fresh ? 'fresh' : 'kept'} ${reads.length}`;
     }) });
     return observer.subscribe(() => undefined);
   };
-  return { client, reads, watch, holding: (value: boolean) => { hold = value; } };
+  return { client, reads, watch, holding: (value: boolean) => { hold = value; }, failing: (value: boolean) => { failing = value; } };
 }
 
 it('reads again only the queries on screen, past the backend\'s recent answers, and settles when they do', async () => {
@@ -135,29 +137,72 @@ it('reads again after a fresh read that was cancelled outright, and leaves no as
   await refreshing;
   expect(client.getQueryData(key)).toBe('fresh 3');
 
-  // Closing the pull request mid-refresh cancels its read; the ask goes with the refresh.
-  refreshing = refreshGitHubOnScreen(client, 'repo', { list: null, viewer: { type: 'pull-request', number: 7 } }, () => Date.now() + 60_000);
+  // Closing the pull request mid-refresh leaves its read to land, for when it is opened again, and no ask behind.
+  refreshing = refreshGitHubOnScreen(client, 'repo', { list: null, viewer: { type: 'pull-request', number: 7 } }, () => performance.now() + 60_000);
   await vi.waitFor(() => expect(reads).toHaveLength(4));
   stop();
   reads[3]!.release();
   await refreshing;
+  await vi.waitFor(() => expect(client.getQueryData(key)).toBe('fresh 4'));
   expect(pendingFreshReads()).toBe(0);
   stop = () => undefined;
   stop();
 });
 
-it('leaves GitHub\'s reads to finish when Refresh is pressed again, and says which repository they are for until then', async () => {
-  const running: Array<string | null> = [];
-  const refresher = createGitHubRefresher((repositoryId) => running.push(repositoryId));
-  let finish!: () => void;
-  const read = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
-  refresher.run('repo', read);
-  refresher.run('repo', read);
-  expect(read).toHaveBeenCalledOnce();
-  expect(running).toEqual(['repo']);
-  finish();
-  await vi.waitFor(() => expect(running).toEqual(['repo', null]));
-  // Once they are done, the next Refresh reads again; a failure ends them the same way.
-  refresher.run('repo', () => Promise.reject(new Error('GitHub did not answer')));
-  await vi.waitFor(() => expect(running).toEqual(['repo', null, 'repo', null]));
+it('counts only an answer for the floor, so a Refresh right after one that failed reads again', async () => {
+  const { client, reads, watch, failing } = screen();
+  const key = ['repository', 'repo', 'pull-request', 7];
+  const stop = watch(key);
+  await vi.waitFor(() => expect(client.getQueryData(key)).toBeDefined());
+  failing(true);
+  await refreshGitHubOnScreen(client, 'repo', { list: null, viewer: { type: 'pull-request', number: 7 } });
+  expect(client.getQueryState(key)?.status).toBe('error');
+  failing(false);
+  const before = reads.length;
+  await refreshGitHubOnScreen(client, 'repo', { list: null, viewer: { type: 'pull-request', number: 7 } });
+  expect(reads.length).toBe(before + 1);
+  expect(client.getQueryState(key)?.status).toBe('success');
+  stop();
+});
+
+/** A refresh read held until released, and the repositories whose GitHub reads run. */
+function refresher() {
+  const running: string[][] = [];
+  const reads: Array<{ name: string; finish(): void }> = [];
+  const github = createGitHubRefresher((ids) => running.push([...ids].sort()));
+  const read = (name: string) => () => new Promise<void>((resolve) => reads.push({ name, finish: resolve }));
+  return { github, read, reads, running, now: () => running.at(-1) ?? [] };
+}
+
+it('reads what is on screen once the running reads end, when Refresh is pressed again meanwhile, rather than nothing or the same twice', async () => {
+  const { github, read, reads, now } = refresher();
+  github.run('repo', read('the list'));
+  // A pull request opened, then the closed tab chosen, each with Refresh pressed again.
+  github.run('repo', read('the list and #12'));
+  github.run('repo', read('the closed list and #12'));
+  expect(reads.map(({ name }) => name)).toEqual(['the list']);
+  reads[0]!.finish();
+  await vi.waitFor(() => expect(reads.map(({ name }) => name)).toEqual(['the list', 'the closed list and #12']));
+  // The icon keeps turning through the follow-up.
+  expect(now()).toEqual(['repo']);
+  reads[1]!.finish();
+  await vi.waitFor(() => expect(now()).toEqual([]));
+});
+
+it('keeps each repository\'s reads apart, so one finishing neither stops the other\'s icon nor lets it read twice', async () => {
+  const { github, read, reads, now } = refresher();
+  github.run('a', read('a'));
+  github.run('b', read('b'));
+  expect(now()).toEqual(['a', 'b']);
+  reads[1]!.finish();
+  await vi.waitFor(() => expect(now()).toEqual(['a']));
+  github.run('a', read('a again'));
+  expect(reads.map(({ name }) => name)).toEqual(['a', 'b']);
+  reads[0]!.finish();
+  await vi.waitFor(() => expect(reads.map(({ name }) => name)).toEqual(['a', 'b', 'a again']));
+  reads[2]!.finish();
+  await vi.waitFor(() => expect(now()).toEqual([]));
+  // A failure ends them the same way.
+  github.run('a', () => Promise.reject(new Error('GitHub did not answer')));
+  await vi.waitFor(() => expect(now()).toEqual([]));
 });
