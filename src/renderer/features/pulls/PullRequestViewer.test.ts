@@ -246,7 +246,8 @@ it('shows the header from the list at once, and fills in the rest when the detai
 it('shows the shape of a PR it knows nothing about yet, instead of a spinner', async () => {
   api.getPullRequest.mockReturnValue(new Promise(() => {}));
   await render();
-  expect(container.querySelector('.pr-viewer-skeleton')?.getAttribute('aria-label')).toBe('Loading pull request #7');
+  const skeleton = container.querySelector('.pr-viewer-skeleton')!;
+  expect(document.getElementById(skeleton.getAttribute('aria-labelledby')!)?.textContent).toBe('Loading pull request #7…');
   expect(container.querySelector('[data-slot="spinner"]')).toBeNull();
 });
 

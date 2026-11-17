@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 
 /** Opened with nothing known yet: the header's shape, so the viewer doesn't jump in from a spinner. */
 export function ViewerSkeleton({ bar, label }: { bar: ReactNode; label: string }) {
+  const words = useId();
   return (
-    <div className="pr-viewer pr-viewer-skeleton" role="status" aria-label={label}>
-      <LoadingWords label={label} />
+    <div className="pr-viewer pr-viewer-skeleton" role="status" aria-labelledby={words}>
+      <LoadingWords id={words} label={label} />
       {bar}
       <header className="pr-viewer-header no-tabs">
         <span className="pr-skeleton-line title" />
@@ -18,10 +19,11 @@ export function ViewerSkeleton({ bar, label }: { bar: ReactNode; label: string }
 
 /**
  * What a screen reader speaks: many announce a live region's text, not its label,
- * and the placeholders themselves are hidden from them.
+ * and the placeholders themselves are hidden from them. The region takes its name
+ * from these same words, so they aren't read twice when browsing.
  */
-function LoadingWords({ label }: { label: string }) {
-  return <span className="sr-only">{label}…</span>;
+function LoadingWords({ id, label }: { id: string; label: string }) {
+  return <span id={id} className="sr-only">{label}…</span>;
 }
 
 export type ListSkeletonKind = 'pull' | 'run' | 'release';
@@ -38,9 +40,10 @@ const META_WIDTHS = ['46%', '38%', '52%', '34%', '42%', '48%', '36%', '44%'];
  * gives it the line's real height at any type size.
  */
 export function ListSkeleton({ kind, label, rows = TITLE_WIDTHS.length }: { kind: ListSkeletonKind; label: string; rows?: number }) {
+  const words = useId();
   return (
-    <div className="list-skeleton" role="status" aria-label={label}>
-      <LoadingWords label={label} />
+    <div className="list-skeleton" role="status" aria-labelledby={words}>
+      <LoadingWords id={words} label={label} />
       {Array.from({ length: rows }, (_, index) => {
         const bar = (width: string, className = '') => <>{'​'}<span className={`pr-skeleton-line list-skeleton-bar ${className}`} style={{ width }} /></>;
         const title = <span className="pull-line">

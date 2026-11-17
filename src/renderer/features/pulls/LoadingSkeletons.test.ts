@@ -26,5 +26,9 @@ it('speaks what is loading inside the region, as the spinner\'s text was, and hi
   expect(list.querySelectorAll('.pull-item[aria-hidden="true"]').length).toBeGreaterThan(0);
 
   await act(async () => root.render(createElement(ViewerSkeleton, { bar: null, label: 'Loading release v1.2.0' })));
-  expect(spokenText(host.querySelector('[role="status"]')!)).toBe('Loading release v1.2.0…');
+  const viewer = host.querySelector('[role="status"]')!;
+  expect(spokenText(viewer)).toBe('Loading release v1.2.0…');
+  // Named by those same words, rather than a label of its own that would be read as well.
+  expect(viewer.hasAttribute('aria-label')).toBe(false);
+  expect(document.getElementById(viewer.getAttribute('aria-labelledby')!)?.textContent).toBe('Loading release v1.2.0…');
 });
