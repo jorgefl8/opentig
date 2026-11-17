@@ -73,6 +73,21 @@ jobs:
       - name: Run the packed opentig alias with the packed CLI it depends on
         working-directory: source
         run: node ../automation/scripts/smoke-npm-alias.mjs dist/headless
+      - name: Prepare a login session that can enable lingering
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          sudo systemctl start "user@$(id -u).service"
+          # service install enables lingering through logind, which asks polkit.
+          if ! timeout 20 busctl --system status org.freedesktop.PolicyKit1 >/dev/null 2>&1; then
+            sudo apt-get update -q
+            sudo apt-get install -y -q --no-install-recommends polkitd
+          fi
+      # The release must install with the website's current install.sh, as visitors will run it.
+      - name: Install the packed CLI with install.sh, then uninstall
+        run: |
+          artifact="$(node -p "require('node:path').resolve('source/dist/headless', require('./source/dist/headless/opentig-headless.json').filename)")"
+          # su - opens a login session for the runner's own user, as a terminal or SSH login does.
+          sudo su - "$(id -un)" -c "cd '$PWD' && PATH='$PATH' node automation/website/scripts/verify-install.mjs --shell dash --package '$artifact'"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cli-release

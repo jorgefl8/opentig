@@ -21,6 +21,7 @@ jobs:
     outputs:
       required: ${{ steps.scope.outputs.required }}
       website: ${{ steps.scope.outputs.website }}
+      install_scripts: ${{ steps.scope.outputs.install_scripts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,7 +134,7 @@ jobs:
   # Runs the website's install scripts for real against this commit's packed CLI.
   install-scripts:
     needs: changes
-    if: needs.changes.outputs.required == 'true'
+    if: needs.changes.outputs.install_scripts == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -154,7 +155,7 @@ jobs:
       - run: pnpm run release:pack:headless
       - name: Check missing requirements, cut-short copies, and shellcheck
         env:
-          OPENTIG_REQUIRE_INSTALL_SHELLS: ${{ runner.os == 'Linux' && 'sh,dash,bash,pwsh,shellcheck' || runner.os == 'Windows' && 'powershell,pwsh' || 'sh,bash' }}
+          OPENTIG_REQUIRE_INSTALL_SHELLS: ${{ runner.os == 'Linux' && 'sh,dash,bash,pwsh,shellcheck' || runner.os == 'Windows' && 'powershell,pwsh' || 'sh,bash,zsh' }}
         run: node --test website/scripts/install-scripts.test.mjs
       - name: Prepare a login session that can enable lingering
         if: runner.os == 'Linux'
@@ -176,12 +177,14 @@ jobs:
             # su - opens a login session for the runner's own user, as a terminal or SSH login does.
             sudo su - "$(id -un)" -c "cd '$PWD' && PATH='$PATH' node website/scripts/verify-install.mjs --shell $shell --package '$artifact'"
           done
-      - name: Install with install.sh under sh, then uninstall
+      - name: Install with install.sh under sh and zsh, then uninstall
         if: runner.os == 'macOS'
         shell: bash
         run: |
           artifact="$(node -p "require('node:path').resolve('dist/headless', require('./dist/headless/opentig-headless.json').filename)")"
-          node website/scripts/verify-install.mjs --shell sh --package "$artifact"
+          for shell in sh zsh; do
+            node website/scripts/verify-install.mjs --shell "$shell" --package "$artifact"
+          done
       - name: Install with install.ps1 under Windows PowerShell and PowerShell 7, then uninstall
         if: runner.os == 'Windows'
         shell: bash

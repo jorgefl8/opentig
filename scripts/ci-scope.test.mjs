@@ -30,14 +30,14 @@ afterAll(async () => { if (root) await rm(root, { recursive: true, force: true, 
 it('skips prose-only push and PR changes while retaining manual validation', async () => {
   await writeFile(path.join(root, 'docs', 'guide.md'), 'New documentation\n');
   const head = commit();
-  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: false });
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: false, installScripts: false });
   expect(needsValidation('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toBe(false);
   expect(needsValidation('workflow_dispatch', {}, head, root)).toBe(true);
 });
 
 it('validates a code change mixed with documentation', async () => {
   await writeFile(path.join(root, 'application.ts'), 'export const value = 2;\n');
-  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: false });
+  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: false, installScripts: false });
 });
 
 it('skips application jobs for website-only pushes and PRs', async () => {
@@ -46,32 +46,50 @@ it('skips application jobs for website-only pushes and PRs', async () => {
     await writeFile(path.join(root, file), 'Website fixture\n');
   }
   const head = commit();
-  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
-  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true });
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true, installScripts: false });
+  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true, installScripts: false });
   expect(needsValidation('workflow_dispatch', {}, head, root)).toBe(true);
 });
 
-it('runs the application jobs, whose packed CLI the install scripts install, when an install script changes', async () => {
-  const file = path.join(root, 'website/public/install.sh');
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, '#!/bin/sh\n');
-  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: true });
-});
+// The install-scripts job packs the CLI and installs it with each script on three systems.
+it.each(['website/public/install.sh', 'website/public/install.ps1', 'website/scripts/verify-install.mjs'])(
+  'runs the install-scripts job, without the application jobs, when %s changes', async (file) => {
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), 'Changed script\n');
+    expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: false, website: true, installScripts: true });
+  },
+);
+
+it.each(['packages/server/src/cli-service.ts', 'scripts/pack-headless.mjs', 'scripts/headless-release.mjs', '.github/workflows/headless-release.yml', 'pnpm-lock.yaml'])(
+  'runs the install-scripts job when the CLI, its packing, or its release changes: %s', async (file) => {
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), 'Changed CLI fixture\n');
+    expect(validationScope('push', { before: base }, commit(), root)).toMatchObject({ required: true, installScripts: true });
+  },
+);
+
+it.each(['src/renderer/app/App.tsx', 'src/main/github/GitHubService.ts', 'e2e/history.e2e.ts'])(
+  'leaves the install-scripts job out for application changes outside the CLI package: %s', async (file) => {
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), 'Changed application fixture\n');
+    expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, commit(), root)).toMatchObject({ required: true, installScripts: false });
+  },
+);
 
 it('validates the website for manual-deployment workflow edits without making an application release', async () => {
   const file = path.join(root, '.github/workflows/website.yml');
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, 'name: Deploy website\non:\n  workflow_dispatch:\n');
   const head = commit();
-  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
-  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true });
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true, installScripts: false });
+  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true, installScripts: false });
 });
 
 it('keeps release-security automation in application validation scope', async () => {
   const file = path.join(root, '.github/workflows/virustotal.yml');
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, 'name: Scan published Windows installer\n');
-  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: false });
+  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: false, installScripts: false });
 });
 
 it.each(['application.ts', 'package.json'])(
@@ -85,11 +103,11 @@ it.each(['application.ts', 'package.json'])(
 );
 
 // One path per website rule: shared source prefix, exact tsconfig, and shared tooling list.
-it.each(['src/renderer/app/App.tsx', 'tsconfig.json', '.github/workflows/ci.yml'])(
-  'validates both projects when shared file %s changes alone', async (file) => {
+it.each([['src/renderer/app/App.tsx', false], ['tsconfig.json', false], ['.github/workflows/ci.yml', true]])(
+  'validates both projects when shared file %s changes alone', async (file, installScripts) => {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await writeFile(path.join(root, file), 'Changed shared fixture\n');
-    expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: true });
+    expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: true, installScripts });
   },
 );
 
@@ -101,7 +119,7 @@ it('validates both projects for manual runs and when history cannot establish sc
     ['push', { before: 'a'.repeat(40) }, base],
     ['push', { before: base }, base],
     ['unknown', {}, base],
-  ]) expect(validationScope(event, payload, head, root)).toEqual({ required: true, website: true });
+  ]) expect(validationScope(event, payload, head, root)).toEqual({ required: true, website: true, installScripts: true });
 });
 
 it('does not exempt application code moved into the website', async () => {
@@ -134,19 +152,19 @@ it('keeps published prose sources prose-only while validating the website', asyn
     if (source !== 'docs/ai-writing-policy.md') await writeFile(path.join(root, source), '# Updated guide\n');
   }
   const head = commit();
-  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true, installScripts: false });
 });
 
 it('validates the application when the AI writing policy compiled into its prompts changes', async () => {
   expect(publishedSources.has('docs/ai-writing-policy.md')).toBe(true);
   await writeFile(path.join(root, 'docs', 'ai-writing-policy.md'), '# Updated policy\n');
-  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: true });
+  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: true, installScripts: false });
 });
 
 it.each(['docs/getting-started.md', 'CONTRIBUTING.md'])('validates the website when the published source %s changes', async (source) => {
   expect(publishedSources.has(source)).toBe(true);
   await writeFile(path.join(root, source), '# Updated guide\n');
   const head = commit();
-  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
-  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true });
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true, installScripts: false });
+  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true, installScripts: false });
 });
