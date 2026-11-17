@@ -41,6 +41,7 @@ function fixture(t, { indexable = true, site = 'https://opentig.com/' } = {}) {
   write('index.html', html()); write('404.html', html(true));
   write('robots.txt', `User-agent: *\nContent-Signal: search=yes, ai-input=yes, ai-train=yes\nAllow: /\n${indexable ? `Sitemap: ${site}sitemap.xml\n` : ''}`);
   write('index.md', '# OpenTig\n'); write('llms.txt', '# OpenTig\n\n> Review & commit.\n');
+  write('install.sh', '#!/bin/sh\n'); write('install.ps1', '& {}\n');
   write('_headers', '/\n  Link: </index.md>; rel="alternate"; type="text/markdown", </llms.txt>; rel="describedby"\n'
     + '/docs/:page/\n  Link: </docs/:page/index.md>; rel="alternate"; type="text/markdown"\n/404\n  X-Robots-Tag: noindex\n');
   write('sitemap.xml', `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${indexable ? `<url><loc>${site}</loc></url>` : ''}</urlset>`);
@@ -91,6 +92,14 @@ const regressions = [
   ['Link header to a missing file', '_headers', '</llms.txt>', '</missing.txt>', /missing local target/],
   ['llms.txt link to a missing page', 'llms.txt', '\n', '\n- [Missing](https://opentig.com/docs/missing/index.md)\n', /missing local target: \/docs\/missing/],
 ];
+// The install commands on the page and in the guides fetch these from the site root.
+for (const script of ['install.sh', 'install.ps1']) {
+  test(`rejects output without ${script}`, (t) => {
+    const output = fixture(t);
+    rmSync(join(output.directory, script));
+    assert.throws(output.validate, new RegExp(`missing ${script.replace('.', '\\.')}`));
+  });
+}
 for (const [name, file, before, after, error] of regressions) {
   test(`rejects ${name}`, (t) => {
     const output = fixture(t);

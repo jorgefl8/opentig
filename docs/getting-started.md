@@ -178,7 +178,21 @@ SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI child p
 
 ## Background services
 
-A background service keeps OpenTig running after you close the terminal. It does not need a global installation or administrator access:
+A background service keeps OpenTig running after you close the terminal. It does not need a global installation or administrator access. Install it with the script for your system, which first checks Node.js and Git:
+
+- **macOS and Linux:**
+
+  ```bash
+  curl -fsSL https://opentig.com/install.sh | sh
+  ```
+
+- **Windows PowerShell** (the [desktop app](#windows-desktop) already includes a server; use this to run the server alone):
+
+  ```powershell
+  irm https://opentig.com/install.ps1 | iex
+  ```
+
+Or, on any system with Node.js, run the same installation through npx:
 
 ```bash
 npx --yes @opentig/cli@latest service install
@@ -191,6 +205,38 @@ The service uses your OS account's repository access and CLI credentials. It doe
 `service install` starts the server in the background and registers startup persistence. Do not also run `serve` for the same home: `serve` stays in its terminal and stops when that terminal closes, while the installed service continues independently.
 
 Installation checks the effective listening address and prerequisites before staging dependencies or registering the service. It prints preparation, registration, and startup phases, and reports success only after verifying the managed server's identity. A live service can be reinstalled using its own listener. Stop an unrelated foreground process using the same home in its terminal before installing the service.
+
+### The install scripts
+
+Both scripts do the same two steps:
+
+1. Check that Node.js 24 or later, with npx, and Git 2.31 or later are on `PATH`. If one is missing or too old, the script says what it found and where to get it, then stops with a non-zero exit code without changing anything.
+2. Run `npx --yes --package=@opentig/cli@latest opentig service install`, the same installation as the npx command above. It prints the same phases, adds the `opentig` command, and offers to pair a device.
+
+They do not install Node.js or Git, use `sudo` or ask for administrator rights, or download anything other than the npm package. Everything else, including the shell profile or user `Path` change, is what `service install` itself does.
+
+**Read a script before running it.** Open [install.sh](https://opentig.com/install.sh) or [install.ps1](https://opentig.com/install.ps1) in a browser, or print it with `curl -fsSL https://opentig.com/install.sh` or `irm https://opentig.com/install.ps1`. Each one is a single function or script block that runs only after it has been read to the end, so a download cut short runs nothing. The PowerShell script never calls `exit` and leaves the session's variables and preferences as they were.
+
+When `curl ... | sh` pipes the script into the shell, the pairing question reads your terminal directly. Without a terminal, for example in automation, nothing waits for input and the pairing details are printed instead.
+
+| Environment variable | Effect |
+| --- | --- |
+| `OPENTIG_VERSION` | CLI version to install, such as `1.0.0`. Default: `latest`. |
+| `OPENTIG_PACKAGE` | npm package to install instead, such as the path of a local `.tgz` file. Default: `@opentig/cli@` followed by `OPENTIG_VERSION`. |
+| `OPENTIG_HOST`, `OPENTIG_PORT`, `OPENTIG_HOME` | Read by the CLI itself, as in [the address and data directory options](#pair-another-browser). |
+| `NO_COLOR` | Turns off colored output. |
+
+For example, to pin a version on macOS or Linux:
+
+```bash
+curl -fsSL https://opentig.com/install.sh | OPENTIG_VERSION=1.0.0 sh
+```
+
+In PowerShell, set `$env:OPENTIG_VERSION = '1.0.0'` before running the script. `install.sh` also passes options after `sh -s --` to `service install`, for example `curl -fsSL https://opentig.com/install.sh | sh -s -- --port 6768 --no-modify-path`.
+
+On Linux, `service install` enables lingering through your login session. In a container or CI job without one, it stops with **Lingering is required**, even when an administrator has already enabled lingering; run `serve` there instead.
+
+Uninstall a service installed by a script the same way as any other: `opentig service uninstall`.
 
 ### The `opentig` command
 
