@@ -8,6 +8,11 @@ import { isWebsitePath } from './change-scope.mjs';
 // assets, examples, configuration, and scripts still require the complete CI.
 // The AI writing policy is compiled into the application's prompts.
 const applicationMarkdown = new Set(['docs/ai-writing-policy.md']);
+// The install scripts ship with the website, but their real-install check needs the packed CLI.
+const installScriptFiles = new Set([
+  'website/public/install.sh', 'website/public/install.ps1',
+  'website/scripts/install-scripts.test.mjs', 'website/scripts/verify-install.mjs',
+]);
 const isDocumentation = (file) => !applicationMarkdown.has(file)
   && /^(?:README\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|THIRD_PARTY_NOTICES\.md|docs\/.+\.md)$/.test(file);
 
@@ -22,7 +27,7 @@ export function validationScope(eventName, event, head, cwd = process.cwd()) {
       .split('\0').filter(Boolean);
     if (!files.length) return both;
     return {
-      required: files.some((file) => !isDocumentation(file) && !isWebsitePath(file)),
+      required: files.some((file) => installScriptFiles.has(file) || !isDocumentation(file) && !isWebsitePath(file)),
       website: files.some((file) => publishedSources.has(file) || ['website/', 'src/renderer/', 'src/shared/', 'public/'].some(prefix => file.startsWith(prefix)) || file === 'tsconfig.json' || [
         'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.oxlintrc.json', '.npmrc',
         '.github/workflows/ci.yml', '.github/workflows/website.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs',

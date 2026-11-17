@@ -51,6 +51,13 @@ it('skips application jobs for website-only pushes and PRs', async () => {
   expect(needsValidation('workflow_dispatch', {}, head, root)).toBe(true);
 });
 
+it('runs the application jobs, whose packed CLI the install scripts install, when an install script changes', async () => {
+  const file = path.join(root, 'website/public/install.sh');
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, '#!/bin/sh\n');
+  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: true });
+});
+
 it('validates the website for manual-deployment workflow edits without making an application release', async () => {
   const file = path.join(root, '.github/workflows/website.yml');
   await mkdir(path.dirname(file), { recursive: true });
