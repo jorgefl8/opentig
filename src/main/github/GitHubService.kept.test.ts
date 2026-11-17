@@ -82,14 +82,14 @@ describe('GitHub answers kept on the server', () => {
     clock.now += 2 * 60_000;
 
     const client = keptSink();
-    expect((await service.getPullRequest('repo', 12, client.sink)).title).toBe('read 1');
+    expect((await service.getPullRequest('repo', 12, false, client.sink)).title).toBe('read 1');
     expect(client.answers).toHaveLength(1);
     expect(client.answers[0]!.readAt).toBe('2026-11-15T10:00:00.000Z');
     await expect(client.answers[0]!.refresh).resolves.toEqual({ outcome: 'updated' });
     expect(state.views).toBe(2);
     // Told of the refresh, the client asks again and gets the new answer without another read.
     const after = keptSink();
-    expect((await service.getPullRequest('repo', 12, after.sink)).title).toBe('read 2');
+    expect((await service.getPullRequest('repo', 12, false, after.sink)).title).toBe('read 2');
     expect(after.answers).toHaveLength(0);
     expect(state.views).toBe(2);
 
@@ -108,12 +108,12 @@ describe('GitHub answers kept on the server', () => {
     clock.now += 60 * 60_000;
     const restarted = server(file, { clock });
     const client = keptSink();
-    expect((await restarted.service.getPullRequest('repo', 12, client.sink)).title).toBe('read 1');
+    expect((await restarted.service.getPullRequest('repo', 12, false, client.sink)).title).toBe('read 1');
     expect(client.answers).toHaveLength(1);
 
     const otherAccount = server(file, { clock, login: 'someone-else' });
     const other = keptSink();
-    expect((await otherAccount.service.getPullRequest('repo', 12, other.sink)).title).toBe('read 1');
+    expect((await otherAccount.service.getPullRequest('repo', 12, false, other.sink)).title).toBe('read 1');
     // Read from GitHub with its own account: the stub numbers reads per server.
     expect(other.answers).toHaveLength(0);
     expect(otherAccount.state.views).toBe(1);
@@ -124,7 +124,7 @@ describe('GitHub answers kept on the server', () => {
     await service.getPullRequest('repo', 12);
     state.remote = 'https://github.com/someone/fork.git';
     const client = keptSink();
-    expect((await service.getPullRequest('repo', 12, client.sink)).title).toBe('read 2');
+    expect((await service.getPullRequest('repo', 12, false, client.sink)).title).toBe('read 2');
     expect(client.answers).toHaveLength(0);
     // The answer for the previous remote is gone, not just passed over.
     expect(cache.size).toBe(1);
@@ -144,7 +144,7 @@ describe('GitHub answers kept on the server', () => {
     clock.now += 2 * 60_000;
     state.failWith = 'HTTP 401: Bad credentials';
     const client = keptSink();
-    await service.getPullRequest('repo', 12, client.sink);
+    await service.getPullRequest('repo', 12, false, client.sink);
     await expect(client.answers[0]!.refresh).resolves.toMatchObject({ outcome: 'failed', error: { code: 'GH_AUTH_REQUIRED' } });
     expect(cache.size).toBe(0);
   });
@@ -175,11 +175,11 @@ describe('GitHub answers kept on the server', () => {
     clock.now += 2 * 60_000;
     state.bodyBytes = GITHUB_READ_CACHE_LIMITS.memoryBytes / 4 + 1;
     const client = keptSink();
-    await service.getPullRequest('repo', 12, client.sink);
+    await service.getPullRequest('repo', 12, false, client.sink);
     await client.answers[0]!.refresh;
     // Told of the refresh, the client asks again: it gets GitHub's answer, never the old one again.
     const again = keptSink();
-    expect((await service.getPullRequest('repo', 12, again.sink)).title).toBe('read 3');
+    expect((await service.getPullRequest('repo', 12, false, again.sink)).title).toBe('read 3');
     expect(again.answers).toHaveLength(0);
   });
 
@@ -192,13 +192,13 @@ describe('GitHub answers kept on the server', () => {
     let open!: () => void;
     state.gate = new Promise((resolve) => { open = resolve; });
     const client = keptSink();
-    await service.getPullRequest('repo', 12, client.sink);
+    await service.getPullRequest('repo', 12, false, client.sink);
     service.invalidate('other', { pullRequest: 12 });
     open();
     state.gate = null;
     await client.answers[0]!.refresh;
     // The refreshed answer was kept, so asking again is answered from it.
-    expect((await service.getPullRequest('repo', 12, keptSink().sink)).title).toBe('read 3');
+    expect((await service.getPullRequest('repo', 12, false, keptSink().sink)).title).toBe('read 3');
     expect(state.views).toBe(3);
   });
 
@@ -209,7 +209,7 @@ describe('GitHub answers kept on the server', () => {
     let open!: () => void;
     state.gate = new Promise((resolve) => { open = resolve; });
     const client = keptSink();
-    await service.getPullRequest('repo', 12, client.sink);
+    await service.getPullRequest('repo', 12, false, client.sink);
     // The other checkout has made no GitHub read in this run: it may be a clone of the same repository.
     service.invalidate('other', { pullRequest: 12 });
     open();
@@ -217,7 +217,7 @@ describe('GitHub answers kept on the server', () => {
     await client.answers[0]!.refresh;
     clock.now += 10_000;
     const again = keptSink();
-    expect((await service.getPullRequest('repo', 12, again.sink)).title).toBe('read 1');
+    expect((await service.getPullRequest('repo', 12, false, again.sink)).title).toBe('read 1');
     expect(again.answers).toHaveLength(1);
   });
 

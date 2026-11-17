@@ -95,6 +95,18 @@ describe('GitHub pending reads', () => {
     expect(views(f.run)).toHaveLength(2);
   });
 
+  it('reads a pull request from GitHub again when asked for a fresh answer, as a manual refresh is', async () => {
+    let title = 'Initial';
+    const f = await fixture(async () => result(JSON.stringify({ number: 12, state: 'OPEN', title })));
+    await f.service.getPullRequest('alice', 12);
+    title = 'Renamed on GitHub';
+    // Read moments ago, so an ordinary read is answered from what the backend kept.
+    expect((await f.service.getPullRequest('alice', 12)).title).toBe('Initial');
+    expect(views(f.run)).toHaveLength(1);
+    expect((await f.service.getPullRequest('alice', 12, true)).title).toBe('Renamed on GitHub');
+    expect(views(f.run)).toHaveLength(2);
+  });
+
   it('shares failures only while pending and retries without retaining errors', async () => {
     const started = deferred<void>();
     const gate = deferred<CliRunResult>();

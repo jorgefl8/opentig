@@ -694,8 +694,10 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
      The <svg> element stays untransformed: rotating the element itself was
      measured to carry the whole icon around a small circle on some displays. */
   .spinner-arc { transform-origin: 12px 12px; animation: spin 1s linear infinite; }
+  /* The refresh icon's arrows turn the same way, about the point they are symmetric about. */
+  .refresh-icon-turn { transform-origin: 12px 12px; animation: spin 1s linear infinite; }
   @media (prefers-reduced-motion: reduce) {
-    .spinner-arc { animation: none; }
+    .spinner-arc, .refresh-icon-turn { animation: none; }
   }
   .view-spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; color: var(--primary); }
   .repository-projects-dialog { display: flex; max-height: min(700px, calc(100vh - 40px)); flex-direction: column; }

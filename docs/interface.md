@@ -91,7 +91,7 @@ Set **Settings → General → Repository sync → Remote check interval** to co
 
 Periodic checks pause while the window is hidden and after six minutes without any activity in it. The first key press, pointer movement, or scroll after that reads again at once whatever is on screen and read on a timer.
 
-Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and then refresh the local workspace, even with automatic checks off. The icon rotates while refreshing and returns to rest afterward.
+Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and then refresh the local workspace, even with automatic checks off. It also reads again from GitHub what the GitHub section shows: the list of its open tab while that section is shown, and the pull request, workflow run, or release open in the viewer from any section. The icon turns on itself until all of that is read, and stays still with reduced motion. A GitHub read that fails keeps what was shown and says so the way that list or viewer always does.
 
 Refresh also checks for app updates immediately instead of waiting for the five-minute update interval.
 

@@ -130,3 +130,28 @@ test('the pull request list shows placeholder rows while GitHub answers, and its
   expect(Math.abs(arrived!.y - placeholder!.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(arrived!.height - placeholder!.height)).toBeLessThanOrEqual(1);
 });
+
+test('Refresh on the GitHub section reads the pull request list from GitHub again', async ({ pairedPage: page, repository, github }) => {
+  await cloneOfGitHub(repository);
+  const first = await pullRequestBranch(repository, 'feature/status-filter', [
+    { message: 'Filter tasks by status', files: { 'src/filter-tasks.js': 'export const filterTasks = (list) => list;\n' } },
+  ]);
+  const pull = (number: number, title: string, headRefName: string, branch: typeof first) => ({ number, title, headRefName, baseRefName: 'main', ...branch });
+  const world = { login: 'e2e-tester', nameWithOwner: 'e2e/sample-project', pulls: [pull(24, 'Filter tasks by status', 'feature/status-filter', first)] };
+  await github(world);
+  await openRepository(page, repository);
+  await section(page, 'GitHub').click();
+  const list = page.getByRole('list', { name: /pull requests$/ });
+  await expect(list.getByRole('listitem')).toHaveText([/Filter tasks by status/]);
+
+  // Opened on GitHub meanwhile: the list read moments ago doesn't know it, and nothing polls it.
+  const second = await pullRequestBranch(repository, 'feature/due-dates', [
+    { message: 'Sort tasks by due date', files: { 'src/sort-tasks.js': 'export const sortTasks = (list) => list;\n' } },
+  ]);
+  await github({ ...world, pulls: [...world.pulls, pull(25, 'Sort tasks by due date', 'feature/due-dates', second)] });
+  const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
+  await refresh.click();
+
+  await expect(list.getByRole('button', { name: /Sort tasks by due date/ })).toBeVisible();
+  await expect(refresh).toBeEnabled();
+});

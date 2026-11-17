@@ -2,7 +2,7 @@ import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconChevronLeft, IconChevronRight, IconHierarchy2, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconChevronLeft, IconChevronRight, IconHierarchy2, IconPlus, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
@@ -41,6 +41,7 @@ import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 import { mergedBranchCleanUp, mergedBranchCleanUpStep, type MergedBranchCleanUp } from '@/features/pulls/merged-branch';
 import { Spinner } from '@/components/ui/spinner';
+import { RefreshIcon } from '@/components/ui/refresh-icon';
 
 export interface ToolbarProps {
   onOnboarding?(): void;
@@ -480,7 +481,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
         <TrailButton direction="forward" enabled={props.canGoForward} keys={navigation.forward} keysAria={navigation.forwardAria} onStep={props.onForward} listSteps={props.listTrailSteps} onGo={props.onGo}><IconChevronRight /></TrailButton>
       </div>
       <span className="toolbar-history-divider" aria-hidden="true" />
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <Spinner /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><RefreshIcon turning={props.busy === 'refresh'} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <DesktopUpdateIndicator />
       {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
       <Tooltip>

@@ -271,7 +271,7 @@ it('asks for the comments and the code as the PR opens, so their tabs show them 
   // As in the app, what was read stays available while nothing shows it yet.
   client.setDefaultOptions({ queries: { networkMode: 'always', retry: false } });
   await render();
-  await vi.waitFor(() => expect(api.getPullRequestConversation).toHaveBeenCalledWith('repo', 7));
+  await vi.waitFor(() => expect(api.getPullRequestConversation).toHaveBeenCalledWith('repo', 7, false));
   expect(api.getPullRequestDiff).toHaveBeenCalledWith('repo', 7, { baseOid: details.baseRefOid, headOid: details.headRefOid });
   await vi.waitFor(() => expect(client.getQueryData(queryKeys.pullRequestConversation('repo', 7))).toBeDefined());
   // Opening the tab reads nothing more and has no loading state to show.

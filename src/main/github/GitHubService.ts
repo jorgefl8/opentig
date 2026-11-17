@@ -516,9 +516,9 @@ export class GitHubService {
     return sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, heads, branch))[0] ?? null;
   }
 
-  getPullRequest(repositoryId: string, prNumber: number, kept?: KeptAnswerSink): Promise<PullRequestDetails> {
+  getPullRequest(repositoryId: string, prNumber: number, fresh = false, kept?: KeptAnswerSink): Promise<PullRequestDetails> {
     return this.keptRead(repositoryId, ['details', prNumber], { freshMs: details => details.state === 'OPEN' ? OPEN_PULL_REQUEST_MS : FINISHED_PULL_REQUEST_MS },
-      () => this.readGetPullRequest(repositoryId, prNumber), { kept });
+      () => this.readGetPullRequest(repositoryId, prNumber), { fresh, kept });
   }
 
   private async readGetPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
@@ -592,8 +592,8 @@ export class GitHubService {
     throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
   }
 
-  getPullRequestConversation(repositoryId: string, prNumber: number, kept?: KeptAnswerSink): Promise<PullRequestConversation> {
-    return this.keptRead(repositoryId, ['conversation', prNumber], { freshMs: () => OPEN_PULL_REQUEST_MS }, () => this.readGetPullRequestConversation(repositoryId, prNumber), { kept });
+  getPullRequestConversation(repositoryId: string, prNumber: number, fresh = false, kept?: KeptAnswerSink): Promise<PullRequestConversation> {
+    return this.keptRead(repositoryId, ['conversation', prNumber], { freshMs: () => OPEN_PULL_REQUEST_MS }, () => this.readGetPullRequestConversation(repositoryId, prNumber), { fresh, kept });
   }
 
   private async readGetPullRequestConversation(repositoryId: string, prNumber: number): Promise<PullRequestConversation> {

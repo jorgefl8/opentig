@@ -615,9 +615,9 @@ export function registerServerCommands(
     fresh == null ? false : booleanArg(fresh, 'gh-pr-list'),
     context.kept,
   ));
-  handleWithContext(IPC.githubPrView, 'gh-pr-view', (context, id, prNumber) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view'), context.kept));
+  handleWithContext(IPC.githubPrView, 'gh-pr-view', (context, id, prNumber, fresh) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view'), fresh == null ? false : booleanArg(fresh, 'gh-pr-view'), context.kept));
   handleWithContext(IPC.githubPrLiveState, 'gh-pr-live-state', (context, id, prNumber) => services.github.getPullRequestLiveState(stringArg(id, 'gh-pr-live-state', 64), prNumberArg(prNumber, 'gh-pr-live-state'), context.kept));
-  handleWithContext(IPC.githubPrConversation, 'gh-pr-conversation', (context, id, prNumber) => services.github.getPullRequestConversation(stringArg(id, 'gh-pr-conversation', 64), prNumberArg(prNumber, 'gh-pr-conversation'), context.kept));
+  handleWithContext(IPC.githubPrConversation, 'gh-pr-conversation', (context, id, prNumber, fresh) => services.github.getPullRequestConversation(stringArg(id, 'gh-pr-conversation', 64), prNumberArg(prNumber, 'gh-pr-conversation'), fresh == null ? false : booleanArg(fresh, 'gh-pr-conversation'), context.kept));
   handle(IPC.githubPrAction, 'gh-pr-action', (input) => services.github.runPullRequestAction(pullRequestActionArg(input)));
   handle(IPC.githubPrUpdate, 'gh-pr-update', (input) => services.github.updatePullRequest(updatePullRequestArg(input)));
   handle(IPC.githubPrComment, 'gh-pr-comment', (input) => services.github.commentOnPullRequest(commentOnPullRequestArg(input)));

@@ -30,7 +30,7 @@ describe('spinner rotation', () => {
 
   // Rotating a whole `<svg>` element was measured to carry it around a small
   // circle on some displays, so a spinner only ever turns a group inside one.
-  it('turns only the arc drawn inside a spinner, never an element', () => {
+  it('turns only a group drawn inside a spinner or the refresh icon, never an element', () => {
     const stylesheets = [...sources('**/*.css'), 'index.html'];
     const keyframes = stylesheets.flatMap((file) => turningKeyframes(read(file)));
     const rotating = stylesheets.flatMap((file) => rotatingSelectors(read(file), keyframes).map((selector) => `${file}: ${selector}`));
@@ -39,6 +39,7 @@ describe('spinner rotation', () => {
       // Each of these is a `<g>` inside an SVG that is not transformed itself.
       'src/renderer/styles/index.css: .splash-mark-arc',
       'src/renderer/styles/index.css: .spinner-arc',
+      'src/renderer/styles/index.css: .refresh-icon-turn',
       'index.html: #boot-shell .boot-mark-arc',
     ]);
   });

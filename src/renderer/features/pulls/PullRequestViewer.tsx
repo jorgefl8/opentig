@@ -33,7 +33,7 @@ import { pullRequestFilesQueryOptions } from './pull-request-files-query';
 import { useServerFeatures } from '@/lib/server-features';
 import { LazyPullRequestDiff as PullRequestDiff } from './pull-request-viewer-chunks';
 import { opentig } from '@/lib/opentig-api';
-import { queryKeys } from '@/lib/query-client';
+import { queryKeys, takeFreshRead } from '@/lib/query-client';
 import { inBackground } from '@/lib/websocket-transport';
 import { whenIdle } from '@/lib/when-idle';
 import { rememberedTab, rememberTab } from '@/features/viewer/viewer-memory';
@@ -94,7 +94,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     // The live state reloads them as soon as GitHub reports a change.
     staleTime: PULL_REQUEST_STALE_MS,
     queryFn: async () => {
-      const details = await opentig.github.getPullRequest(repositoryId, prNumber);
+      const details = await opentig.github.getPullRequest(repositoryId, prNumber, takeFreshRead(queryKeys.pullRequest(repositoryId, prNumber)));
       const bodyHtml = details.body.trim()
         ? await import('@/features/markdown/render-markdown')
           .then(({ renderMarkdown }) => renderMarkdown(details.body))

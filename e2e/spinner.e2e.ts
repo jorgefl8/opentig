@@ -6,14 +6,14 @@ import { expect, test, type GitRepository } from './support/fixtures';
 
 /** How many angles of the turn are measured, evenly spaced. */
 const ANGLES = 12;
-/** The spinner takes this long to turn once. */
+/** The refresh icon takes this long to turn once, as the spinner does. */
 const TURN_MS = 1000;
 
 interface Circle { x: number; y: number; radius: number }
 
 /**
  * Makes fetching from `origin` wait until the returned function is called, so
- * the spinner a refresh shows stays on screen. Git runs this in place of
+ * the refresh icon keeps turning. Git runs this in place of
  * `git upload-pack`; it also stops waiting once the test's folder is gone.
  */
 async function holdFetches(repository: GitRepository): Promise<() => Promise<void>> {
@@ -26,21 +26,20 @@ async function holdFetches(repository: GitRepository): Promise<() => Promise<voi
 }
 
 /**
- * Screenshots the spinner with its arc paused at each angle and fits circles to
- * what was drawn, in device pixels:
- *  - `perAngle`: the ring as drawn at each angle, faint track and arc together;
- *  - `track`: the faint ring alone, from the darkest each pixel gets over the turn;
- *  - `swept`: the ring the arc sweeps, from the brightest each pixel gets.
+ * Screenshots the icon with its turning group paused at each angle and fits
+ * circles to what was drawn, in device pixels:
+ *  - `perAngle`: the icon as drawn at each angle;
+ *  - `swept`: the ring the arrows sweep, from the brightest each pixel gets.
  */
-async function measureTurn(page: Page, spinner: Locator): Promise<{ perAngle: Circle[]; track: Circle; swept: Circle }> {
-  const box = await spinner.boundingBox();
-  if (!box) throw new Error('The spinner is not on screen.');
+async function measureTurn(page: Page, icon: Locator): Promise<{ perAngle: Circle[]; swept: Circle }> {
+  const box = await icon.boundingBox();
+  if (!box) throw new Error('The refresh icon is not on screen.');
   const clip = { x: Math.floor(box.x) - 3, y: Math.floor(box.y) - 3, width: Math.ceil(box.width) + 6, height: Math.ceil(box.height) + 6 };
   const frames: string[] = [];
   for (let step = 0; step < ANGLES; step++) {
-    await spinner.locator('g').evaluate((group, time) => {
+    await icon.locator('g').evaluate((group, time) => {
       const [turn] = group.getAnimations();
-      if (!turn) throw new Error('The spinner arc is not animated.');
+      if (!turn) throw new Error('The refresh icon is not turning.');
       turn.pause();
       turn.currentTime = time;
     }, (step * TURN_MS) / ANGLES);
@@ -90,7 +89,7 @@ async function measureTurn(page: Page, spinner: Locator): Promise<{ perAngle: Ci
         return { x: meanX + x, y: meanY + y, radius: Math.sqrt(x * x + y * y + (uu + vv) / total) };
       };
       const across = (pick: (...values: number[]) => number) => images[0]!.map((_, pixel) => pick(...images.map((ink) => ink[pixel]!)));
-      return { perAngle: images.map(fit), track: fit(across(Math.min)), swept: fit(across(Math.max)) };
+      return { perAngle: images.map(fit), swept: fit(across(Math.max)) };
     }, frames);
   } finally {
     await reader.close();
@@ -99,12 +98,12 @@ async function measureTurn(page: Page, spinner: Locator): Promise<{ perAngle: Ci
 
 const distance = (a: Circle, b: Circle) => Math.hypot(a.x - b.x, a.y - b.y);
 
-// 1.25 is the display scale of the laptop the spinner was seen circling on.
+// 1.25 is the display scale of the laptop the refresh icon was seen circling on.
 for (const scale of [1, 1.25]) {
   test.describe(`at a display scale of ${scale}`, () => {
     test.use({ deviceScaleFactor: scale });
 
-    test('the Refresh spinner turns on its own center', async ({ pairedPage: page, repository }, testInfo) => {
+    test('the Refresh icon turns on its own center', async ({ pairedPage: page, repository }, testInfo) => {
       await repository.addRemote();
       await openRepository(page, repository);
       const release = await holdFetches(repository);
@@ -112,27 +111,28 @@ for (const scale of [1, 1.25]) {
       await refresh.click();
       // The pointer would otherwise leave a tooltip beside the icon being measured.
       await page.mouse.move(0, 0);
-      const spinner = refresh.locator('[data-slot="spinner"]');
-      await expect(spinner).toBeVisible();
+      // The refresh icon itself turns, rather than giving way to the spinner.
+      const icon = refresh.locator('[data-slot="refresh-icon"]');
+      await expect(icon.locator('g')).toHaveClass('refresh-icon-turn');
       await expect(refresh).toBeDisabled();
 
-      const { perAngle, track, swept } = await measureTurn(page, spinner);
+      const { perAngle, swept } = await measureTurn(page, icon);
       const center = { x: perAngle.reduce((sum, circle) => sum + circle.x, 0) / ANGLES, y: perAngle.reduce((sum, circle) => sum + circle.y, 0) / ANGLES, radius: 0 };
       const orbit = Math.max(...perAngle.map((circle) => distance(circle, center)));
-      const offCenter = distance(swept, track);
-      testInfo.annotations.push({ type: 'spinner geometry', description: `scale ${scale}: ring radius ${track.radius.toFixed(2)} device px, center moves at most ${orbit.toFixed(3)} device px over ${ANGLES} angles, the arc turns ${offCenter.toFixed(3)} device px off the ring's center` });
+      const offCenter = distance(swept, center);
+      testInfo.annotations.push({ type: 'refresh icon geometry', description: `scale ${scale}: swept radius ${swept.radius.toFixed(2)} device px, center moves at most ${orbit.toFixed(3)} device px over ${ANGLES} angles, the sweep is ${offCenter.toFixed(3)} device px off that center` });
 
-      // A real ring was measured: the 16px icon draws a ring of 6 CSS px radius.
-      expect(track.radius).toBeGreaterThan(5 * scale);
-      expect(track.radius).toBeLessThan(7 * scale);
-      // The ring stays where it is while the arc turns, and the arc turns about the ring's center.
+      // A real icon was measured: the 16px icon's arrows sweep a ring about 6 CSS px across its radius.
+      expect(swept.radius).toBeGreaterThan(4.5 * scale);
+      expect(swept.radius).toBeLessThan(7.5 * scale);
+      // The icon stays where it is while it turns: it turns about its own center.
       expect(orbit).toBeLessThan(0.3);
       expect(offCenter).toBeLessThan(0.3);
 
-      // Once the refresh is answered the button offers Refresh again, the same size as before.
+      // Once the refresh is answered the icon rests and the button offers Refresh again, the same size as before.
       const busySize = await refresh.boundingBox();
       await release();
-      await expect(spinner).toBeHidden();
+      await expect(icon.locator('g')).not.toHaveClass('refresh-icon-turn');
       await expect(refresh).toBeEnabled();
       expect(await refresh.boundingBox()).toEqual(busySize);
     });
