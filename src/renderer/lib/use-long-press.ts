@@ -27,7 +27,11 @@ const NO_HANDLERS = {} as LongPressHandlers;
  * Mark a nested button that is the row's main target with
  * `data-long-press-target`; presses on any other inner control are its own.
  */
-export function useLongPress(onLongPress: () => void, { disabled = false, delay = LONG_PRESS_MS, tolerance = MOVE_TOLERANCE_PX }: { disabled?: boolean; delay?: number; tolerance?: number } = {}): LongPressHandlers {
+export function useLongPress(onLongPress: () => void, { disabled = false, delay = LONG_PRESS_MS, tolerance = MOVE_TOLERANCE_PX, mouse = false }: {
+  disabled?: boolean; delay?: number; tolerance?: number;
+  /** A held mouse button counts too, for a button that has no text to select. */
+  mouse?: boolean;
+} = {}): LongPressHandlers {
   const callback = useRef(onLongPress);
   useEffect(() => { callback.current = onLongPress; });
   const press = useRef<{ x: number; y: number; id: number; timer: number; fired: boolean; stopWatchingScroll(): void } | null>(null);
@@ -60,7 +64,7 @@ export function useLongPress(onLongPress: () => void, { disabled = false, delay 
       swallowClick.current = false;
       window.clearTimeout(swallowTimer.current);
       // A mouse has its right click, and keeps pressing for selecting text.
-      if (event.pointerType === 'mouse' || !event.isPrimary || event.button !== 0 || isInnerControl(event.target, event.currentTarget)) return;
+      if ((event.pointerType === 'mouse' && !mouse) || !event.isPrimary || event.button !== 0 || isInnerControl(event.target, event.currentTarget)) return;
       const onScroll = () => end();
       window.addEventListener('scroll', onScroll, { capture: true, passive: true });
       press.current = {

@@ -340,6 +340,16 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-history [data-size^="icon"]:disabled { opacity: 0.4; }
   /* A path quoted in a notice reads as a path, not as part of the message. */
   .notice-path { padding: 0 4px; border-radius: 4px; background: color-mix(in oklch, currentColor 12%, transparent); font-family: var(--font-mono); overflow-wrap: anywhere; }
+  /* The steps Back and Forward list: what each shows, and under it where. */
+  .trail-menu { width: min(380px, calc(100vw - 24px)); max-height: min(480px, calc(100vh - 80px)); overflow-y: auto; }
+  .trail-menu-heading { padding: 6px 8px 4px; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .trail-menu .trail-step { min-height: 40px; padding-block: 4px; }
+  .trail-menu .trail-step > svg { align-self: flex-start; margin-top: 3px; color: var(--muted-foreground); }
+  .trail-step-text { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+  /* Wrapped rather than cut, so a long title is read whole without a tooltip of its own. */
+  .trail-menu .trail-step-text > strong, .trail-menu .trail-step-text > small { overflow-wrap: anywhere; }
+  .trail-menu .trail-step-text > strong { font-weight: var(--weight-medium); }
+  .trail-menu .trail-step-text > small { color: var(--muted-foreground); font-size: var(--text-meta); }
   .toolbar-history-divider { width: 1px; height: 18px; flex: none; margin-inline: 4px; background: var(--border); }
   .toolbar-branch-pr-group { display: inline-flex; align-items: center; gap: 2px; flex: none; }
   .toolbar-branch-pr-group.is-mobile { display: flex; width: 100%; }

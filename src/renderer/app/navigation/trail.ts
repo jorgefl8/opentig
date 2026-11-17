@@ -8,6 +8,21 @@ export interface TrailState {
   canGoForward: boolean;
 }
 
+/** A step away from the current one, for the lists Back and Forward open. */
+export interface TrailStep {
+  key: string;
+  location: NavigationLocation;
+  memory: EntryMemory;
+  /** How far it is: -1 is the step Back goes to, 1 the one Forward goes to. */
+  offset: number;
+}
+
+/** The steps either way of the current one, nearest first. */
+export interface TrailSteps {
+  back: TrailStep[];
+  forward: TrailStep[];
+}
+
 /**
  * The steps the user took, and where in them they are. Moving somewhere new
  * adds a step after the current one and drops what was ahead; Back and Forward
@@ -26,6 +41,10 @@ export interface NavigationTrail {
   remember(key: string, memory: Partial<EntryMemory>): void;
   back(): void;
   forward(): void;
+  /** The steps Back and Forward would walk, nearest first. Read when a list of them opens. */
+  steps(): TrailSteps;
+  /** Moves straight to the step `offset` away, as that many Backs (negative) or Forwards would. */
+  go(offset: number): void;
   /** Called with the step Back or Forward moved to. */
   onRestore(listener: (entry: NavigationEntry) => void): () => void;
   /** For `useSyncExternalStore`: `state()` returns the same object until it changes. */
@@ -107,6 +126,17 @@ export function createMemoryTrail(limit = MAX_TRAIL_ENTRIES): NavigationTrail {
     },
     back: () => move(index - 1),
     forward: () => move(index + 1),
+    steps() {
+      const step = (position: number): TrailStep => ({ ...entries[position]!, offset: position - index });
+      const back: TrailStep[] = [];
+      for (let position = index - 1; position >= 0; position -= 1) back.push(step(position));
+      const forward: TrailStep[] = [];
+      for (let position = index + 1; position < entries.length; position += 1) forward.push(step(position));
+      return { back, forward };
+    },
+    go(offset) {
+      if (Number.isSafeInteger(offset) && offset !== 0) move(index + offset);
+    },
     onRestore: signals.onRestore,
     subscribe: signals.subscribe,
     attach: () => undefined,

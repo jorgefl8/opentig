@@ -2,15 +2,26 @@ import { isViewerMemorySnapshot } from '@/features/viewer/viewer-memory';
 import type { ViewerSelection } from '@/features/viewer/Viewer';
 import { addressOf, locationOf, parseAddress, safePath, type AddressTarget } from './address';
 import { EMPTY_MEMORY, MAX_SCROLL_MARKS, SIDEBAR_VIEWS, type EntryMemory, type NavigationEntry, type NavigationLocation, type ScrollMark } from './location';
-import { createTrailSignals, newEntryKey, type NavigationTrail } from './trail';
+import { createTrailSignals, MAX_TRAIL_ENTRIES, newEntryKey, type NavigationTrail, type TrailStep } from './trail';
 
 const STATE_KEY = 'opentigNavigation';
 /** The last step of this tab's trail, which Forward cannot go past. Kept per tab, through reloads. */
 const TOP_KEY = 'opentig.navigation.top';
+/**
+ * Where each step of this tab's trail leads, by its place in the history, so Back and Forward
+ * can list them: a page cannot read the other entries of its history. Kept per tab, through reloads.
+ */
+const STEPS_KEY = 'opentig.navigation.steps';
 /** Steps whose memory is kept in the page as well, so a step left by the browser's own Back has its latest. */
 const MAX_KEPT_MEMORIES = 200;
 /** How long scrolling waits before its position is written into the history entry. */
 const MEMORY_WRITE_DELAY_MS = 800;
+
+/** A step as the lists of Back and Forward know it. A commit's subject is kept to name it. */
+interface KnownStep {
+  key: string;
+  location: NavigationLocation;
+}
 
 interface StoredEntry {
   v: 1;
@@ -44,6 +55,21 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
   let attached = false;
   /** The address last written, which a pull request's tab can change without the location changing. */
   let writtenUrl: string | null = null;
+  const known = readKnownSteps();
+  let knownWritten = '';
+  /** Notes where the step at `position` leads, and keeps the steps nearest the current one for a reload. */
+  const know = (position: number, entry: { key: string; location: NavigationLocation }) => {
+    known.set(position, { key: entry.key, location: entry.location });
+    for (const other of [...known.keys()]) if (Math.abs(other - index) > MAX_TRAIL_ENTRIES) known.delete(other);
+    const serialized = JSON.stringify([...known]);
+    if (serialized === knownWritten) return;
+    knownWritten = serialized;
+    try { window.sessionStorage.setItem(STEPS_KEY, serialized); } catch { /* storage unavailable: the lists know this page's steps only */ }
+  };
+  /** A new step drops whatever was ahead of it, in the browser's history as in the lists. */
+  const forgetFrom = (position: number) => {
+    for (const other of [...known.keys()]) if (other >= position) known.delete(other);
+  };
 
   const keep = (key: string, memory: EntryMemory) => {
     memories.delete(key);
@@ -59,6 +85,7 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     const stored: StoredEntry = { v: 1, key: entry.key, index, location: storedLocation(entry.location), memory: entry.memory };
     const url = addressFor(entry.location);
     writtenUrl = url;
+    know(index, entry);
     try {
       if (mode === 'push') window.history.pushState({ [STATE_KEY]: stored }, '', url);
       else window.history.replaceState({ [STATE_KEY]: stored }, '', url);
@@ -78,12 +105,16 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
       index = stored.index;
       if (index > top) setTop(index);
       entry = { key: stored.key, location: stored.location, memory: memories.get(stored.key) ?? stored.memory };
+      // What a list said of this step may name a commit by its subject, which the history entry does not keep.
+      const listed = known.get(index);
+      know(index, listed?.key === entry.key ? { key: entry.key, location: { ...entry.location, selection: withSubject(entry.location.selection, listed.location.selection) } } : entry);
     } else {
       // An address typed or edited by hand: a new step after the one it was typed over.
       const parsed = parseAddress(window.location.pathname, window.location.search, window.location.hash);
       if (parsed.kind !== 'target') return;
       index += 1;
       setTop(index);
+      forgetFrom(index);
       entry = entryOf(parsed.target);
       write(entry, 'replace');
     }
@@ -112,7 +143,9 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
       } else {
         index = 0;
         setTop(0);
+        known.clear();
       }
+      know(index, entry);
       current = entry;
       changed();
     },
@@ -129,6 +162,7 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
       flush();
       index += 1;
       setTop(index);
+      forgetFrom(index);
       current = { key: newEntryKey(), location, memory: EMPTY_MEMORY };
       write(current, 'push');
       changed();
@@ -158,6 +192,30 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
       flush();
       window.history.forward();
     },
+    steps() {
+      // Only the steps this tab has seen are listed; the browser still walks the ones it has not.
+      const step = (position: number): TrailStep | null => {
+        const listed = known.get(position);
+        return listed ? { ...listed, memory: memories.get(listed.key) ?? EMPTY_MEMORY, offset: position - index } : null;
+      };
+      const back: TrailStep[] = [];
+      for (let position = index - 1; position >= 0 && back.length < MAX_TRAIL_ENTRIES; position -= 1) {
+        const found = step(position);
+        if (found) back.push(found);
+      }
+      const forward: TrailStep[] = [];
+      for (let position = index + 1; position <= top && forward.length < MAX_TRAIL_ENTRIES; position += 1) {
+        const found = step(position);
+        if (found) forward.push(found);
+      }
+      return { back, forward };
+    },
+    go(offset) {
+      // The browser moves through its own history, so the address and what its Back and Forward do stay in step.
+      if (!Number.isSafeInteger(offset) || offset === 0 || index + offset < 0 || index + offset > top) return;
+      flush();
+      window.history.go(offset);
+    },
     onRestore: signals.onRestore,
     subscribe: signals.subscribe,
     attach() {
@@ -185,6 +243,32 @@ function storedLocation(location: NavigationLocation): NavigationLocation {
     selection: strip(location.selection),
     fileHistory: location.fileHistory ? { ...location.fileHistory, returnTo: { ...location.fileHistory.returnTo, selection: strip(location.fileHistory.returnTo.selection) } } : null,
   };
+}
+
+function readKnownSteps(): Map<number, KnownStep> {
+  const steps = new Map<number, KnownStep>();
+  try {
+    const value: unknown = JSON.parse(window.sessionStorage.getItem(STEPS_KEY) ?? '[]');
+    if (!Array.isArray(value)) return steps;
+    // Written by this page, but read back with the same care as a history entry.
+    for (const item of value.slice(0, 2 * MAX_TRAIL_ENTRIES + 1)) {
+      if (!Array.isArray(item) || item.length !== 2 || !Number.isSafeInteger(item[0]) || item[0] < 0) continue;
+      const step = item[1] as Record<string, unknown> | null;
+      if (!step || typeof step !== 'object' || typeof step.key !== 'string' || step.key.length > 64) continue;
+      const location = validLocation(step.location);
+      if (!location) continue;
+      steps.set(item[0], { key: step.key, location: { ...location, selection: withSubject(location.selection, (step.location as NavigationLocation).selection) } });
+    }
+  } catch {
+    // Unreadable or unavailable: the lists start from this page.
+  }
+  return steps;
+}
+
+/** A commit's subject, which names it in the lists, when the stored selection had one. */
+function withSubject(selection: ViewerSelection, from: ViewerSelection): ViewerSelection {
+  if (selection?.type !== 'commit' || from?.type !== 'commit' || from.oid !== selection.oid) return selection;
+  return typeof from.subject === 'string' && from.subject.length <= 500 ? { ...selection, subject: from.subject } : selection;
 }
 
 function readTop(): number {

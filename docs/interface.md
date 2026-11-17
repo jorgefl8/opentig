@@ -24,6 +24,8 @@ OpenTig keeps a trail of the places you visit. Go back and forward along it with
 
 **Back only navigates.** It never stages, saves, discards, or switches a branch, and what is still in memory shows without being read again. Unsaved edits stay in their tabs. A file whose tab you closed opens again. A step in another repository opens that repository, as choosing it in the picker would; if you go somewhere else before it opens, it doesn't open. When what a step showed is gone, such as a change you committed or discarded, a deleted file, or a repository removed from OpenTig, a notice says so and you land on the section without it.
 
+**Jump several steps at once.** Right-click **Back** or **Forward**, or hold it down for a moment, to list the steps that way, nearest first. Each row names the place: the pull request, commit, run or file with its section, the pull request's tab, and the repository when it is not the one open. Choosing a row goes straight there, with everything a single Back brings back. From the keyboard, focus the arrow and press `↓` to open the list, then the arrow keys and `Enter`; `Esc` closes it and returns to the arrow. A plain click still takes one step. The arrows' tooltips mention the list.
+
 The desktop app keeps the last 100 steps of the session. In a browser, the trail is the browser's own history: each step has an [address](web-access.md#addresses), and the browser's Back and Forward walk it too.
 
 ## Appearance and settings
@@ -150,7 +152,7 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 
 **On a list, the top bar says where you are.** Beside the logo, its two lines name the repository and the branch, with the branch's pull request number in the same colors when it has one. Tap them for the repository sheet: **Repository**, **Branch**, **Worktree** when there are several, then whichever of **Publish this branch** or **Push** and **Pull** applies, **Refresh**, the branch's pull request, **Open on GitHub**, and **Open another repository**. To the right, a pill shows the sync action that applies: **Publish**, **Push** with its count, or **Pull** with its count. When both apply it shows **Pull**, because that has to happen first, and **Push** stays in the sheet. The gear opens Settings. Warnings about the remote and available updates appear here too.
 
-**Inside a viewer, the top bar is about what you opened:** a back arrow, a title, and that thing's actions. Focus moves to the arrow when a viewer opens. The arrow walks the same trail as [Back](#back-and-forward), so from a file opened in a commit it returns to that commit; at the start of the trail it returns to the list.
+**Inside a viewer, the top bar is about what you opened:** a back arrow, a title, and that thing's actions. Focus moves to the arrow when a viewer opens. The arrow walks the same trail as [Back](#back-and-forward), so from a file opened in a commit it returns to that commit; at the start of the trail it returns to the list. Hold the arrow to list the steps behind in a sheet and go straight to one.
 
 | Viewer | Title | Actions |
 | --- | --- | --- |

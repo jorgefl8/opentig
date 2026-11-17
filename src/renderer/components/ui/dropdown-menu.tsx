@@ -7,10 +7,10 @@ const ITEM_CLASS = 'flex min-h-9 cursor-pointer items-center gap-2 rounded-md px
 const DropdownMenu = MenuPrimitive.Root;
 const DropdownMenuTrigger = MenuPrimitive.Trigger;
 
-function DropdownMenuContent({ className, children, align = 'end', sideOffset = 4, ...props }:
-  MenuPrimitive.Popup.Props & Pick<MenuPrimitive.Positioner.Props, 'align' | 'sideOffset'>) {
+function DropdownMenuContent({ className, children, align = 'end', sideOffset = 4, anchor, ...props }:
+  MenuPrimitive.Popup.Props & Pick<MenuPrimitive.Positioner.Props, 'align' | 'sideOffset' | 'anchor'>) {
   return <MenuPrimitive.Portal>
-    <MenuPrimitive.Positioner align={align} sideOffset={sideOffset} className="isolate z-50 outline-none">
+    <MenuPrimitive.Positioner align={align} sideOffset={sideOffset} anchor={anchor} className="isolate z-50 outline-none">
       <MenuPrimitive.Popup data-slot="dropdown-menu-content" className={cn(
         'min-w-44 origin-(--transform-origin) rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
         className,

@@ -7,6 +7,8 @@ import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { branchPullRequestQueryOptions, commitsAfterMergeQueryOptions } from '@/features/pulls/branch-pull-request-query';
 import { withLineCounts, withStackMemberships } from '@/features/pulls/pull-request-list';
 import { releasesQueryOptions } from '@/features/pulls/releases-query';
+import { cachedPullRequestSummary } from '@/features/pulls/pull-request-summary-cache';
+import { listedRun } from '@/features/actions/action-queries';
 import { appDisplayName } from '@/lib/app-identity';
 import { Activity, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { isModuleLoadError, lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
@@ -16,7 +18,7 @@ import {
   IconRefresh, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryMove, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
+import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestDetails, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryMove, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, navigationKeys, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { NavigationKeysProvider, isMacPlatform } from './navigation-keys';
 import { ShortcutsProvider } from './ShortcutsContext';
@@ -82,6 +84,8 @@ import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
 import { SIDEBAR_VIEWS, isStep, sameLocation, sameSelection, viewerDocumentPrefix, type NavigationEntry, type NavigationLocation, type SidebarView } from './navigation/location';
 import { createMemoryTrail, type NavigationTrail } from './navigation/trail';
+import { nameStep, type StepNameSources } from './navigation/step-names';
+import type { ListTrailSteps } from './TrailMenu';
 import { createBrowserTrail, type BrowserTrail } from './navigation/browser-trail';
 import { currentAddressOf } from './navigation/address';
 import { createScrollKeeper, type ScrollKeeper } from './navigation/scroll-keeper';
@@ -543,11 +547,29 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
   useEffect(() => { if (!restoringRef.current) setMobilePane('list'); }, [repository?.id]);
+  /** The steps either way, named by what the app knows of them, for the lists Back and Forward open. */
+  const listTrailSteps = useCallback<ListTrailSteps>((direction) => {
+    const sources: StepNameSources = {
+      repositoryId: repositoryRef.current?.id ?? null,
+      repositoryName: (id) => bootstrapRef.current?.recentRepositories.find((item) => item.id === id)?.name ?? null,
+      pullTitle: (id, number) => cachedPullRequestSummary(appQueryClient, id, number)?.title
+        ?? appQueryClient.getQueryData<{ details: PullRequestDetails }>(queryKeys.pullRequest(id, number))?.details.title ?? null,
+      runTitle: (id, runId) => {
+        const run = listedRun(appQueryClient, id, runId);
+        return run ? `${run.workflowName} #${run.number}` : null;
+      },
+    };
+    const steps = trail.steps();
+    return (direction === 'back' ? steps.back : steps.forward).map((step) => ({ key: step.key, offset: step.offset, name: nameStep(step, sources) }));
+  }, [appQueryClient, trail]);
+  const goInTrail = useCallback((offset: number) => trail.go(offset), [trail]);
   // The phone's arrow walks the whole trail; only at its start does it go back to the list.
   const mobileViewerBar = useMemo(() => ({
     onBack: () => { if (trail.state().canGoBack) trail.back(); else setMobilePane('list'); },
+    listBackSteps: () => listTrailSteps('back'),
+    onGo: goInTrail,
     setTitleHost: setViewerTitleHost, setActionsHost: setViewerActionsHost,
-  }), [trail]);
+  }), [goInTrail, listTrailSteps, trail]);
   const mobileChrome = useMemo(() => !mobile ? null
     : mobilePane === 'viewer' ? { title: viewerTitleHost, actions: viewerActionsHost, float: mobileFloatHost } : NO_MOBILE_CHROME_HOSTS,
   [mobile, mobileFloatHost, mobilePane, viewerActionsHost, viewerTitleHost]);
@@ -3918,6 +3940,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           mobileViewer={mobile && mobilePane === 'viewer' ? mobileViewerBar : undefined}
           canGoBack={trailState.canGoBack}
           canGoForward={trailState.canGoForward}
+          listTrailSteps={listTrailSteps}
+          onGo={goInTrail}
           repository={repository}
           recent={bootstrap.recentRepositories}
           repositoryProjects={bootstrap.repositoryProjects}
