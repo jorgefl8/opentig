@@ -19,6 +19,11 @@ import { downloadUrl, downloadVersion, npmInstallCommand, npmUrl, powershellInst
         <p class="eyebrow">On Windows</p>
         <h3 class="flex items-center gap-2 text-xl font-medium"><WindowsIcon width={20} height={20} />Download the app.</h3>
         <p class="text-sm text-muted-foreground leading-relaxed">Windows 10 or later (x64), with Git installed. The app includes the OpenTig server.</p>
+        <dl class="rounded-lg border border-border/60 bg-background/80 divide-y divide-border/60 text-xs leading-relaxed">
+          <div class="p-3"><dt class="font-mono text-muted-foreground">Installer</dt><dd class="mt-1.5 text-foreground">For your Windows user only, without administrator access.</dd></div>
+          <div class="p-3"><dt class="font-mono text-muted-foreground">Updates</dt><dd class="mt-1.5 text-foreground">Downloaded in the app, installed when you choose Restart and install.</dd></div>
+          <div class="p-3"><dt class="font-mono text-muted-foreground">Browser and phone</dt><dd class="mt-1.5 text-foreground">Turn on Web access in Settings to pair them with this computer.</dd></div>
+        </dl>
         <div class="mt-auto flex flex-col gap-2 pt-2">
           <Button href={downloadUrl} data-windows-download data-analytics-placement="install" class="self-start px-5!">Download for Windows</Button>
           <SmartScreenNotice align="start" />
