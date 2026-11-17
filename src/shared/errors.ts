@@ -11,6 +11,8 @@ export type GitErrorCode =
   | 'OUTPUT_LIMIT'
   | 'TIMEOUT'
   | 'FILE_NOT_FOUND'
+  /** A pull request's commits left the clone since its files were listed: reading the list again brings them back. */
+  | 'PULL_REQUEST_COMMITS_MISSING'
   | 'UNKNOWN';
 
 export interface SerializedGitError {

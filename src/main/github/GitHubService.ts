@@ -782,9 +782,11 @@ export class GitHubService {
         }
       }
       if (scope.commitOid) return { source: 'github', diff: await this.getPullRequestCommitDiff(repositoryId, scope.commitOid) };
-      // GitHub diffs the pull request as it is now, which is only the code asked for while its head is the same.
+      // GitHub diffs the pull request as it is now, which is the code asked for while its head is the same: the
+      // base's tip moves with every merge into it, but the diff is from where the head branched off. The details
+      // were read moments ago to ask for this code, so they come from what the server kept.
       const details = await this.getPullRequest(repositoryId, prNumber);
-      if (details.headRefOid !== scope.headOid || details.baseRefOid !== scope.baseOid) {
+      if (details.headRefOid !== scope.headOid) {
         throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation: 'gh-pr-files', message: 'This pull request has new commits. Refresh to see them.', retryable: true });
       }
       return { source: 'github', diff: await this.readGitHubDiff(repositoryId, prNumber, fetchFailure) };

@@ -199,7 +199,7 @@ describe('PullRequestLocalGit', () => {
     async function namedFiles(names: readonly string[]) {
       const fixture = await repositoryWithUpstream();
       const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);
-      for (const name of names) await writeFile(path.join(fixture.work, name), `${name}\n`);
+      for (const name of names) await writeFile(path.join(fixture.work, name), `${JSON.stringify(name)}\n`);
       await git(fixture.work, ['add', '.']);
       await git(fixture.work, ['commit', '-q', '-m', 'Odd names']);
       return { work: fixture.work, baseOid, headOid: await git(fixture.work, ['rev-parse', 'HEAD']) };
@@ -210,7 +210,7 @@ describe('PullRequestLocalGit', () => {
       for (const name of names) {
         const diff = await local.fileDiff(work, { baseOid, headOid }, name, null);
         expect(diff.patch.match(/^diff --git /gm)).toHaveLength(1);
-        expect(diff.patch).toContain(`+${name}`);
+        expect(diff.patch).toContain(`+${JSON.stringify(name)}`);
       }
       return { work, baseOid, headOid, local };
     }
@@ -223,8 +223,11 @@ describe('PullRequestLocalGit', () => {
 
     // NTFS takes `a:b` for a file with an alternate stream and a backslash for a folder, so these names
     // exist only in clones on other systems; this test does not show whether Git on Windows reads them.
-    it.skipIf(process.platform === 'win32')('reads files whose names hold a colon or a backslash', async () => {
-      await expectEachRead(['a:b', 'back\\slash']);
+    it.skipIf(process.platform === 'win32')('reads files whose names hold a colon, a backslash, a tab or a newline', async () => {
+      const names = ['a:b', 'back\\slash', 'tab\there.txt', 'new\nline.txt'];
+      const { work, baseOid, headOid, local } = await expectEachRead(names);
+      // Listed as they are, not as Git quotes them in a patch.
+      expect((await local.files(work, { baseOid, headOid })).files.map((file) => file.path).sort()).toEqual([...names].sort());
     });
 
     it('reads a commit only when it is one of the pull request’s', async () => {
@@ -234,6 +237,26 @@ describe('PullRequestLocalGit', () => {
       // The base is a commit of the clone, but not of the pull request.
       await expect(local.files(work, { baseOid, headOid, commitOid: baseOid })).rejects.toThrow('That commit is not one of this pull request’s.');
       await expect(local.fileDiff(work, { baseOid, headOid, commitOid: 'e'.repeat(40) }, 'gone.txt', null)).rejects.toThrow('That commit is not one of this pull request’s.');
+    });
+
+    it('says the commits left the clone, for all the changes and for one commit, rather than how Git failed', async () => {
+      const { work, baseOid, firstOid } = await pullRequestInClone();
+      const local = new PullRequestLocalGit(new GitProcess());
+      const gone = 'e'.repeat(40);
+      await expect(local.fileDiff(work, { baseOid, headOid: gone }, 'gone.txt', null)).rejects.toMatchObject({ detail: { code: 'PULL_REQUEST_COMMITS_MISSING' } });
+      await expect(local.fileDiff(work, { baseOid, headOid: gone, commitOid: firstOid }, 'new-name.txt', 'old-name.txt')).rejects.toMatchObject({ detail: { code: 'PULL_REQUEST_COMMITS_MISSING' } });
+    });
+
+    it('looks for a commit again when the pull request’s commits changed in the clone since they were listed', async () => {
+      const { work, baseOid, headOid, firstOid } = await pullRequestInClone();
+      // Git is told the head's parent is the base, which hides the first commit, as a shallow clone would.
+      await git(work, ['replace', '--graft', headOid, baseOid]);
+      const local = new PullRequestLocalGit(new GitProcess());
+      expect((await local.files(work, { baseOid, headOid, commitOid: headOid })).files.length).toBeGreaterThan(0);
+      await expect(local.files(work, { baseOid, headOid, commitOid: firstOid })).rejects.toThrow('That commit is not one of this pull request’s.');
+      // Deepened: the first commit is back in the range.
+      await git(work, ['replace', '-d', headOid]);
+      expect((await local.files(work, { baseOid, headOid, commitOid: firstOid })).files.map((file) => file.path)).toEqual(['new-name.txt']);
     });
 
     it('lists the files that fit when Git’s listing is larger than it reads, and says the list is not complete', async () => {

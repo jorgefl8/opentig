@@ -264,6 +264,14 @@ describe('pull request code', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it('gives GitHub’s diff when only the base’s tip moved, which leaves the code the same', async () => {
+    const movedBase = 'f'.repeat(40);
+    const offline = fixture(args => args[0] === 'pr' && args[1] === 'diff' ? { exitCode: 0, stdout: 'diff --git a/x b/x\n', stderr: '' }
+      : args[1] === 'graphql' ? fail('unavailable') : ok({ number: 12, state: 'OPEN', baseRefOid: movedBase, headRefOid: head }), undefined, undefined,
+    args => args[0] === 'cat-file' ? 'missing\nmissing\n' : args[0] === 'fetch' ? new GitOperationError({ code: 'UNKNOWN', operation: 'fetch', message: 'offline' }) : undefined);
+    expect(await offline.service.getPullRequestFiles('repo', 12, { baseOid: base, headOid: head })).toMatchObject({ source: 'github', diff: { patch: 'diff --git a/x b/x\n' } });
+  });
+
   it('does not give GitHub’s diff for a head other than the one asked for', async () => {
     const newer = 'd'.repeat(40);
     const offline = fixture(args => args[0] === 'pr' && args[1] === 'diff' ? { exitCode: 0, stdout: 'diff --git a/x b/x\n', stderr: '' }

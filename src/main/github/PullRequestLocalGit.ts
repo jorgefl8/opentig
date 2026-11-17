@@ -21,13 +21,12 @@ const MAX_PATH_LENGTH = 4096;
 
 /**
  * A path as Git lists it, which is how a file of a pull request is named: relative, without `.` or `..`
- * segments or empty ones, without control characters, and of bounded length. Nothing else about it is
- * assumed, so names a working tree could refuse, such as `..cache`, `a:b` or a backslash, are allowed.
+ * segments or empty ones, without NUL, which Git paths cannot hold, and of bounded length. Nothing else
+ * about it is assumed, so names a working tree could refuse, such as `..cache`, `a:b`, a backslash, a tab
+ * or a newline, are allowed: a path only ever reaches Git after the end of options, as a literal pathspec.
  */
 export function isGitPath(value: string): boolean {
-  if (!value || value.length > MAX_PATH_LENGTH || value.startsWith('/')) return false;
-  // oxlint-disable-next-line no-control-regex -- control characters are exactly what is refused.
-  if (/[\u0000-\u001f\u007f]/.test(value)) return false;
+  if (!value || value.length > MAX_PATH_LENGTH || value.startsWith('/') || value.includes('\0')) return false;
   return value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
 }
 
@@ -42,6 +41,8 @@ export interface PullRequestRange {
  * at 300 files and download the whole patch on every view; Git has neither
  * limit once the PR's commits are present locally.
  */
+const rangeKey = (cwd: string, scope: PullRequestFilesScope) => `${cwd}\0${scope.baseOid}\0${scope.headOid}`;
+
 export class PullRequestLocalGit {
   /** The commits of each range read lately, to tell whether a commit is one of the pull request's. */
   private readonly rangeCommits = new Map<string, Promise<ReadonlySet<string>>>();
@@ -96,6 +97,8 @@ export class PullRequestLocalGit {
    * before they reach Git; nothing is fetched.
    */
   async files(cwd: string, scope: PullRequestFilesScope): Promise<{ files: PullRequestFile[]; omitted: number; complete: boolean }> {
+    // Reading the whole range's list again, as after commits were downloaded, reads its commits again too.
+    if (!scope.commitOid) this.rangeCommits.delete(rangeKey(cwd, scope));
     const comparison = await this.comparison(cwd, scope);
     const options = { operation: 'pr-local-files', readOnly: true, timeoutMs: PULL_REQUEST_DIFF_GIT_TIMEOUT_MS, maxOutputBytes: this.listLimitBytes, truncateOverflow: true };
     const [raw, numstat] = await Promise.all([
@@ -135,20 +138,21 @@ export class PullRequestLocalGit {
     if (!isGitPath(path) || (oldPath !== null && !isGitPath(oldPath))) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'pr-local-file-diff', message: 'Invalid file.' });
     }
-    const comparison = await this.comparison(cwd, scope);
     const paths = oldPath && oldPath !== path ? [path, oldPath] : [path];
     const options = { operation: 'pr-local-file-diff', readOnly: true, timeoutMs: FILE_DIFF_TIMEOUT_MS };
     let patch: Awaited<ReturnType<GitProcess['run']>>;
     let inventory: Awaited<ReturnType<GitProcess['run']>>;
     try {
+      const comparison = await this.comparison(cwd, scope);
       [patch, inventory] = await Promise.all([
         this.git.run(cwd, ['--literal-pathspecs', ...comparison, '--patch', '--', ...paths], { ...options, maxOutputBytes: PATCH_LIMIT_BYTES, truncateOverflow: true }),
         this.git.run(cwd, ['--literal-pathspecs', ...comparison, '--name-status', '-z', '--', ...paths], { ...options, maxOutputBytes: 1024 * 1024 }),
       ]);
     } catch (error) {
-      // The list read downloads the commits; Git failing here is most often their being gone since.
-      if (error instanceof GitOperationError && (await this.missing(cwd, [scope.baseOid, scope.headOid])).length) {
-        throw new GitOperationError({ code: 'UNKNOWN', operation: 'pr-local-file-diff', message: 'This pull request’s commits are no longer in the clone.' });
+      // The list read downloads the commits; Git failing here, listing the range included, is most often
+      // their being gone since. A bad argument is the caller's, whatever the clone holds.
+      if (error instanceof GitOperationError && error.detail.code !== 'INVALID_ARGUMENT' && (await this.missing(cwd, [scope.baseOid, scope.headOid])).length) {
+        throw new GitOperationError({ code: 'PULL_REQUEST_COMMITS_MISSING', operation: 'pr-local-file-diff', message: 'This pull request’s commits are no longer in the clone.' });
       }
       throw error;
     }
@@ -170,7 +174,11 @@ export class PullRequestLocalGit {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'pr-local-files', message: 'Invalid commit range.' });
     }
     if (!scope.commitOid) return ['diff', ...DIFF, `${scope.baseOid}...${scope.headOid}`];
-    if (!(await this.commitsOf(cwd, scope)).has(scope.commitOid.toLowerCase())) {
+    // A commit missing from the kept list is looked for once more in a fresh one: the clone may have been
+    // deepened or the commits downloaded since that list was read.
+    const commit = scope.commitOid.toLowerCase();
+    if (!(await this.commitsOf(cwd, scope)).has(commit)) this.rangeCommits.delete(rangeKey(cwd, scope));
+    if (!(await this.commitsOf(cwd, scope)).has(commit)) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'pr-local-files', message: 'That commit is not one of this pull request’s.' });
     }
     return ['show', '--no-show-signature', '--format=', ...DIFF, '--diff-merges=first-parent', scope.commitOid];
@@ -178,7 +186,7 @@ export class PullRequestLocalGit {
 
   /** The commits of the range, as `base..head` gives them; read once and kept for the next files of it. */
   private commitsOf(cwd: string, scope: PullRequestFilesScope): Promise<ReadonlySet<string>> {
-    const key = `${cwd}\0${scope.baseOid}\0${scope.headOid}`;
+    const key = rangeKey(cwd, scope);
     let pending = this.rangeCommits.get(key);
     if (!pending) {
       pending = this.git.run(cwd, ['rev-list', `${scope.baseOid}..${scope.headOid}`, '--'], {
