@@ -402,6 +402,8 @@ In a GitHub repository, a link to one of its pull requests, commits (by full has
 
 Open the branch menu in the top bar, search local and remote branches, then select one. Selecting a remote branch creates or uses its local tracking branch. A branch already checked out in another worktree can't be switched to here, so choosing it opens that worktree instead.
 
+With no branch checked out, the top bar names the commit HEAD is on, such as **Detached at 823a26e**, and so do the phone header and the worktree lists. The branch menu then opens with a note above the branches that says which local and remote branches have that commit as their tip, and the commit's title when one does; when none does, it names only the commit. Tags aren't named there.
+
 When the repository has more than one worktree, a small button with their number beside the repository lists them. On a phone, they have their own selector in the repository sheet. A worktree that Git marks as **Locked**, as tools such as Claude Code do with the worktrees their sessions use, opens like any other; the lock only stops it from being removed, and its details in **Manage worktrees** show the reason Git recorded. Missing and bare worktrees can't be opened.
 
 If switching would overwrite local changes, OpenTig offers to move all tracked and untracked changes to the destination and leave them unstaged. Conflicts open in **Changes**, with a safety stash kept for recovery.

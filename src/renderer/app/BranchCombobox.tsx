@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
-import { IconChevronDown, IconGitBranch } from '@tabler/icons-react';
+import { IconChevronDown, IconGitBranch, IconGitCommit } from '@tabler/icons-react';
 import { formatTimeAgo } from '../../shared/date-format';
 import type { BranchInfo, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { AgentLabel } from '@/features/refs/AgentLabel';
 import { agentsAt, listAgents, samePath } from '@/features/refs/local-refs-model';
+import type { DetachedHead } from '@/features/refs/detached-head';
 
 export interface BranchComboboxWorktrees {
   items: WorktreeInfo[];
@@ -21,8 +22,8 @@ export interface BranchComboboxWorktrees {
  * instead of being refused. Managing worktrees stays here only while there is
  * one, because from two on they have their own selector.
  */
-export function BranchCombobox({ branches, currentLabel, disabled, readOnly, crumb, worktrees, onBranch, onManage }: {
-  branches: BranchInfo[]; currentLabel: string; disabled?: boolean | undefined; readOnly?: boolean | undefined; crumb?: boolean | undefined;
+export function BranchCombobox({ branches, currentLabel, detached, disabled, readOnly, crumb, worktrees, onBranch, onManage }: {
+  branches: BranchInfo[]; currentLabel: string; detached?: DetachedHead | null | undefined; disabled?: boolean | undefined; readOnly?: boolean | undefined; crumb?: boolean | undefined;
   worktrees?: BranchComboboxWorktrees | undefined; onBranch(name: string | null): void; onManage(): void;
 }) {
   const worktreeItems = worktrees?.items;
@@ -90,6 +91,7 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
     triggerClassName={crumb ? 'toolbar-crumb' : 'max-w-[220px]'}
     align={crumb ? 'start' : 'end'}
     placeholder="Search branches…"
+    notice={detached ? <DetachedHeadNotice head={detached} /> : undefined}
     management={[
       { label: 'Manage branches…', onClick: onManage },
       ...(worktrees && worktrees.items.length < 2 ? [{ label: 'Manage worktrees…', onClick: worktrees.onManage }] : []),
@@ -97,4 +99,19 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
     // A repository in the middle of an operation can't change branch, but its other worktrees stay available.
     disabled={disabled || (readOnly && !worktrees)}
   />;
+}
+
+/**
+ * With no branch checked out no row can be marked, so the menu opens by saying
+ * where HEAD is instead. It informs and isn't a choice, so it sits outside the listbox.
+ */
+function DetachedHeadNotice({ head }: { head: DetachedHead }) {
+  return <div className="branch-detached-notice" role="note" aria-label={head.label}>
+    <IconGitCommit aria-hidden="true" />
+    <strong>{head.shortOid ? <>Detached at <code>{head.shortOid}</code></> : head.label}</strong>
+    {head.subject && <span className="branch-detached-subject">{head.subject}</span>}
+    {head.branches.length > 0 && <span className="branch-detached-refs">
+      Not on a branch. Same commit as {head.branches.map((name) => <span key={name} className="branch-detached-ref"><IconGitBranch aria-hidden="true" />{name}</span>)}
+    </span>}
+  </div>;
 }

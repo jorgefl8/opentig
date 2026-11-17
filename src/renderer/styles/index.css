@@ -2162,6 +2162,14 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
 .undo-commit-content > .agent-marks > .agent-mark + .agent-mark { margin-left: -8px; }
 .undo-commit-content > .agent-marks > .agent-mark > .ai-provider-icon, .undo-commit-content > .agent-marks > .agent-mark > svg { width: 20px; height: 20px; }
 .searchable-picker-empty { padding: 22px 8px; text-align: center; color: var(--muted-foreground); font-size: var(--text-ui); }
+.branch-detached-notice { display: grid; flex-shrink: 0; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; row-gap: 2px; margin: 4px 4px 0; padding: 7px 9px 8px; border: 1px solid color-mix(in oklch, var(--primary) 22%, transparent); border-radius: 6px; background: color-mix(in oklch, var(--primary) 8%, transparent); color: var(--popover-foreground); font-size: var(--text-ui); line-height: 17px; }
+.branch-detached-notice > svg { grid-row: span 3; width: 16px; height: 16px; margin-top: 1px; color: var(--primary); }
+.branch-detached-notice strong { font-weight: var(--weight-strong); }
+.branch-detached-notice code { font-family: var(--font-mono); font-weight: var(--weight-medium); }
+.branch-detached-subject { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.branch-detached-refs { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; }
+.branch-detached-ref { display: inline-flex; max-width: 100%; align-items: center; gap: 3px; height: 18px; padding: 0 6px; overflow: hidden; border-radius: 4px; background: color-mix(in oklch, var(--foreground) 8%, transparent); color: var(--popover-foreground); font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.branch-detached-ref svg { width: 11px; height: 11px; flex: none; }
 .searchable-picker-footer { border-top: 1px solid var(--border); padding: 4px; }
 .searchable-picker-footer button { display: flex; width: 100%; min-height: 30px; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; color: var(--muted-foreground); font-size: var(--text-ui); text-align: left; cursor: pointer; }
 .searchable-picker-footer button:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--popover)); color: var(--popover-foreground); }

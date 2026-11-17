@@ -27,6 +27,7 @@ import { SearchablePicker } from '@/components/SearchablePicker';
 import { RemoteBranchDetailPanel } from './RemoteBranchDetailPanel';
 import { AgentLabel } from './AgentLabel';
 import { Spinner } from '@/components/ui/spinner';
+import { detachedHeadLabel } from './detached-head';
 
 const DISMISSED_NOTICES_KEY = 'opentig.dismissedWorktreeRemovalNotices';
 
@@ -396,7 +397,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                     <AgentLabel agents={agentsAt(props.worktreeAgents, item.path)} compact />
                   </span>
                   <small className="local-refs-row-meta">
-                    <span className="local-refs-row-branch">{item.branch ? `${item.branch}` : 'Detached HEAD'}</span>
+                    <span className="local-refs-row-branch">{item.branch ?? detachedHeadLabel(item.oid)}</span>
                     <span>{item.path}</span>
                   </small>
                 </button>

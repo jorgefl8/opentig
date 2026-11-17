@@ -129,3 +129,18 @@ it('lists the current branch, then the default one, then local branches by most 
   expect(option('feat/new-order')?.textContent).toContain('1d ago');
   expect(option('fix/undated')?.textContent).not.toContain('ago');
 });
+
+it('opens a detached HEAD by saying where it is, outside the choices, and marks no branch', async () => {
+  const detached = { label: 'Detached at 823a26e', shortOid: '823a26e', subject: 'Merge the release', branches: ['main', 'origin/main'] };
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(BranchCombobox, {
+    branches: [branchInfo('main'), branchInfo('feature')], currentLabel: detached.label, detached, onBranch, onManage,
+  }))));
+  expect(trigger().querySelector('span')?.textContent).toBe('Detached at 823a26e');
+  await act(async () => trigger().click());
+  const notice = document.querySelector<HTMLElement>('[role="note"]')!;
+  expect(notice.getAttribute('aria-label')).toBe('Detached at 823a26e');
+  expect(notice.textContent).toContain('Merge the release');
+  expect([...notice.querySelectorAll('.branch-detached-ref')].map(ref => ref.textContent)).toEqual(['main', 'origin/main']);
+  expect(notice.closest('[role="listbox"]')).toBeNull();
+  expect(document.querySelector('[role="option"][aria-selected="true"]')).toBeNull();
+});
