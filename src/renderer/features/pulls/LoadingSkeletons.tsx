@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 export function ViewerSkeleton({ bar, label }: { bar: ReactNode; label: string }) {
   return (
     <div className="pr-viewer pr-viewer-skeleton" role="status" aria-label={label}>
+      <LoadingWords label={label} />
       {bar}
       <header className="pr-viewer-header no-tabs">
         <span className="pr-skeleton-line title" />
@@ -13,6 +14,14 @@ export function ViewerSkeleton({ bar, label }: { bar: ReactNode; label: string }
       <div className="pr-description-skeleton"><span /><span /><span /></div>
     </div>
   );
+}
+
+/**
+ * What a screen reader speaks: many announce a live region's text, not its label,
+ * and the placeholders themselves are hidden from them.
+ */
+function LoadingWords({ label }: { label: string }) {
+  return <span className="sr-only">{label}…</span>;
 }
 
 export type ListSkeletonKind = 'pull' | 'run' | 'release';
@@ -31,6 +40,7 @@ const META_WIDTHS = ['46%', '38%', '52%', '34%', '42%', '48%', '36%', '44%'];
 export function ListSkeleton({ kind, label, rows = TITLE_WIDTHS.length }: { kind: ListSkeletonKind; label: string; rows?: number }) {
   return (
     <div className="list-skeleton" role="status" aria-label={label}>
+      <LoadingWords label={label} />
       {Array.from({ length: rows }, (_, index) => {
         const bar = (width: string, className = '') => <>{'​'}<span className={`pr-skeleton-line list-skeleton-bar ${className}`} style={{ width }} /></>;
         const title = <span className="pull-line">
