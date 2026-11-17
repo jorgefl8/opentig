@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileDiff, Virtualizer, useWorkerPool } from '@pierre/diffs/react';
 import {
@@ -20,7 +20,7 @@ import { FileHistoryContext } from '@/features/history/file-history-context';
 import { primeDiffsWhenIdle } from './diff-idle-prime';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { ChangeStatusBadge } from '@/features/changes/ChangeStatusBadge';
-import { animatesFileToggle, diffChangeKind, splitCommitPatch, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
+import { animatesFileToggle, diffChangeKind, splitCommitPatch, visiblePath, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { resolvePierreLanguage } from './pierreLanguages';
 import { ColorHoverPreview } from './ColorHoverPreview';
 import { ColorSwatchLayer } from './ColorSwatchLayer';
@@ -219,8 +219,8 @@ function DiffFilePathLabel({ path }: { path: string }) {
   const { name, directory } = diffPathParts(path);
   return (
     <>
-      {directory ? <span className="diff-file-directory">{directory}/</span> : null}
-      <span className="diff-file-name">{name}</span>
+      {directory ? <span className="diff-file-directory">{visiblePath(directory)}/</span> : null}
+      <span className="diff-file-name">{visiblePath(name)}</span>
     </>
   );
 }
@@ -240,7 +240,7 @@ const headerFile = (file: DiffFileEntry): HeaderFile => ({ ...file, kind: diffCh
 function FileHeaderFacts({ file }: { file: HeaderFile }) {
   return (
     <>
-      {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
+      {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {visiblePath(file.previousPath)}</span>}
       <span className="diff-file-stats">
         {/* A side with nothing on it is left out, so a deletion reads "−12" and not "+0 −12". */}
         {file.binary ? <span className="binary">bin</span> : (
@@ -257,7 +257,7 @@ function FileHeaderFacts({ file }: { file: HeaderFile }) {
 
 function RenamedFrom({ file }: { file: DiffFileEntry }) {
   if (!file.previousPath || file.previousPath === file.path) return null;
-  return <div className="diff-file-header diff-file-header-compact"><span className="diff-file-previous">Renamed from {file.previousPath}</span></div>;
+  return <div className="diff-file-header diff-file-header-compact"><span className="diff-file-previous">Renamed from {visiblePath(file.previousPath)}</span></div>;
 }
 
 function CompactFileHeader({ file, actions }: { file: DiffFileEntry; actions: React.ReactNode }) {
@@ -267,7 +267,7 @@ function CompactFileHeader({ file, actions }: { file: DiffFileEntry; actions: Re
       <DiffFileIcon path={file.path} />
       <Tooltip disabled={!truncated}>
         <TooltipTrigger render={<span ref={pathRef} className="diff-file-path" />}><DiffFilePathLabel path={file.path} /></TooltipTrigger>
-        <TooltipContent>{file.path}</TooltipContent>
+        <TooltipContent>{visiblePath(file.path)}</TooltipContent>
       </Tooltip>
       <FileHeaderFacts file={headerFile(file)} />
       {actions}
@@ -294,7 +294,7 @@ function CollapsibleFileHeader({ file, size = null, collapsed, onToggle, onOpenF
           <DiffFileIcon path={file.path} />
           <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
         </TooltipTrigger>
-        <TooltipContent anchor={pathRef}>{file.path}</TooltipContent>
+        <TooltipContent anchor={pathRef}>{visiblePath(file.path)}</TooltipContent>
       </Tooltip>
       {canOpen && <DiffAction label="Open file" className="diff-file-open" onClick={() => onOpenFile(file.path)}><IconFileArrowRight /></DiffAction>}
       {canOpen && openHistory && !phone && <DiffAction label="File history" className="diff-file-open" onClick={() => openHistory(file.path)}><IconHistory /></DiffAction>}
@@ -384,24 +384,32 @@ type FilesLayout =
   | { kind: 'toolbar'; scopeControl: React.ReactNode; notice: React.ReactNode; onClose: (() => void) | undefined };
 
 /**
- * What Expand all reads at most, by the files' sizes: about what the whole diff of a pull request could
- * be before it was read file by file, so unfolding everything never holds much more than that did.
+ * What Expand all reads at most, by the size of the files' diffs: about what the whole diff of a pull
+ * request could be before it was read file by file, so unfolding everything never holds much more.
  */
 const EXPAND_ALL_BYTES = 4 * 1024 * 1024;
-/** Lines of a file whose size is not known, at a generous width. */
-const BYTES_PER_LINE = 80;
+/** A changed line of a diff and the context that comes with it, at a generous width. */
+const BYTES_PER_CHANGED_LINE = 160;
+/** A file's header in its diff, and all a binary file or a pure rename has. */
+const BYTES_PER_FILE = 512;
 
-/** The first files, in order, whose sizes together stay within what Expand all reads. */
-function withinExpandBudget(files: readonly ListedFile[]): ListedFile[] {
+/** What a file's diff will weigh: what was read of it once read, and until then an estimate from its changed lines. */
+function diffBytes(file: ListedFile, read: ReadonlyMap<string, number>): number {
+  return read.get(commitFileKey(file)) ?? BYTES_PER_FILE + (file.binary ? 0 : (file.additions + file.deletions) * BYTES_PER_CHANGED_LINE);
+}
+
+/** The first files, in order, whose diffs together stay within what Expand all reads. */
+function withinExpandBudget(files: readonly ListedFile[], read: ReadonlyMap<string, number>): ListedFile[] {
   let total = 0;
   const kept: ListedFile[] = [];
   for (const file of files) {
-    total += file.size ?? (file.additions + file.deletions) * BYTES_PER_LINE;
+    total += diffBytes(file, read);
     if (total > EXPAND_ALL_BYTES) break;
     kept.push(file);
   }
   return kept;
 }
+
 
 /** A file's size as its header says it. */
 function sizeLabel(bytes: number): string {
@@ -446,6 +454,9 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
   const everythingController = useRef<AbortController | null>(null);
   useEffect(() => () => everythingController.current?.abort(), []);
   const [filter, setFilter] = useState('');
+  /** What the diffs read so far weigh, by file, so Expand all counts what is really held rather than its guess. */
+  const [readBytes, setReadBytes] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const noteRead = useCallback((key: string, bytes: number) => setReadBytes((current) => current.get(key) === bytes ? current : new Map(current).set(key, bytes)), []);
   const phone = useMobileChrome() !== null;
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [colorSwatches] = useState(createColorSwatchRegistry);
@@ -455,8 +466,9 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
   // Large files stay folded under Expand all, so it is about the others, and only as many of them as its
   // budget holds, in the list's order; the rest stay folded, each still unfolded by hand.
   const candidates = shown.filter((file) => !large(file));
-  const expandable = pullRequest ? withinExpandBudget(candidates) : candidates;
-  const heldBack = candidates.length - expandable.length;
+  const expandable = pullRequest ? withinExpandBudget(candidates, readBytes) : candidates;
+  const expandableKeys = new Set(expandable.map(commitFileKey));
+  const heldBack = candidates.filter((file) => !expandableKeys.has(commitFileKey(file)) && !unfolded.has(commitFileKey(file))).length;
   const allUnfolded = expandable.length > 0 && expandable.every((file) => unfolded.has(commitFileKey(file)));
   const additions = files.reduce((total, file) => total + file.additions, 0);
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
@@ -560,12 +572,13 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
               />
               <Reveal open={open} animate={!isLarge && animatesFileToggle(file, files.length)}>
                 {pullRequest && file.binary
-                  ? <div className="diff-file-loading">{file.path.split('/').pop()} is a binary file, so it has no diff to show.</div>
+                  ? <div className="diff-file-loading">{visiblePath(file.path.split('/').pop() ?? file.path)} is a binary file, so it has no diff to show.</div>
                   : <CommitFileDiff
                     contentKey={`${contentKey}:${key}`}
                     file={file}
                     fileKey={key}
                     asked={asked}
+                    onRead={noteRead}
                     everything={everything}
                     readFile={readFile}
                     diffView={diffView}
@@ -581,10 +594,12 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
   );
 }
 
-function CommitFileDiff({ contentKey, file, fileKey, asked, everything, readFile, diffView, themeType, wrapLines }: {
+function CommitFileDiff({ contentKey, file, fileKey, asked, onRead, everything, readFile, diffView, themeType, wrapLines }: {
   contentKey: string; file: ListedFile; fileKey: string;
   /** Files unfolded on their own, whose reads go first. */
   asked: React.RefObject<Set<string>>;
+  /** Told how much the file's diff weighs once read. */
+  onRead(fileKey: string, bytes: number): void;
   everything: Promise<void> | null; readFile(file: ListedFile, signal: AbortSignal, urgent: boolean): Promise<DiffResult>;
   diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean;
 }) {
@@ -597,18 +612,20 @@ function CommitFileDiff({ contentKey, file, fileKey, asked, everything, readFile
       try {
         await everything;
         const diff = await readFile(file, controller.signal, urgent);
-        if (!controller.signal.aborted) setState({ diff });
+        if (controller.signal.aborted) return;
+        setState({ diff });
+        onRead(fileKey, diff.patch.length);
       } catch (reason) {
         if (!controller.signal.aborted) setState({ error: reason instanceof Error ? reason.message : 'Could not load the diff.' });
       }
     })();
     // A file folded again, or a commit closed, before its diff came back stops reading it.
     return () => controller.abort();
-  }, [asked, everything, file, fileKey, readFile]);
+  }, [asked, everything, file, fileKey, onRead, readFile]);
   if (!state) return <div className="diff-file-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading diff…" /></div>;
   if ('error' in state) return <div className="diff-file-loading text-destructive" role="alert">{state.error}</div>;
   // Larger than one response can carry: said by name, rather than shown as nothing.
-  if (state.diff.truncated && !state.diff.patch) return <div className="diff-file-loading" role="status">{file.path}’s diff is too large to show here{file.size ? ` (${sizeLabel(file.size)})` : ''}.</div>;
+  if (state.diff.truncated && !state.diff.patch) return <div className="diff-file-loading" role="status">{visiblePath(file.path)}’s diff is too large to show here{file.size ? ` (${sizeLabel(file.size)})` : ''}.</div>;
   return <ParsedCommitFileDiff contentKey={contentKey} diff={state.diff} diffView={diffView} themeType={themeType} wrapLines={wrapLines} />;
 }
 

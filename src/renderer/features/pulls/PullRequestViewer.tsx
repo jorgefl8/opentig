@@ -319,7 +319,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           <div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text={byFile ? 'Loading files…' : 'Loading diff…'} /></div>
         ) : (
           <Suspense fallback={<div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
-            <PullRequestDiff code={code} range={range} changedFiles={details.changedFiles} prNumber={pr.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} onOpenFile={onOpenFile} />
+            <PullRequestDiff code={code} range={range} changedFiles={details.changedFiles} commitsSettled={!firstPageOnly || commitsQuery.isSuccess || commitsQuery.isError} prNumber={pr.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} onOpenFile={onOpenFile} />
           </Suspense>
         )}
       </ViewerTabsPanel>

@@ -427,14 +427,16 @@ describe('file fold animation', () => {
 
 describe('as a pull request’s files', () => {
   it('stops Expand all at its budget, leaving the rest folded with a line that says so', async () => {
-    const file = (index: number) => ({ path: `src/part-${index}.ts`, oldPath: null, kind: 'modified' as const, additions: 1, deletions: 1, binary: false, size: 600 * 1024 });
-    const readFile = vi.fn(async (listed: { path: string }) => ({ path: listed.path, patch: largePatch(1, 4, listed.path), binary: false, truncated: false, lineCount: 4 }));
+    // Each diff about 640 KB by its changed lines, though each file is small.
+    const file = (index: number) => ({ path: `src/part-${index}.ts`, oldPath: null, kind: 'modified' as const, additions: 2000, deletions: 2000, binary: false, size: 200 * 1024 });
+    // Still on their way, so Expand all goes by its estimates.
+    const readFile = vi.fn(() => new Promise<never>(() => {}));
     await act(async () => root.render(createElement(TooltipProvider, null, createElement(PullRequestFilesWorkspace, {
       contentKey: 'pull', files: Array.from({ length: 10 }, (_, index) => file(index)), diffView: 'unified', themeType: 'light', wrapLines: false,
       scopeControl: null, foldMemoryKey: 'repo:pull:1:all', readFile,
     }))));
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand all files"]')!.click());
-    // Six files of 600 KB fit in 4 MB; a seventh would not.
+    // Six such diffs fit in 4 MB; a seventh would not.
     const toggles = [...container.querySelectorAll<HTMLButtonElement>('.diff-file-toggle')];
     expect(toggles.map((toggle) => toggle.getAttribute('aria-expanded'))).toEqual([...Array(6).fill('true'), ...Array(4).fill('false')]);
     expect(container.textContent).toContain('4 more files were left folded, so Expand all reads at most 4.0 MB.');
@@ -443,4 +445,45 @@ describe('as a pull request’s files', () => {
     await act(async () => toggles[8]!.click());
     expect(toggles[8]!.getAttribute('aria-expanded')).toBe('true');
   });
+});
+
+describe('the budget of Expand all for a pull request', () => {
+  const listed = (path: string, overrides: object = {}) => ({ path, oldPath: null, kind: 'modified' as const, additions: 1, deletions: 1, binary: false, size: 120 * 1024, ...overrides });
+  async function renderFiles(files: ReturnType<typeof listed>[], patchOf: (path: string) => string) {
+    const readFile = vi.fn(async (file: { path: string }) => ({ path: file.path, patch: patchOf(file.path), binary: false, truncated: false, lineCount: 4 }));
+    await act(async () => root.render(createElement(TooltipProvider, null, createElement(PullRequestFilesWorkspace, {
+      contentKey: 'budget', files, diffView: 'unified', themeType: 'light', wrapLines: false, scopeControl: null, foldMemoryKey: 'repo:pull:2:all', readFile,
+    }))));
+  }
+  const expanded = () => [...container.querySelectorAll('.diff-file-toggle')].filter((toggle) => toggle.getAttribute('aria-expanded') === 'true').length;
+
+  it('counts a diff by its changed lines, not by the size of its file, so small changes to large files all unfold', async () => {
+    await renderFiles([
+      ...Array.from({ length: 40 }, (_, index) => listed(`src/card-${index}.ts`)),
+      listed('logo.png', { binary: true, additions: 0, deletions: 0, size: 900 * 1024 }),
+      listed('moved.ts', { oldPath: 'old.ts', kind: 'renamed', additions: 0, deletions: 0, size: 900 * 1024 }),
+    ], (path) => largePatch(1, 4, path));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand all files"]')!.click());
+    expect(expanded()).toBe(42);
+  });
+
+  it('counts what a diff weighed once read, so a large one unfolded by hand leaves less for the rest', async () => {
+    // The first file's diff is nearly 4 MB though it changes few lines.
+    await renderFiles(Array.from({ length: 5 }, (_, index) => listed(`src/part-${index}.ts`)), (path) => largePatch(1, path === 'src/part-0.ts' ? 4_193_000 : 4, path));
+    const toggles = [...container.querySelectorAll<HTMLButtonElement>('.diff-file-toggle')];
+    await act(async () => toggles[0]!.click());
+    for (let tick = 0; tick < 3; tick++) await act(async () => { await Promise.resolve(); });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand all files"]')!.click());
+    expect(expanded()).toBe(2);
+  });
+});
+
+it('writes out a tab or a newline in a file’s name rather than laying it out', async () => {
+  await act(async () => root.render(createElement(TooltipProvider, null, createElement(PullRequestFilesWorkspace, {
+    contentKey: 'names', files: [{ path: 'src/tab\there\nname.ts', oldPath: null, kind: 'added', additions: 1, deletions: 0, binary: false, size: 10 }],
+    diffView: 'unified', themeType: 'light', wrapLines: false, scopeControl: null, foldMemoryKey: 'repo:pull:3:all', readFile: () => new Promise<never>(() => {}),
+  }))));
+  const shown = container.querySelector('.diff-file-path')!.textContent!;
+  expect(shown).toBe('src/tab\\there\\nname.ts');
+  expect(shown).not.toMatch(/[\t\n]/);
 });
