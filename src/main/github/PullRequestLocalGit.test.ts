@@ -195,21 +195,36 @@ describe('PullRequestLocalGit', () => {
       await expect(local.fileDiff(fixture.work, { baseOid, headOid, commitOid: 'HEAD' }, 'huge.txt', null)).rejects.toThrow('Invalid commit range.');
     });
 
-    it('reads files whose names a working tree could refuse, as Git lists them', async () => {
+    /** A commit adding files with these names, read against the one before it. */
+    async function namedFiles(names: readonly string[]) {
       const fixture = await repositoryWithUpstream();
       const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);
-      for (const name of ['..cache', 'a:b', 'back\\slash']) await writeFile(path.join(fixture.work, name), `${name}\n`);
+      for (const name of names) await writeFile(path.join(fixture.work, name), `${name}\n`);
       await git(fixture.work, ['add', '.']);
       await git(fixture.work, ['commit', '-q', '-m', 'Odd names']);
-      const headOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+      return { work: fixture.work, baseOid, headOid: await git(fixture.work, ['rev-parse', 'HEAD']) };
+    }
+    async function expectEachRead(names: readonly string[]) {
+      const { work, baseOid, headOid } = await namedFiles(names);
       const local = new PullRequestLocalGit(new GitProcess());
-      for (const name of ['..cache', 'a:b', 'back\\slash']) {
-        const diff = await local.fileDiff(fixture.work, { baseOid, headOid }, name, null);
+      for (const name of names) {
+        const diff = await local.fileDiff(work, { baseOid, headOid }, name, null);
         expect(diff.patch.match(/^diff --git /gm)).toHaveLength(1);
         expect(diff.patch).toContain(`+${name}`);
       }
+      return { work, baseOid, headOid, local };
+    }
+
+    it('reads a file whose name a working tree could refuse, as Git lists it', async () => {
+      const { work, baseOid, headOid, local } = await expectEachRead(['..cache']);
       for (const name of ['../x', '/abs', 'a//b', './a', 'a/..', 'a\u0000b', 'x'.repeat(4097)]) expect(isGitPath(name)).toBe(false);
-      await expect(local.fileDiff(fixture.work, { baseOid, headOid }, '../outside', null)).rejects.toThrow('Invalid file.');
+      await expect(local.fileDiff(work, { baseOid, headOid }, '../outside', null)).rejects.toThrow('Invalid file.');
+    });
+
+    // NTFS takes `a:b` for a file with an alternate stream and a backslash for a folder, so these names
+    // exist only in clones on other systems; this test does not show whether Git on Windows reads them.
+    it.skipIf(process.platform === 'win32')('reads files whose names hold a colon or a backslash', async () => {
+      await expectEachRead(['a:b', 'back\\slash']);
     });
 
     it('reads a commit only when it is one of the pull request’s', async () => {
