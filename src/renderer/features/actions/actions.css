@@ -33,6 +33,8 @@
 .workflow-run-refreshing { width: 14px; height: 14px; color: var(--muted-foreground); }
 .workflow-run-notes { flex: none; border-bottom: 1px solid var(--border); padding: 6px 16px; color: var(--muted-foreground); font-size: var(--text-meta); }
 .workflow-run-body { position: relative; display: flex; flex: 1; min-height: 0; }
+/* A message in the body takes its width, so it centers there rather than at the left of the row. */
+.workflow-run-body > .viewer-message { min-width: 0; flex: 1; }
 
 .workflow-canvas { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden;
   background-color: var(--background);

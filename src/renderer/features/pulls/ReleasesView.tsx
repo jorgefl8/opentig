@@ -7,14 +7,13 @@ import { formatDate } from '@shared/date-format';
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import type { ReleaseSummary } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
-import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CreateReleaseDialog } from './CreateReleaseDialog';
 import { releaseStateLabel, releaseStateTone } from './gh-utils';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
 import { releasesQueryOptions } from './releases-query';
 import { opentig } from '@/lib/opentig-api';
-import { Spinner } from '@/components/ui/spinner';
+import { ListSkeleton } from './LoadingSkeletons';
 
 
 export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitHubSettings, onSelect }: {
@@ -65,7 +64,7 @@ export function ReleasesView({ repositoryId, activeTag, onSelect }: { repository
       {error && <div className="pulls-error" role="alert"><span>{error}</span><Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
       <KeptReadNotice className="pulls-kept" prefixes={[queryKeys.releases(repositoryId)]} onRetry={() => void query.refetch()} />
       <div className="pulls-scroll" role="list" data-list-root="" aria-label="Releases">
-        {releases === null && !error && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading releases…" /></div>}
+        {releases === null && !error && <ListSkeleton kind="release" label="Loading releases" />}
         {releases?.length === 0 && <p className="empty-list">No releases yet.</p>}
         {releases?.map((release) => (
           <div key={release.tagName} className={`pull-item ${activeTag === release.tagName ? 'active' : ''}`} role="listitem" data-list-item="" data-list-current={activeTag === release.tagName ? '' : undefined}>

@@ -106,3 +106,27 @@ test('a pull request’s code lists its files at once, reads each one as it unfo
   expect(commands).toContain('github:pr-files');
   expect(commands).not.toContain('github:pr-diff');
 });
+
+test('the pull request list shows placeholder rows while GitHub answers, and its rows take their place without moving', async ({ pairedPage: page, repository, github }) => {
+  await cloneOfGitHub(repository);
+  const branch = await pullRequestBranch(repository, 'feature/status-filter', [
+    { message: 'Filter tasks by status', files: { 'src/filter-tasks.js': 'export const filterTasks = (list) => list;\n' } },
+  ]);
+  await github({
+    login: 'e2e-tester', nameWithOwner: 'e2e/sample-project', pullListDelayMs: 2_500,
+    pulls: [{ number: 24, title: 'Filter tasks by status', headRefName: 'feature/status-filter', baseRefName: 'main', ...branch }],
+  });
+  await openRepository(page, repository);
+  await section(page, 'GitHub').click();
+
+  const loading = page.getByRole('status', { name: 'Loading pull requests' });
+  await expect(loading).toBeVisible();
+  const placeholder = await loading.locator('.pull-item').first().boundingBox();
+  const list = page.getByRole('list', { name: /pull requests$/ });
+  const row = list.getByRole('listitem').filter({ hasText: 'Filter tasks by status' });
+  await expect(row).toBeVisible();
+  await expect(loading).toBeHidden();
+  const arrived = await row.boundingBox();
+  expect(Math.abs(arrived!.y - placeholder!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(arrived!.height - placeholder!.height)).toBeLessThanOrEqual(1);
+});

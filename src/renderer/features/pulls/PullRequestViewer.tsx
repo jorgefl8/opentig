@@ -1,6 +1,6 @@
 import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
@@ -40,6 +40,7 @@ import { rememberedTab, rememberTab } from '@/features/viewer/viewer-memory';
 import { downloadsAhead } from '@/lib/lazy-with-retry';
 import '@/features/markdown/markdown.css';
 import { Spinner } from '@/components/ui/spinner';
+import { ViewerSkeleton } from './LoadingSkeletons';
 
 const PULL_REQUEST_TABS: readonly PullRequestTab[] = ['summary', 'comments', 'checks', 'timeline', 'diff'];
 /** How long a PR's details are taken as current without asking again. */
@@ -187,7 +188,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       </div>
     );
   }
-  if (!pr) return <PullRequestSkeleton bar={bar} number={prNumber} />;
+  if (!pr) return <ViewerSkeleton bar={bar} label={`Loading pull request #${prNumber}`} />;
 
   if (editing && live && details) {
     return <>{bar}<PullRequestEditor repositoryId={repositoryId} details={details} onClose={closeEditor} /></>;
@@ -324,21 +325,6 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
         )}
       </ViewerTabsPanel>
     </ViewerTabs>
-  );
-}
-
-/** Opened from a link with nothing known yet: the header's shape, so the PR doesn't jump in from a spinner. */
-function PullRequestSkeleton({ bar, number }: { bar: ReactNode; number: number }) {
-  return (
-    <div className="pr-viewer pr-viewer-skeleton" role="status" aria-label={`Loading pull request #${number}`}>
-      {bar}
-      <header className="pr-viewer-header no-tabs">
-        <span className="pr-skeleton-line title" />
-        <span className="pr-skeleton-line meta" />
-        <span className="pr-skeleton-line status" />
-      </header>
-      <div className="pr-description-skeleton"><span /><span /><span /></div>
-    </div>
   );
 }
 

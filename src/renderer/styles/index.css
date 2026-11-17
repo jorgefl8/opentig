@@ -1121,7 +1121,14 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-description-skeleton > span:nth-child(2) { width: 78%; }
   .pr-description-skeleton > span:nth-child(3) { width: 54%; }
   .pr-loading-line { margin: 0; padding: 16px; color: var(--muted-foreground); font-size: var(--text-ui); }
-  @media (prefers-reduced-motion: reduce) { .pr-skeleton-line, .pr-description-skeleton > span { animation: none; } }
+  /* A list's first read: placeholder rows built from the real rows' classes. */
+  .list-skeleton { pointer-events: none; }
+  .list-skeleton-bar { display: inline-block; max-width: 100%; vertical-align: middle; }
+  .list-skeleton-fill { flex: 1; }
+  .list-skeleton-spacer { visibility: hidden; }
+  .list-skeleton-avatar { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--muted); animation: repository-loading-pulse 1.4s ease-in-out infinite; }
+  .list-skeleton-dot { color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .pr-skeleton-line, .pr-description-skeleton > span, .list-skeleton-avatar { animation: none; } }
   /* A question beside the button that asked it, sized for its words rather than the header's width. */
   .confirm-popover { display: grid; width: min(310px, calc(100vw - 24px)); max-height: var(--available-height); gap: 10px; overflow: auto; transform-origin: var(--transform-origin); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--popover); padding: 12px; color: var(--popover-foreground); font-size: var(--text-ui); line-height: 1.5; box-shadow: 0 10px 25px rgb(0 0 0 / 18%); outline: none; }
   .confirm-popover[data-open] { animation: fade-rise var(--motion-fast) var(--ease-out); }
