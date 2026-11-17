@@ -28,4 +28,9 @@ describe('a step’s name in the lists of Back and Forward', () => {
     expect(nameStep({ location: { ...at('here', 'files', { type: 'file', path: 'src/store/read.js' }), line: 12 }, memory: EMPTY_MEMORY }, sources))
       .toEqual({ icon: 'file', title: 'read.js:12', detail: 'Files · src/store' });
   });
+
+  it('calls a step with nothing open in its section a section, rather than naming the section twice', () => {
+    expect(nameStep({ location: { ...at('here', 'prs', null), pane: 'list' }, memory: EMPTY_MEMORY }, sources)).toEqual({ icon: 'github', title: 'GitHub', detail: 'Section' });
+    expect(nameStep({ location: { ...at('there', 'history', null), pane: 'list' }, memory: EMPTY_MEMORY }, sources)).toEqual({ icon: 'history', title: 'History', detail: 'launchpad · Section' });
+  });
 });

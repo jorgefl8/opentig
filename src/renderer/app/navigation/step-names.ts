@@ -30,15 +30,13 @@ const folderOf = (path: string) => parentDirectory(path) || 'Repository root';
 
 export function nameStep(step: Pick<TrailStep, 'location' | 'memory'>, sources: StepNameSources): StepName {
   const { location } = step;
-  const where = (...parts: Array<string | null>) => [
-    location.repositoryId !== sources.repositoryId ? sources.repositoryName(location.repositoryId) ?? 'Another repository' : null,
-    SECTION_LABELS[location.view],
-    ...parts,
-  ].filter(Boolean).join(' · ');
+  const repository = location.repositoryId !== sources.repositoryId ? sources.repositoryName(location.repositoryId) ?? 'Another repository' : null;
+  const where = (...parts: Array<string | null>) => [repository, SECTION_LABELS[location.view], ...parts].filter(Boolean).join(' · ');
   const selection = location.selection;
   if (!selection) {
     if (location.view === 'history' && location.fileHistory) return { icon: 'history', title: `History of ${fileName(location.fileHistory.path)}`, detail: where(folderOf(location.fileHistory.path)) };
-    return { icon: sectionIcon(location.view), title: SECTION_LABELS[location.view], detail: where() };
+    // The title already names the section.
+    return { icon: sectionIcon(location.view), title: SECTION_LABELS[location.view], detail: [repository, 'Section'].filter(Boolean).join(' · ') };
   }
   switch (selection.type) {
     case 'file': return { icon: 'file', title: `${fileName(selection.path)}${location.line ? `:${location.line}` : ''}`, detail: where(folderOf(selection.path)) };
