@@ -126,6 +126,9 @@ describe('PullRequestLocalGit', () => {
   });
 
   describe('file by file', () => {
+    /** A name that reads as an option and as a glob, and that every disk can hold: Windows refuses `*` in a name. */
+    const ODD_NAME = '-rf [a-z].txt';
+
     /** A pull request in the clone itself: a rename, a deletion, a binary file and a file named like an option and a glob. */
     async function pullRequestInClone() {
       const fixture = await repositoryWithUpstream();
@@ -143,7 +146,7 @@ describe('PullRequestLocalGit', () => {
       const firstOid = await git(work, ['rev-parse', 'HEAD']);
       await git(work, ['rm', '-q', 'gone.txt']);
       await writeFile(path.join(work, 'image.bin'), Buffer.from([0, 1, 2, 3, 0, 255]));
-      await writeFile(path.join(work, '-rf *.txt'), 'not an option, not a glob\n');
+      await writeFile(path.join(work, ODD_NAME), 'not an option, not a glob\n');
       await git(work, ['add', '.']);
       await git(work, ['commit', '-q', '-m', 'Remove, add a binary and an odd name']);
       const headOid = await git(work, ['rev-parse', 'HEAD']);
@@ -160,7 +163,7 @@ describe('PullRequestLocalGit', () => {
         { path: 'new-name.txt', oldPath: 'old-name.txt', kind: 'renamed', additions: 1, deletions: 1, binary: false, size: 47 },
         { path: 'gone.txt', oldPath: null, kind: 'deleted', additions: 0, deletions: 1, binary: false, size: 10 },
         { path: 'image.bin', oldPath: null, kind: 'added', additions: 0, deletions: 0, binary: true, size: 6 },
-        { path: '-rf *.txt', oldPath: null, kind: 'added', additions: 1, deletions: 0, binary: false, size: 26 },
+        { path: ODD_NAME, oldPath: null, kind: 'added', additions: 1, deletions: 0, binary: false, size: 26 },
       ]));
       expect(listed.files).toHaveLength(4);
       // One commit, against its first parent.
@@ -174,7 +177,7 @@ describe('PullRequestLocalGit', () => {
       expect(renamed.patch.match(/^diff --git /gm)).toHaveLength(1);
       expect(renamed.patch).toContain('rename from old-name.txt');
       expect(renamed.patch).toContain('+line four changed');
-      const odd = await local.fileDiff(work, { baseOid, headOid }, '-rf *.txt', null);
+      const odd = await local.fileDiff(work, { baseOid, headOid }, ODD_NAME, null);
       expect(odd.patch.match(/^diff --git /gm)).toHaveLength(1);
       expect(odd.patch).toContain('+not an option, not a glob');
       expect((await local.fileDiff(work, { baseOid, headOid }, '*.txt', null)).patch).toBe('');
@@ -263,7 +266,7 @@ describe('PullRequestLocalGit', () => {
       const fixture = await repositoryWithUpstream();
       const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);
       await mkdir(path.join(fixture.work, 'many'));
-      for (let index = 0; index < 1500; index++) await writeFile(path.join(fixture.work, 'many', `a-file-with-a-rather-long-name-${index}.txt`), `${index}\n`);
+      await Promise.all(Array.from({ length: 1500 }, (_, index) => writeFile(path.join(fixture.work, 'many', `a-file-with-a-rather-long-name-${index}.txt`), `${index}\n`)));
       await git(fixture.work, ['add', '.']);
       await git(fixture.work, ['commit', '-q', '-m', 'Add many files']);
       const headOid = await git(fixture.work, ['rev-parse', 'HEAD']);
@@ -277,6 +280,7 @@ describe('PullRequestLocalGit', () => {
       // Each file it lists is one Git changed, with its own counts: none is cut short.
       const byPath = new Map(whole.files.map((file) => [file.path, file]));
       for (const file of cut.files) expect(file).toEqual(byPath.get(file.path));
-    });
+      // Writing and committing this many files takes a Windows runner a while.
+    }, 120_000);
   });
 });
