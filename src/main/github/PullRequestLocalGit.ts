@@ -1,5 +1,5 @@
 import type { DiffResult, PullRequestCommit, PullRequestFile, PullRequestFilesScope } from '../../shared/contracts';
-import { parseCommitFiles, parseRawCommitFiles } from '../git/CommitFilesParser';
+import { parseCommitFiles, parseNumstat, parseRawCommitFiles } from '../git/CommitFilesParser';
 import { GitOperationError } from '../../shared/errors';
 import { PULL_REQUEST_DIFF_GIT_TIMEOUT_MS, PULL_REQUEST_FETCH_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES } from '../../shared/server-protocol';
@@ -15,6 +15,21 @@ export const MAX_LISTED_PULL_REQUEST_FILES = 5_000;
 /** Git's listing of every changed file, raw and with line counts, which a list several times this size would not be. */
 const FILE_LIST_LIMIT_BYTES = 16 * 1024 * 1024;
 const FILE_DIFF_TIMEOUT_MS = 60_000;
+/** Ranges whose commits are kept, so a commit of the pull request is checked without asking Git each time. */
+const MAX_KEPT_RANGES = 16;
+const MAX_PATH_LENGTH = 4096;
+
+/**
+ * A path as Git lists it, which is how a file of a pull request is named: relative, without `.` or `..`
+ * segments or empty ones, without control characters, and of bounded length. Nothing else about it is
+ * assumed, so names a working tree could refuse, such as `..cache`, `a:b` or a backslash, are allowed.
+ */
+export function isGitPath(value: string): boolean {
+  if (!value || value.length > MAX_PATH_LENGTH || value.startsWith('/')) return false;
+  // oxlint-disable-next-line no-control-regex -- control characters are exactly what is refused.
+  if (/[\u0000-\u001f\u007f]/.test(value)) return false;
+  return value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
+}
 
 export interface PullRequestRange {
   number: number;
@@ -28,7 +43,11 @@ export interface PullRequestRange {
  * limit once the PR's commits are present locally.
  */
 export class PullRequestLocalGit {
-  constructor(private readonly git: GitProcess) {}
+  /** The commits of each range read lately, to tell whether a commit is one of the pull request's. */
+  private readonly rangeCommits = new Map<string, Promise<ReadonlySet<string>>>();
+
+  /** `listLimitBytes` bounds Git's listing of the changed files; past it the list shows what fit. */
+  constructor(private readonly git: GitProcess, private readonly listLimitBytes = FILE_LIST_LIMIT_BYTES) {}
 
   /** Downloads the PR head (and the base commit when missing) without creating or moving any ref. */
   async ensureRange(cwd: string, remote: string, range: PullRequestRange, onFetchFailure?: (message: string) => void): Promise<boolean> {
@@ -76,14 +95,24 @@ export class PullRequestLocalGit {
    * their line counts and the size of their larger version. Commits are object ids checked here
    * before they reach Git; nothing is fetched.
    */
-  async files(cwd: string, scope: PullRequestFilesScope): Promise<{ files: PullRequestFile[]; omitted: number }> {
-    const comparison = this.comparison(scope);
-    const options = { operation: 'pr-local-files', readOnly: true, timeoutMs: PULL_REQUEST_DIFF_GIT_TIMEOUT_MS, maxOutputBytes: FILE_LIST_LIMIT_BYTES };
+  async files(cwd: string, scope: PullRequestFilesScope): Promise<{ files: PullRequestFile[]; omitted: number; complete: boolean }> {
+    const comparison = await this.comparison(cwd, scope);
+    const options = { operation: 'pr-local-files', readOnly: true, timeoutMs: PULL_REQUEST_DIFF_GIT_TIMEOUT_MS, maxOutputBytes: this.listLimitBytes, truncateOverflow: true };
     const [raw, numstat] = await Promise.all([
       this.git.run(cwd, [...comparison, '--raw', '-z', '--no-abbrev', '--'], options),
       this.git.run(cwd, [...comparison, '--numstat', '-z', '--'], options),
     ]);
-    const all = parseRawCommitFiles(raw.stdout.toString('utf8'), numstat.stdout.toString('utf8'));
+    // A listing cut at its limit keeps its whole records, and only the files both listings reached.
+    const whole = (output: { stdout: Buffer; truncated?: boolean }) => {
+      const text = output.stdout.toString('utf8');
+      return output.truncated ? text.slice(0, text.lastIndexOf('\0') + 1) : text;
+    };
+    const numstatText = whole(numstat);
+    let all = parseRawCommitFiles(whole(raw), numstatText);
+    if (numstat.truncated) {
+      const counted = parseNumstat(numstatText);
+      all = all.filter((file) => counted.has(file.path));
+    }
     const listed = all.slice(0, MAX_LISTED_PULL_REQUEST_FILES);
     const sizes = await this.blobSizes(cwd, listed.flatMap((file) => [file.oldBlob, file.newBlob].filter((oid): oid is string => oid !== null)));
     return {
@@ -92,6 +121,7 @@ export class PullRequestLocalGit {
         return { ...file, size: known.length ? Math.max(...known) : null };
       }),
       omitted: all.length - listed.length,
+      complete: !raw.truncated && !numstat.truncated,
     };
   }
 
@@ -102,13 +132,26 @@ export class PullRequestLocalGit {
    * comes back empty and marked truncated, so the file says it is too large instead of vanishing.
    */
   async fileDiff(cwd: string, scope: PullRequestFilesScope, path: string, oldPath: string | null): Promise<DiffResult> {
-    const comparison = this.comparison(scope);
+    if (!isGitPath(path) || (oldPath !== null && !isGitPath(oldPath))) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'pr-local-file-diff', message: 'Invalid file.' });
+    }
+    const comparison = await this.comparison(cwd, scope);
     const paths = oldPath && oldPath !== path ? [path, oldPath] : [path];
     const options = { operation: 'pr-local-file-diff', readOnly: true, timeoutMs: FILE_DIFF_TIMEOUT_MS };
-    const [patch, inventory] = await Promise.all([
-      this.git.run(cwd, ['--literal-pathspecs', ...comparison, '--patch', '--', ...paths], { ...options, maxOutputBytes: PATCH_LIMIT_BYTES, truncateOverflow: true }),
-      this.git.run(cwd, ['--literal-pathspecs', ...comparison, '--name-status', '-z', '--', ...paths], { ...options, maxOutputBytes: 1024 * 1024 }),
-    ]);
+    let patch: Awaited<ReturnType<GitProcess['run']>>;
+    let inventory: Awaited<ReturnType<GitProcess['run']>>;
+    try {
+      [patch, inventory] = await Promise.all([
+        this.git.run(cwd, ['--literal-pathspecs', ...comparison, '--patch', '--', ...paths], { ...options, maxOutputBytes: PATCH_LIMIT_BYTES, truncateOverflow: true }),
+        this.git.run(cwd, ['--literal-pathspecs', ...comparison, '--name-status', '-z', '--', ...paths], { ...options, maxOutputBytes: 1024 * 1024 }),
+      ]);
+    } catch (error) {
+      // The list read downloads the commits; Git failing here is most often their being gone since.
+      if (error instanceof GitOperationError && (await this.missing(cwd, [scope.baseOid, scope.headOid])).length) {
+        throw new GitOperationError({ code: 'UNKNOWN', operation: 'pr-local-file-diff', message: 'This pull request’s commits are no longer in the clone.' });
+      }
+      throw error;
+    }
     if (patch.truncated) return { patch: '', path, binary: false, truncated: true, lineCount: 0 };
     const files = parseCommitFiles(inventory.stdout.toString('utf8'), '');
     const sections = patch.stdout.toString('utf8').split(/^(?=diff --git )/m).filter(Boolean);
@@ -118,14 +161,35 @@ export class PullRequestLocalGit {
     return diffResult(path, sections.filter((_, index) => files[index]!.path === path).join(''), false);
   }
 
-  /** The Git command that compares what `scope` names: three dots like GitHub's Files changed, or a commit against its first parent. */
-  private comparison(scope: PullRequestFilesScope): string[] {
+  /**
+   * The Git command that compares what `scope` names: three dots like GitHub's Files changed, or a commit
+   * against its first parent. A commit must be one of the pull request's, which Git lists for the range.
+   */
+  private async comparison(cwd: string, scope: PullRequestFilesScope): Promise<string[]> {
     if (!OID.test(scope.baseOid) || !OID.test(scope.headOid) || (scope.commitOid !== undefined && !OID.test(scope.commitOid))) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'pr-local-files', message: 'Invalid commit range.' });
     }
-    return scope.commitOid
-      ? ['show', '--no-show-signature', '--format=', ...DIFF, '--diff-merges=first-parent', scope.commitOid]
-      : ['diff', ...DIFF, `${scope.baseOid}...${scope.headOid}`];
+    if (!scope.commitOid) return ['diff', ...DIFF, `${scope.baseOid}...${scope.headOid}`];
+    if (!(await this.commitsOf(cwd, scope)).has(scope.commitOid.toLowerCase())) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'pr-local-files', message: 'That commit is not one of this pull request’s.' });
+    }
+    return ['show', '--no-show-signature', '--format=', ...DIFF, '--diff-merges=first-parent', scope.commitOid];
+  }
+
+  /** The commits of the range, as `base..head` gives them; read once and kept for the next files of it. */
+  private commitsOf(cwd: string, scope: PullRequestFilesScope): Promise<ReadonlySet<string>> {
+    const key = `${cwd}\0${scope.baseOid}\0${scope.headOid}`;
+    let pending = this.rangeCommits.get(key);
+    if (!pending) {
+      pending = this.git.run(cwd, ['rev-list', `${scope.baseOid}..${scope.headOid}`, '--'], {
+        operation: 'pr-local-commits', readOnly: true, timeoutMs: PULL_REQUEST_DIFF_GIT_TIMEOUT_MS, maxOutputBytes: 16 * 1024 * 1024,
+      }).then((output) => new Set(output.stdout.toString('utf8').split('\n').map((line) => line.trim().toLowerCase()).filter((line) => OID.test(line))));
+      // A failed read is not kept: the commits may be downloaded by then.
+      pending.catch(() => { if (this.rangeCommits.get(key) === pending) this.rangeCommits.delete(key); });
+      this.rangeCommits.set(key, pending);
+      while (this.rangeCommits.size > MAX_KEPT_RANGES) this.rangeCommits.delete(this.rangeCommits.keys().next().value!);
+    }
+    return pending;
   }
 
   /** Sizes of blobs, by object id; one Git process for all of them. */

@@ -82,7 +82,13 @@ export interface PullRequestFilesScope {
  * its limits, as the pull request showed before files were read one by one.
  */
 export type PullRequestFileList =
-  | { source: 'git'; files: PullRequestFile[]; /** Files left out past the most a list carries. */ omitted: number }
+  | {
+    source: 'git'; files: PullRequestFile[];
+    /** Files left out past the most a list carries. */
+    omitted: number;
+    /** False when Git's listing was larger than a list is read in full: more files changed than it counts. */
+    complete: boolean;
+  }
   | { source: 'github'; diff: DiffResult };
 
 /** Past either, a file's diff is read only when it is unfolded on its own, never by Expand all. */

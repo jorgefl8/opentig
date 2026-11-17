@@ -240,13 +240,37 @@ describe('pull request code', () => {
       return undefined;
     });
     expect(await service.getPullRequestFiles('repo', 12, { baseOid: base, headOid: head })).toEqual({
-      source: 'git', omitted: 0, files: [{ path: 'src/a.ts', oldPath: null, kind: 'added', additions: 3, deletions: 0, binary: false, size: 2048 }],
+      source: 'git', omitted: 0, complete: true, files: [{ path: 'src/a.ts', oldPath: null, kind: 'added', additions: 3, deletions: 0, binary: false, size: 2048 }],
     });
     expect(run.mock.calls.some(([, args]) => args[0] === 'pr' && args[1] === 'diff')).toBe(false);
 
     const offline = fixture(args => args[0] === 'pr' && args[1] === 'diff' ? { exitCode: 0, stdout: 'diff --git a/x b/x\n', stderr: '' } : view(args), undefined, undefined,
       args => args[0] === 'cat-file' ? 'missing\nmissing\n' : args[0] === 'fetch' ? new GitOperationError({ code: 'UNKNOWN', operation: 'fetch', message: 'offline' }) : undefined);
     expect(await offline.service.getPullRequestFiles('repo', 12, { baseOid: base, headOid: head })).toMatchObject({ source: 'github', diff: { patch: 'diff --git a/x b/x\n' } });
+  });
+
+  it('reads one file’s diff straight from Git, with nothing asked of the remote or the clone first', async () => {
+    const gitCalls: string[][] = [];
+    const { service, run } = fixture(view, undefined, undefined, (args) => {
+      gitCalls.push(args);
+      if (args.includes('--patch')) return 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n';
+      if (args.includes('--name-status')) return 'M\0src/a.ts\0';
+      return undefined;
+    });
+    const diff = await service.getPullRequestFileDiff('repo', 12, { baseOid: base, headOid: head }, { path: 'src/a.ts', oldPath: null });
+    expect(diff.patch).toContain('+b');
+    expect(gitCalls).toHaveLength(2);
+    expect(gitCalls.every((args) => args.includes('diff'))).toBe(true);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('does not give GitHub’s diff for a head other than the one asked for', async () => {
+    const newer = 'd'.repeat(40);
+    const offline = fixture(args => args[0] === 'pr' && args[1] === 'diff' ? { exitCode: 0, stdout: 'diff --git a/x b/x\n', stderr: '' }
+      : args[1] === 'graphql' ? fail('unavailable') : ok({ number: 12, state: 'OPEN', baseRefOid: base, headRefOid: newer }), undefined, undefined,
+    args => args[0] === 'cat-file' ? 'missing\nmissing\n' : args[0] === 'fetch' ? new GitOperationError({ code: 'UNKNOWN', operation: 'fetch', message: 'offline' }) : undefined);
+    await expect(offline.service.getPullRequestFiles('repo', 12, { baseOid: base, headOid: head })).rejects.toMatchObject({ detail: { code: 'GH_PR_STATE_CHANGED' } });
+    expect(offline.run.mock.calls.some(([, args]) => args[0] === 'pr' && args[1] === 'diff')).toBe(false);
   });
 
   it("adds Git's reason when it could not download what GitHub refuses to diff", async () => {

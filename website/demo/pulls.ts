@@ -309,7 +309,7 @@ export const demoPulls = {
   /** The files of a pull request, or of one of its commits, listed from the same sample patch its whole diff shows. */
   files(number: number, commitOid?: string): PullRequestFileList {
     const patch = commitOid ? this.commitDiff(commitOid).patch : this.diff(number).patch;
-    return { source: 'git', omitted: 0, files: patchSections(patch).map(({ file }) => file) };
+    return { source: 'git', omitted: 0, complete: true, files: patchSections(patch).map(({ file }) => file) };
   },
   /** One file's part of that patch. */
   fileDiff(number: number, path: string, commitOid?: string): DiffResult {

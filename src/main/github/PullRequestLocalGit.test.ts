@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { GitProcess } from '../git/GitProcess';
 import { git, repositoryWithUpstream } from '../git/test-support/repository-fixtures';
 import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES } from '../../shared/server-protocol';
-import { PullRequestLocalGit, diffResult } from './PullRequestLocalGit';
+import { PullRequestLocalGit, diffResult, isGitPath } from './PullRequestLocalGit';
 
 const jsonBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
@@ -193,6 +193,52 @@ describe('PullRequestLocalGit', () => {
       expect((await local.files(fixture.work, { baseOid, headOid })).files[0]).toMatchObject({ path: 'huge.txt', size: 201 * 25_000 });
       await expect(local.files(fixture.work, { baseOid, headOid: '--output=/tmp/x' })).rejects.toThrow('Invalid commit range.');
       await expect(local.fileDiff(fixture.work, { baseOid, headOid, commitOid: 'HEAD' }, 'huge.txt', null)).rejects.toThrow('Invalid commit range.');
+    });
+
+    it('reads files whose names a working tree could refuse, as Git lists them', async () => {
+      const fixture = await repositoryWithUpstream();
+      const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+      for (const name of ['..cache', 'a:b', 'back\\slash']) await writeFile(path.join(fixture.work, name), `${name}\n`);
+      await git(fixture.work, ['add', '.']);
+      await git(fixture.work, ['commit', '-q', '-m', 'Odd names']);
+      const headOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+      const local = new PullRequestLocalGit(new GitProcess());
+      for (const name of ['..cache', 'a:b', 'back\\slash']) {
+        const diff = await local.fileDiff(fixture.work, { baseOid, headOid }, name, null);
+        expect(diff.patch.match(/^diff --git /gm)).toHaveLength(1);
+        expect(diff.patch).toContain(`+${name}`);
+      }
+      for (const name of ['../x', '/abs', 'a//b', './a', 'a/..', 'a\u0000b', 'x'.repeat(4097)]) expect(isGitPath(name)).toBe(false);
+      await expect(local.fileDiff(fixture.work, { baseOid, headOid }, '../outside', null)).rejects.toThrow('Invalid file.');
+    });
+
+    it('reads a commit only when it is one of the pull request’s', async () => {
+      const { work, baseOid, headOid, firstOid } = await pullRequestInClone();
+      const local = new PullRequestLocalGit(new GitProcess());
+      expect((await local.files(work, { baseOid, headOid, commitOid: firstOid })).files).toHaveLength(1);
+      // The base is a commit of the clone, but not of the pull request.
+      await expect(local.files(work, { baseOid, headOid, commitOid: baseOid })).rejects.toThrow('That commit is not one of this pull request’s.');
+      await expect(local.fileDiff(work, { baseOid, headOid, commitOid: 'e'.repeat(40) }, 'gone.txt', null)).rejects.toThrow('That commit is not one of this pull request’s.');
+    });
+
+    it('lists the files that fit when Git’s listing is larger than it reads, and says the list is not complete', async () => {
+      const fixture = await repositoryWithUpstream();
+      const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+      await mkdir(path.join(fixture.work, 'many'));
+      for (let index = 0; index < 1500; index++) await writeFile(path.join(fixture.work, 'many', `a-file-with-a-rather-long-name-${index}.txt`), `${index}\n`);
+      await git(fixture.work, ['add', '.']);
+      await git(fixture.work, ['commit', '-q', '-m', 'Add many files']);
+      const headOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+      const whole = await new PullRequestLocalGit(new GitProcess()).files(fixture.work, { baseOid, headOid });
+      expect(whole).toMatchObject({ complete: true, omitted: 0 });
+      expect(whole.files).toHaveLength(1500);
+      const cut = await new PullRequestLocalGit(new GitProcess(), 100_000).files(fixture.work, { baseOid, headOid });
+      expect(cut.complete).toBe(false);
+      expect(cut.files.length).toBeGreaterThan(0);
+      expect(cut.files.length).toBeLessThan(1500);
+      // Each file it lists is one Git changed, with its own counts: none is cut short.
+      const byPath = new Map(whole.files.map((file) => [file.path, file]));
+      for (const file of cut.files) expect(file).toEqual(byPath.get(file.path));
     });
   });
 });

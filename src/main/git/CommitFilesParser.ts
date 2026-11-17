@@ -34,7 +34,7 @@ export function parseCommitFiles(nameStatusOutput: string, numstatOutput: string
   return files;
 }
 
-function parseNumstat(output: string): Map<string, NumstatEntry> {
+export function parseNumstat(output: string): Map<string, NumstatEntry> {
   const stats = new Map<string, NumstatEntry>();
   const tokens = output.split('\0');
   for (let index = 0; index < tokens.length; index += 1) {
