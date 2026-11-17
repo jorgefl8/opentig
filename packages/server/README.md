@@ -66,6 +66,22 @@ Paired browsers have the host user's filesystem, Git, and configured CLI authori
 
 ## Keep a background server running
 
+Install a background service without a global installation. The install scripts check for Node.js 24+ and Git first, say what is missing, then run this package's `service install`:
+
+```bash
+curl -fsSL https://opentig.com/install.sh | sh    # macOS and Linux
+```
+
+```powershell
+irm https://opentig.com/install.ps1 | iex         # Windows PowerShell
+```
+
+The same installation through npx, on any system:
+
+```bash
+npx --yes @opentig/cli@latest service install
+```
+
 After installing globally, opt into a background service on Linux, macOS, or Windows:
 
 ```bash

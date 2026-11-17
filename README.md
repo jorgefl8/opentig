@@ -68,7 +68,17 @@ opentig serve
 
 The server listens on `127.0.0.1:6767` by default. Pair with the code printed on the server; the folder picker selects folders **on that server**. Use a private network, SSH tunnel, or HTTPS proxy such as Cloudflare Tunnel for remote access. Paired browsers have the host user's authority: keep access private and do not expose the raw port publicly.
 
-Use `npx --yes @opentig/cli@latest service install` to keep the CLI running after closing the terminal, without a global installation; it also adds an `opentig` command to your `PATH`. In the desktop app, enable browser pairing separately in **Settings → Web access**. See [installation, services, and updates](docs/getting-started.md) and [remote access and pairing](docs/web-access.md).
+To keep the CLI running after closing the terminal, install it as a background service, without a global installation; it also adds an `opentig` command to your `PATH`. The install scripts first check Node.js and Git and say what is missing:
+
+```bash
+curl -fsSL https://opentig.com/install.sh | sh    # macOS and Linux
+```
+
+```powershell
+irm https://opentig.com/install.ps1 | iex         # Windows PowerShell
+```
+
+Or run `npx --yes @opentig/cli@latest service install` on any system with Node.js. In the desktop app, enable browser pairing separately in **Settings → Web access**. See [installation, services, and updates](docs/getting-started.md) and [remote access and pairing](docs/web-access.md).
 
 ## Documentation and contributing
 
