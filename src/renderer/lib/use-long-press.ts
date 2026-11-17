@@ -52,12 +52,18 @@ export function useLongPress(onLongPress: () => void | boolean, { disabled = fal
   };
   useEffect(() => () => { end(); stopWatchingRelease.current?.(); window.clearTimeout(swallowTimer.current); }, []);
 
+  /** When a press last fired: Windows sends its own `contextmenu` for a held finger or pen once it lifts. */
+  const firedAt = useRef(Number.NEGATIVE_INFINITY);
   const fire = () => {
     const current = press.current;
     if (current) {
       if (current.fired) return;
       current.fired = true;
       window.clearTimeout(current.timer);
+      firedAt.current = Date.now();
+    } else if (Date.now() - firedAt.current < CLICK_AFTER_PRESS_MS) {
+      // The same gesture as the press that just fired.
+      return;
     }
     // Nothing happened: the click that follows is the user's.
     if (callback.current() === false) return;

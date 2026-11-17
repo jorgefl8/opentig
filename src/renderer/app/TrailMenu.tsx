@@ -23,9 +23,6 @@ export interface TrailListItem {
 /** The steps one way of the current one, nearest first. Read as the list opens, so it always matches the trail. */
 export type ListTrailSteps = (direction: TrailDirection) => TrailListItem[];
 
-/** Longer than a hold takes, so a list opened this long after a press came from the keyboard. */
-const MENU_KEY_AFTER_PRESS_MS = 1500;
-
 const ICONS: Record<StepIcon, typeof IconFile> = {
   changes: IconGitCompare, files: IconFiles, history: IconHistory, github: IconBrandGithub, search: IconSearch,
   file: IconFile, commit: IconGitCommit, 'pull-request': IconGitPullRequest, release: IconTag, run: IconPlayerPlay,
@@ -63,8 +60,8 @@ export function TrailButton({ direction, enabled, keys, keysAria, children, onSt
   /** Opened from the keyboard, the list starts on its first step, as a menu button's does. */
   const fromKeyboard = useRef(false);
   const label = direction === 'back' ? 'Back' : 'Forward';
-  /** When a pointer last pressed the button: a list opened long after that came from the keyboard's menu key. */
-  const pressedAt = useRef(0);
+  /** The keyboard's menu key or Shift+F10 was pressed: the `contextmenu` that follows comes from it. */
+  const menuKey = useRef(false);
   const hintId = useId();
   const openList = (keyboard: boolean) => {
     if (!enabled) return false;
@@ -73,9 +70,14 @@ export function TrailButton({ direction, enabled, keys, keysAria, children, onSt
     if (list.length) setSteps(list);
     return list.length > 0;
   };
-  // A hold, a right click, or the menu key, which the browser reports as a right click without a press.
-  const press = useLongPress(() => openList(Date.now() - pressedAt.current > MENU_KEY_AFTER_PRESS_MS), { mouse: true });
+  // A hold, a right click, or the menu key, whose key press always comes before its `contextmenu`.
+  const press = useLongPress(() => {
+    const keyboard = menuKey.current;
+    menuKey.current = false;
+    return openList(keyboard);
+  }, { mouse: true });
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    menuKey.current = event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey);
     // Enter and Space take one step, as a click does; the down arrow opens the list, as on a menu button.
     if (event.key !== 'ArrowDown' || event.altKey || event.ctrlKey || event.metaKey) return;
     event.preventDefault();
@@ -94,7 +96,7 @@ export function TrailButton({ direction, enabled, keys, keysAria, children, onSt
         disabled={!enabled}
         onClick={onStep}
         onKeyDown={onKeyDown}
-        onPointerDownCapture={() => { pressedAt.current = Date.now(); }}
+        onPointerDownCapture={() => { menuKey.current = false; }}
         {...press}
       />}>{children}<span id={hintId} className="sr-only">Press Down, right-click or hold to list every step</span></TooltipTrigger>
       <TooltipContent className="flex-col items-start gap-0.5">

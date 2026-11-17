@@ -245,6 +245,18 @@ describe('holding a button that a mouse holds too', () => {
     expect(onHold).not.toHaveBeenCalled();
   });
 
+  it('runs once when Windows follows a held finger or pen with contextmenu after it lifts', () => {
+    pointer('pointerdown', part('held'), { pointerType: 'pen' });
+    hold(450);
+    pointer('pointerup', part('held'), { pointerType: 'pen' });
+    act(() => { part('held').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); });
+    expect(onHold).toHaveBeenCalledOnce();
+    // A right click later is a gesture of its own.
+    hold(1000);
+    act(() => { part('held').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); });
+    expect(onHold).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the click when the hold had nothing to show', () => {
     onHold.mockReturnValue(false);
     pointer('pointerdown', part('held'), { pointerType: 'touch' });
