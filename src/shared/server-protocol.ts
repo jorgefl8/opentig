@@ -71,6 +71,8 @@ export interface OpenTigServerIdentity {
   actionJobLogs?: true;
   /** Answers `commits:file-history`. Absent on servers older than it. */
   fileHistory?: true;
+  /** Answers `github:pr-files` and `github:pr-file-diff`. Absent on servers older than them. */
+  pullRequestFiles?: true;
   /**
    * Each connection has its own open repository: opening one, in any way, changes it for that
    * connection only, `bootstrap` opens the one a client asks for, and a repository's changes and

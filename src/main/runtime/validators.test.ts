@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deletePullRequestEntryArg, editPullRequestEntryArg, generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, publishReleaseArg, pullRequestActionArg, reviewPullRequestArg, runWorkflowArg, tagNameArg, updatePullRequestArg, updateReleaseArg, workflowPathArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
-import { createTrackingBranchArg, deleteRemoteBranchArg, prNumbersArg, pullRequestRangeArg } from './validators';
+import { createTrackingBranchArg, deleteRemoteBranchArg, prNumbersArg, pullRequestFileArg, pullRequestFilesScopeArg, pullRequestRangeArg } from './validators';
 
 const OID = 'a'.repeat(40);
 const REVISION = 'b'.repeat(64);
@@ -63,6 +63,20 @@ describe('pull request range validator', () => {
     expect(pullRequestRangeArg({ baseOid: OID, headOid: REVISION, extra: 'ignored' }, 'gh-pr-diff')).toEqual({ baseOid: OID, headOid: REVISION });
     for (const value of ['range', { baseOid: OID }, { baseOid: OID, headOid: '--upload-pack=evil' }]) {
       expect(() => pullRequestRangeArg(value, 'gh-pr-diff')).toThrow(GitOperationError);
+    }
+  });
+});
+
+describe('pull request files validators', () => {
+  it('need the range, take a commit only by its id, and a file only by a bounded path without control characters', () => {
+    expect(pullRequestFilesScopeArg({ baseOid: OID, headOid: REVISION }, 'gh-pr-files')).toEqual({ baseOid: OID, headOid: REVISION });
+    expect(pullRequestFilesScopeArg({ baseOid: OID, headOid: REVISION, commitOid: OID }, 'gh-pr-files')).toEqual({ baseOid: OID, headOid: REVISION, commitOid: OID });
+    for (const value of [undefined, { baseOid: OID, headOid: REVISION, commitOid: 'HEAD~1' }, { baseOid: OID, headOid: REVISION, commitOid: '--output=x' }]) {
+      expect(() => pullRequestFilesScopeArg(value, 'gh-pr-files')).toThrow(GitOperationError);
+    }
+    expect(pullRequestFileArg({ path: 'src/a.ts', oldPath: null }, 'gh-pr-file-diff')).toEqual({ path: 'src/a.ts', oldPath: null });
+    for (const value of [null, { path: '' }, { path: 'a\u0000b' }, { path: 'x'.repeat(4097) }, { path: 'a', oldPath: 7 }]) {
+      expect(() => pullRequestFileArg(value, 'gh-pr-file-diff')).toThrow(GitOperationError);
     }
   });
 });

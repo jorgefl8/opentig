@@ -18,7 +18,7 @@ import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry
 import { PendingCuts } from './PendingCuts';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
-import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, prNumbersArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, githubIdArg, runPageArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
+import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, prNumbersArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestFileArg, pullRequestFilesScopeArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, githubIdArg, runPageArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
 import { bootstrapRequestArg, createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
@@ -633,6 +633,10 @@ export function registerServerCommands(
   handleWithContext(IPC.githubPrListStacks, 'gh-pr-list-stacks', (context, id, numbers) => services.github.listPullRequestStacks(stringArg(id, 'gh-pr-list-stacks', 64), prNumbersArg(numbers, 'gh-pr-list-stacks'), context.kept));
   handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber, range) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff'), pullRequestRangeArg(range, 'gh-pr-diff')));
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));
+  handle(IPC.githubPrFiles, 'gh-pr-files', (id, prNumber, scope) => services.github.getPullRequestFiles(stringArg(id, 'gh-pr-files', 64), prNumberArg(prNumber, 'gh-pr-files'), pullRequestFilesScopeArg(scope, 'gh-pr-files')));
+  handle(IPC.githubPrFileDiff, 'gh-pr-file-diff', (id, prNumber, scope, file) => services.github.getPullRequestFileDiff(
+    stringArg(id, 'gh-pr-file-diff', 64), prNumberArg(prNumber, 'gh-pr-file-diff'), pullRequestFilesScopeArg(scope, 'gh-pr-file-diff'), pullRequestFileArg(file, 'gh-pr-file-diff'),
+  ));
   handle(IPC.githubPrCommits, 'gh-pr-commits', (id, prNumber) => services.github.getPullRequestCommits(stringArg(id, 'gh-pr-commits', 64), prNumberArg(prNumber, 'gh-pr-commits')));
   handle(IPC.githubPrCreate, 'gh-pr-create', (input) => services.github.createPullRequest(createPullRequestArg(input)));
   handleWithContext(IPC.githubPrDraft, 'ai-pr-draft', (context, input) => (

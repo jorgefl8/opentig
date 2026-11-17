@@ -124,4 +124,75 @@ describe('PullRequestLocalGit', () => {
     expect(await local.ensureRange(fixture.work, 'origin', { ...range, headOid: 'not-an-oid' })).toBe(false);
     expect(await local.commitDiff(fixture.work, 'c'.repeat(40))).toBeNull();
   });
+
+  describe('file by file', () => {
+    /** A pull request in the clone itself: a rename, a deletion, a binary file and a file named like an option and a glob. */
+    async function pullRequestInClone() {
+      const fixture = await repositoryWithUpstream();
+      const work = fixture.work;
+      await writeFile(path.join(work, 'old-name.txt'), 'line one\nline two\nline three\nline four\n');
+      await writeFile(path.join(work, 'gone.txt'), 'remove me\n');
+      await git(work, ['add', '.']);
+      await git(work, ['commit', '-q', '-m', 'Base files']);
+      const baseOid = await git(work, ['rev-parse', 'HEAD']);
+      await git(work, ['switch', '-q', '-c', 'feature']);
+      await git(work, ['mv', 'old-name.txt', 'new-name.txt']);
+      await writeFile(path.join(work, 'new-name.txt'), 'line one\nline two\nline three\nline four changed\n');
+      await git(work, ['add', '.']);
+      await git(work, ['commit', '-q', '-m', 'Rename the notes']);
+      const firstOid = await git(work, ['rev-parse', 'HEAD']);
+      await git(work, ['rm', '-q', 'gone.txt']);
+      await writeFile(path.join(work, 'image.bin'), Buffer.from([0, 1, 2, 3, 0, 255]));
+      await writeFile(path.join(work, '-rf *.txt'), 'not an option, not a glob\n');
+      await git(work, ['add', '.']);
+      await git(work, ['commit', '-q', '-m', 'Remove, add a binary and an odd name']);
+      const headOid = await git(work, ['rev-parse', 'HEAD']);
+      await git(work, ['switch', '-q', 'main']);
+      return { work, baseOid, headOid, firstOid };
+    }
+
+    it('lists every changed file with its status, its line counts and the size of its larger version', async () => {
+      const { work, baseOid, headOid, firstOid } = await pullRequestInClone();
+      const local = new PullRequestLocalGit(new GitProcess());
+      const listed = await local.files(work, { baseOid, headOid });
+      expect(listed.omitted).toBe(0);
+      expect(listed.files).toEqual(expect.arrayContaining([
+        { path: 'new-name.txt', oldPath: 'old-name.txt', kind: 'renamed', additions: 1, deletions: 1, binary: false, size: 47 },
+        { path: 'gone.txt', oldPath: null, kind: 'deleted', additions: 0, deletions: 1, binary: false, size: 10 },
+        { path: 'image.bin', oldPath: null, kind: 'added', additions: 0, deletions: 0, binary: true, size: 6 },
+        { path: '-rf *.txt', oldPath: null, kind: 'added', additions: 1, deletions: 0, binary: false, size: 26 },
+      ]));
+      expect(listed.files).toHaveLength(4);
+      // One commit, against its first parent.
+      expect((await local.files(work, { baseOid, headOid, commitOid: firstOid })).files.map((file) => file.path)).toEqual(['new-name.txt']);
+    });
+
+    it('reads one file’s diff, matching its path literally and keeping only its own section', async () => {
+      const { work, baseOid, headOid } = await pullRequestInClone();
+      const local = new PullRequestLocalGit(new GitProcess());
+      const renamed = await local.fileDiff(work, { baseOid, headOid }, 'new-name.txt', 'old-name.txt');
+      expect(renamed.patch.match(/^diff --git /gm)).toHaveLength(1);
+      expect(renamed.patch).toContain('rename from old-name.txt');
+      expect(renamed.patch).toContain('+line four changed');
+      const odd = await local.fileDiff(work, { baseOid, headOid }, '-rf *.txt', null);
+      expect(odd.patch.match(/^diff --git /gm)).toHaveLength(1);
+      expect(odd.patch).toContain('+not an option, not a glob');
+      expect((await local.fileDiff(work, { baseOid, headOid }, '*.txt', null)).patch).toBe('');
+    });
+
+    it('says a file’s diff is too large for one response instead of dropping it, and refuses ids that are not commits', async () => {
+      const fixture = await repositoryWithUpstream();
+      const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+      await writeFile(path.join(fixture.work, 'huge.txt'), `${'y'.repeat(200)}\n`.repeat(25_000));
+      await git(fixture.work, ['add', '.']);
+      await git(fixture.work, ['commit', '-q', '-m', 'Add a huge file']);
+      const headOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+      const local = new PullRequestLocalGit(new GitProcess());
+      const huge = await local.fileDiff(fixture.work, { baseOid, headOid }, 'huge.txt', null);
+      expect(huge).toMatchObject({ patch: '', truncated: true });
+      expect((await local.files(fixture.work, { baseOid, headOid })).files[0]).toMatchObject({ path: 'huge.txt', size: 201 * 25_000 });
+      await expect(local.files(fixture.work, { baseOid, headOid: '--output=/tmp/x' })).rejects.toThrow('Invalid commit range.');
+      await expect(local.fileDiff(fixture.work, { baseOid, headOid, commitOid: 'HEAD' }, 'huge.txt', null)).rejects.toThrow('Invalid commit range.');
+    });
+  });
 });

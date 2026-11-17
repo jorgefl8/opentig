@@ -37,7 +37,7 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 
 /** GitHub is slow to answer again, so what it said stays available this long after it was last on screen, instead of five minutes. */
 export const GITHUB_DATA_GC_MS = 30 * 60_000;
-const GITHUB_RESOURCES = new Set(['push-context', 'github-account', 'pulls', 'pull-stacks', 'pull-line-counts', 'pull-request', 'pull-request-state', 'pull-request-conversation', 'pull-request-stack', 'pull-request-diff', 'pull-request-commits', 'pull-request-commit-diff', 'branch-pull-request', 'releases', 'release', 'release-tag', 'workflows', 'workflows-runnable', 'workflow-triggers', 'action-runs', 'action-run', 'action-job-log']);
+const GITHUB_RESOURCES = new Set(['push-context', 'github-account', 'pulls', 'pull-stacks', 'pull-line-counts', 'pull-request', 'pull-request-state', 'pull-request-conversation', 'pull-request-stack', 'pull-request-diff', 'pull-request-files', 'pull-request-commits', 'pull-request-commit-diff', 'branch-pull-request', 'releases', 'release', 'release-tag', 'workflows', 'workflows-runnable', 'workflow-triggers', 'action-runs', 'action-run', 'action-job-log']);
 /**
  * A pull request's code can be megabytes, and Git reads it again from the clone: it keeps the usual five minutes.
  * A job's log is large and may hold what a workflow printed: it sets its own, shorter life (see `JOB_LOG_GC_MS`).
@@ -82,6 +82,7 @@ export const queryKeys = {
   pullRequestConversation: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-conversation', number] as const,
   pullRequestStack: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-stack', number] as const,
   pullRequestDiff: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-diff', number] as const,
+  pullRequestFiles: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-files', number] as const,
   pullRequestCommits: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-commits', number] as const,
   pullRequestCommitDiff: (repositoryId: string, oid: string) => ['repository', repositoryId, 'pull-request-commit-diff', oid] as const,
   releases: (repositoryId: string) => ['repository', repositoryId, 'releases'] as const,

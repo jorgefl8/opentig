@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestFilesScope, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -169,6 +169,21 @@ export function pullRequestRangeArg(value: unknown, operation: string): { baseOi
   if (typeof value !== 'object') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid commit range.' });
   const range = value as Record<string, unknown>;
   return { baseOid: oidArg(range.baseOid, operation), headOid: oidArg(range.headOid, operation) };
+}
+
+/** Which changes of a pull request a file list or a file's diff is of: its range, and one of its commits or none. */
+export function pullRequestFilesScopeArg(value: unknown, operation: string): PullRequestFilesScope {
+  const range = pullRequestRangeArg(value, operation);
+  if (!range) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid commit range.' });
+  const commitOid = (value as Record<string, unknown>).commitOid;
+  return commitOid === undefined || commitOid === null ? range : { ...range, commitOid: oidArg(commitOid, operation) };
+}
+
+/** A file of a pull request, by its path and, for a rename, the path it had. */
+export function pullRequestFileArg(value: unknown, operation: string): { path: string; oldPath: string | null } {
+  if (!value || typeof value !== 'object') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid file.' });
+  const file = value as Record<string, unknown>;
+  return { path: stringArg(file.path, operation, 4096), oldPath: file.oldPath === undefined || file.oldPath === null ? null : stringArg(file.oldPath, operation, 4096) };
 }
 
 const MAX_BRANCH_REF_LENGTH = 512;

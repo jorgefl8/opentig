@@ -110,6 +110,11 @@ export function commitFileDiffKey(repositoryId: string, oid: string, path: strin
   return `${repositoryId}:commit-file:${oid}:${oldPath ?? ''}:${path}`;
 }
 
+/** A file's diff in a pull request, or in one of its commits: the commits named make it as fixed as a commit's. */
+export function pullRequestFileDiffKey(repositoryId: string, scope: { baseOid: string; headOid: string; commitOid?: string }, path: string, oldPath?: string | null): string {
+  return `${repositoryId}:pull-file:${scope.baseOid}...${scope.headOid}:${scope.commitOid ?? ''}:${oldPath ?? ''}:${path}`;
+}
+
 /** The files a commit changed, with their line counts: what opening a commit shows before any diff. */
 export function commitFiles(repositoryId: string, oid: string, signal?: AbortSignal): Promise<CommitFile[]> {
   const key = `${repositoryId}:${oid}`;

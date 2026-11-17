@@ -306,6 +306,8 @@
   html .pr-code-mode { border: 0; background: none; padding: 0; }
   html .pr-code-mode button { height: 40px; }
   html .pr-commit-select { max-width: 100%; min-height: 40px; }
+  html .diff-file-filter { width: 100%; flex: 1 1 100%; order: 1; }
+  html .diff-file-filter input { height: 40px; font-size: var(--text-body); }
   html .diff-file-header { min-height: 48px; gap: 5px; padding-inline: 14px; }
   html .diff-file-header-compact { min-height: 32px; }
   html .diff-file-path { flex-wrap: wrap; }

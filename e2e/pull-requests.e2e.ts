@@ -52,3 +52,55 @@ test('Back returns to a pull request with bots still hidden and its code still g
   await expect(viewer.getByText('Reloading keeps the filter now.')).toBeVisible();
   await expect(viewer.getByText('CI passed on the latest commit.')).toBeHidden();
 });
+
+test('a pull request’s code lists its files at once, reads each one as it unfolds, and leaves a large one for when it is asked for', async ({ pairedPage: page, repository, github }) => {
+  await cloneOfGitHub(repository);
+  const files: Record<string, string> = {};
+  for (let index = 0; index < 24; index++) files[`src/board/card-${String(index).padStart(2, '0')}.ts`] = `export const card${index} = ${index};\n`;
+  files['package-lock.json'] = Array.from({ length: 12_000 }, (_, index) => `  "dependency-${index}": "1.0.${index}",`).join('\n') + '\n';
+  const branch = await pullRequestBranch(repository, 'feature/new-store', [{ message: 'Move the board to the new store', files }]);
+  await github({
+    login: 'e2e-tester', nameWithOwner: 'e2e/sample-project',
+    pulls: [{ number: 31, title: 'Move the board to the new store', headRefName: 'feature/new-store', baseRefName: 'main', ...branch, changedFiles: 25 }],
+  });
+  // The commands the page sends, from a connection made after this listener.
+  const commands: string[] = [];
+  page.on('websocket', (socket) => socket.on('framesent', (frame) => {
+    try {
+      const message = JSON.parse(typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8')) as { type?: string; command?: string };
+      if (message.type === 'request' && message.command) commands.push(message.command);
+    } catch { /* not a request */ }
+  }));
+  await page.reload();
+  await openRepository(page, repository);
+  await section(page, 'GitHub').click();
+  await page.getByRole('list', { name: /pull requests$/ }).getByRole('button', { name: /Move the board to the new store/ }).click();
+  const viewer = page.getByRole('main');
+  await viewer.getByRole('tablist', { name: 'Pull request view' }).getByRole('tab', { name: 'Code' }).click();
+
+  // The list shows with every file folded, the large one saying so.
+  const lock = viewer.getByRole('button', { name: 'package-lock.json', exact: true });
+  await expect(viewer.getByText('25 files', { exact: true })).toBeVisible();
+  await expect(lock).toHaveAttribute('aria-expanded', 'false');
+  await expect(viewer.getByText(/^Large file · \d+ KB$/)).toBeVisible();
+  expect(commands.filter((command) => command === 'github:pr-file-diff')).toEqual([]);
+
+  const filter = viewer.getByRole('searchbox', { name: 'Filter files' });
+  await filter.fill('card-1');
+  await expect(viewer.getByText('10 of 25 files', { exact: true })).toBeVisible();
+  await expect(viewer.getByRole('button', { name: /card-09\.ts$/ })).toBeHidden();
+  await filter.fill('');
+
+  // Expand all reads every file but the large one, which stays folded.
+  await viewer.getByRole('button', { name: 'Expand all files' }).click();
+  await expect(viewer.getByText('export const card0 = 0;', { exact: true })).toBeVisible();
+  await expect(viewer.getByRole('button', { name: /card-23\.ts$/ })).toHaveAttribute('aria-expanded', 'true');
+  await expect(lock).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(() => commands.filter((command) => command === 'github:pr-file-diff').length).toBe(24);
+
+  // Unfolded on its own, the large file is read.
+  await lock.click();
+  await expect(viewer.getByText('"dependency-0": "1.0.0",', { exact: false }).first()).toBeVisible({ timeout: 15_000 });
+  expect(commands).toContain('github:pr-files');
+  expect(commands).not.toContain('github:pr-diff');
+});

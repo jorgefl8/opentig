@@ -178,7 +178,7 @@ The commit box stays above the bottom bar in **Changes** while something is stag
 
 Actions that ask first do so in a sheet with the same checks as on desktop: merging shows **Method** as a picker and **Delete branch** as a switch where they apply, one button, and the account underneath. A sheet can't be dismissed while its answer is being sent. A notification that arrives while a sheet is open appears at the top of the screen, above the sheet.
 
-Pull requests and releases scroll as one: the header goes away with the content, and the tabs stick to the top of the screen. On **Code** the header gives way to the tabs alone and the code has its own scroller. Its files start as a list with lines added and removed; tap one to read its diff.
+Pull requests and releases scroll as one: the header goes away with the content, and the tabs stick to the top of the screen. On **Code** the header gives way to the tabs alone and the code has its own scroller. Its files start as a list with lines added and removed, under a **Filter files** field; tap one to read its diff.
 
 **Settings opens as a tall sheet.** It leads with the general settings, followed by a row for each other section. Tap a row to drill in, and use the back arrow to return. **Branches and worktrees** and **Create pull request** fill the screen the same way and keep their close button, since they don't drag away.
 

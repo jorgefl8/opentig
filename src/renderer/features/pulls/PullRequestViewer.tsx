@@ -29,6 +29,8 @@ import { PullRequestEditor } from './PullRequestEditor';
 import { hasViewerDraft, pullRequestCommentDraft, pullRequestEditDraft, useViewerDraft } from './viewer-drafts';
 import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
 import { cachedPullRequestSummary } from './pull-request-summary-cache';
+import { pullRequestFilesQueryOptions } from './pull-request-files-query';
+import { useServerFeatures } from '@/lib/server-features';
 import { LazyPullRequestDiff as PullRequestDiff } from './pull-request-viewer-chunks';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
@@ -113,8 +115,22 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   useEffect(() => whenIdle(() => {
     void inBackground(() => queryClient.prefetchQuery(pullRequestConversationQueryOptions(repositoryId, prNumber)));
   }), [queryClient, repositoryId, prNumber]);
+  // Reading the code downloads the pull request's commits into the clone: ahead of the Code tab only where that is welcome.
+  const wantsCode = details !== null && (visited.has('diff') || downloadsAhead());
+  // A server that reads the code file by file lists the files first; an older one sends the whole diff.
+  const byFile = useServerFeatures().pullRequestFiles;
+  const range = useMemo(() => details ? { baseOid: details.baseRefOid, headOid: details.headRefOid } : null, [details]);
+  const filesScope = range ?? { baseOid: '', headOid: '' };
+  const filesQuery = useQuery({
+    // Keyed by the range too, so a new head shows its own files rather than those read before the details caught up.
+    ...pullRequestFilesQueryOptions(repositoryId, prNumber, filesScope),
+    queryFn: () => {
+      const read = () => opentig.github.getPullRequestFiles(repositoryId, prNumber, filesScope);
+      return openTab.current === 'diff' ? read() : inBackground(read);
+    },
+    enabled: byFile && wantsCode && range !== null,
+  });
   const diffQuery = useQuery<DiffResult>({
-    // Keyed by the range too, so a new head shows its own code rather than the one read before the details caught up.
     queryKey: [...queryKeys.pullRequestDiff(repositoryId, prNumber), details?.baseRefOid, details?.headRefOid],
     queryFn: () => {
       const read = () => opentig.github.getPullRequestDiff(repositoryId, prNumber, details ? { baseOid: details.baseRefOid, headOid: details.headRefOid } : undefined);
@@ -122,10 +138,10 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     },
     // The same two commits always give the same code.
     staleTime: Infinity,
-    // Reading it downloads the pull request's commits into the clone: ahead of the Code tab only where that is welcome.
-    enabled: details !== null && (visited.has('diff') || downloadsAhead()),
+    enabled: !byFile && wantsCode,
   });
-  const diff = diffQuery.data ?? null;
+  const codeQuery = byFile ? filesQuery : diffQuery;
+  const code = byFile ? filesQuery.data ? { files: filesQuery.data } : null : diffQuery.data ? { diff: diffQuery.data } : null;
   // GitHub CLI returns one page of commits; past it, the local clone lists them all.
   const firstPageOnly = (details?.commits.length ?? 0) >= GITHUB_PR_COMMIT_PAGE;
   const commitsQuery = useQuery<PullRequestCommitList>({
@@ -136,7 +152,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   });
   const commits = commitsQuery.data?.commits ?? details?.commits ?? [];
   const commitsIncomplete = firstPageOnly && commitsQuery.data?.complete !== true;
-  const diffError = diffQuery.error instanceof Error ? diffQuery.error.message : diffQuery.error ? 'Could not load the diff.' : null;
+  const diffError = codeQuery.error instanceof Error ? codeQuery.error.message : codeQuery.error ? 'Could not load the diff.' : null;
   // Needs nothing from the details, so the status and actions don't wait for them.
   const liveQuery = useQuery(pullRequestLiveStateQueryOptions(repositoryId, prNumber));
   const live = liveQuery.data ?? null;
@@ -294,13 +310,13 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
         {!visited.has('diff') ? null : diffError ? (
           <div className="viewer-message flex-col gap-3">
             <p className="pr-diff-error text-destructive">{diffError}</p>
-            <Button variant="outline" size="sm" onClick={() => void diffQuery.refetch()}><IconRefresh /> Try again</Button>
+            <Button variant="outline" size="sm" onClick={() => void codeQuery.refetch()}><IconRefresh /> Try again</Button>
           </div>
-        ) : !diff || !details ? (
-          <div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading diff…" /></div>
+        ) : !code || !details || !range ? (
+          <div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text={byFile ? 'Loading files…' : 'Loading diff…'} /></div>
         ) : (
           <Suspense fallback={<div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
-            <PullRequestDiff diff={diff} prNumber={pr.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} onOpenFile={onOpenFile} />
+            <PullRequestDiff code={code} range={range} changedFiles={details.changedFiles} prNumber={pr.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} onOpenFile={onOpenFile} />
           </Suspense>
         )}
       </ViewerTabsPanel>

@@ -49,7 +49,7 @@ export function pullRequestLiveStateQueryOptions(repositoryId: string, number: n
 export function queriesOutdatedByLiveState(repositoryId: string, previous: PullRequestLiveState, next: PullRequestLiveState): QueryKey[] {
   if (previous.number !== next.number) return [];
   if (previous.headRefOid !== next.headRefOid) {
-    return [queryKeys.pullRequest(repositoryId, next.number), queryKeys.pullRequestConversation(repositoryId, next.number), queryKeys.pullRequestCommits(repositoryId, next.number), queryKeys.pullRequestDiff(repositoryId, next.number)];
+    return [queryKeys.pullRequest(repositoryId, next.number), queryKeys.pullRequestConversation(repositoryId, next.number), queryKeys.pullRequestCommits(repositoryId, next.number), queryKeys.pullRequestDiff(repositoryId, next.number), queryKeys.pullRequestFiles(repositoryId, next.number)];
   }
   return previous.updatedAt !== next.updatedAt ? [queryKeys.pullRequest(repositoryId, next.number), queryKeys.pullRequestConversation(repositoryId, next.number)] : [];
 }

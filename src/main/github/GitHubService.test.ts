@@ -231,6 +231,24 @@ describe('pull request code', () => {
     await expect(tooLarge.service.getPullRequestDiff('repo', 12)).rejects.toMatchObject({ message: expect.stringContaining('GitHub cannot produce a diff this large') });
   });
 
+  it('lists the files from Git, file by file, and without the commits gives GitHub’s whole diff instead', async () => {
+    const blob = 'c'.repeat(40);
+    const { service, run } = fixture(view, undefined, undefined, (args) => {
+      if (args[0] === 'cat-file') return args[1]?.startsWith('--batch-check=%(objectname)') ? `${blob} 2048\n` : 'commit\ncommit\n';
+      if (args[0] === 'diff' && args.includes('--raw')) return `:000000 100644 ${'0'.repeat(40)} ${blob} A\0src/a.ts\0`;
+      if (args[0] === 'diff' && args.includes('--numstat')) return '3\t0\tsrc/a.ts\0';
+      return undefined;
+    });
+    expect(await service.getPullRequestFiles('repo', 12, { baseOid: base, headOid: head })).toEqual({
+      source: 'git', omitted: 0, files: [{ path: 'src/a.ts', oldPath: null, kind: 'added', additions: 3, deletions: 0, binary: false, size: 2048 }],
+    });
+    expect(run.mock.calls.some(([, args]) => args[0] === 'pr' && args[1] === 'diff')).toBe(false);
+
+    const offline = fixture(args => args[0] === 'pr' && args[1] === 'diff' ? { exitCode: 0, stdout: 'diff --git a/x b/x\n', stderr: '' } : view(args), undefined, undefined,
+      args => args[0] === 'cat-file' ? 'missing\nmissing\n' : args[0] === 'fetch' ? new GitOperationError({ code: 'UNKNOWN', operation: 'fetch', message: 'offline' }) : undefined);
+    expect(await offline.service.getPullRequestFiles('repo', 12, { baseOid: base, headOid: head })).toMatchObject({ source: 'github', diff: { patch: 'diff --git a/x b/x\n' } });
+  });
+
   it("adds Git's reason when it could not download what GitHub refuses to diff", async () => {
     const { service } = fixture(args => args[0] === 'pr' && args[1] === 'diff'
       ? fail('could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of files (300).') : view(args), undefined, undefined, args => {
