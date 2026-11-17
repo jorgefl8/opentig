@@ -12,6 +12,7 @@ export interface LongPressHandlers {
   onPointerMove(event: PointerEvent<HTMLElement>): void;
   onPointerUp(event: PointerEvent<HTMLElement>): void;
   onPointerCancel(event: PointerEvent<HTMLElement>): void;
+  onPointerLeave(event: PointerEvent<HTMLElement>): void;
   onClickCapture(event: MouseEvent<HTMLElement>): void;
   onContextMenu(event: MouseEvent<HTMLElement>): void;
 }
@@ -26,8 +27,10 @@ const NO_HANDLERS = {} as LongPressHandlers;
  *
  * Mark a nested button that is the row's main target with
  * `data-long-press-target`; presses on any other inner control are its own.
+ * `onLongPress` returns false when it had nothing to do: the press is then an
+ * ordinary click.
  */
-export function useLongPress(onLongPress: () => void, { disabled = false, delay = LONG_PRESS_MS, tolerance = MOVE_TOLERANCE_PX, mouse = false }: {
+export function useLongPress(onLongPress: () => void | boolean, { disabled = false, delay = LONG_PRESS_MS, tolerance = MOVE_TOLERANCE_PX, mouse = false }: {
   disabled?: boolean; delay?: number; tolerance?: number;
   /** A held mouse button counts too, for a button that has no text to select. */
   mouse?: boolean;
@@ -35,6 +38,8 @@ export function useLongPress(onLongPress: () => void, { disabled = false, delay 
   const callback = useRef(onLongPress);
   useEffect(() => { callback.current = onLongPress; });
   const press = useRef<{ x: number; y: number; id: number; timer: number; fired: boolean; stopWatchingScroll(): void } | null>(null);
+  /** Stops listening for the end of a press anywhere on the page. */
+  const stopWatchingRelease = useRef<(() => void) | null>(null);
   const swallowClick = useRef(false);
   const swallowTimer = useRef<number | undefined>(undefined);
 
@@ -45,16 +50,18 @@ export function useLongPress(onLongPress: () => void, { disabled = false, delay 
     current.stopWatchingScroll();
     press.current = null;
   };
-  useEffect(() => () => { end(); window.clearTimeout(swallowTimer.current); }, []);
+  useEffect(() => () => { end(); stopWatchingRelease.current?.(); window.clearTimeout(swallowTimer.current); }, []);
 
   const fire = () => {
-    if (press.current) {
-      if (press.current.fired) return;
-      press.current.fired = true;
-      window.clearTimeout(press.current.timer);
-      swallowClick.current = true;
+    const current = press.current;
+    if (current) {
+      if (current.fired) return;
+      current.fired = true;
+      window.clearTimeout(current.timer);
     }
-    callback.current();
+    // Nothing happened: the click that follows is the user's.
+    if (callback.current() === false) return;
+    if (current) swallowClick.current = true;
   };
 
   if (disabled) return NO_HANDLERS;
@@ -67,6 +74,24 @@ export function useLongPress(onLongPress: () => void, { disabled = false, delay 
       if ((event.pointerType === 'mouse' && !mouse) || !event.isPrimary || event.button !== 0 || isInnerControl(event.target, event.currentTarget)) return;
       const onScroll = () => end();
       window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+      // Released anywhere else, as on the row of a menu the press opened, no click comes here to swallow,
+      // and a later Enter or Space on this element must still work.
+      const element = event.currentTarget;
+      const pointerId = event.pointerId;
+      stopWatchingRelease.current?.();
+      const onRelease = (release: globalThis.PointerEvent) => {
+        if (release.pointerId !== pointerId) return;
+        stopWatchingRelease.current?.();
+        end();
+        if (!(release.target instanceof Node && element.contains(release.target))) swallowClick.current = false;
+      };
+      document.addEventListener('pointerup', onRelease, true);
+      document.addEventListener('pointercancel', onRelease, true);
+      stopWatchingRelease.current = () => {
+        document.removeEventListener('pointerup', onRelease, true);
+        document.removeEventListener('pointercancel', onRelease, true);
+        stopWatchingRelease.current = null;
+      };
       press.current = {
         x: event.clientX,
         y: event.clientY,
@@ -89,6 +114,11 @@ export function useLongPress(onLongPress: () => void, { disabled = false, delay 
     onPointerCancel() {
       end();
       swallowClick.current = false;
+    },
+    onPointerLeave(event) {
+      // Gone before it fired, however little it moved on the way: no long press.
+      const current = press.current;
+      if (current && !current.fired && event.pointerId === current.id) end();
     },
     onClickCapture(event) {
       if (!swallowClick.current) return;
