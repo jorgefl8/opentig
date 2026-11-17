@@ -98,6 +98,34 @@ describe('GitHub answers kept on the server', () => {
     expect((await service.getPullRequest('repo', 12)).title).toBe('read 3');
   });
 
+  it('reads again from GitHub when asked for a fresh answer, unless GitHub answered moments ago', async () => {
+    const { service, clock, state } = server(path.join(await folder(), 'github-cache.json'));
+    await service.getPullRequest('repo', 12);
+    // Refresh pressed again a moment later: what GitHub just said is new enough.
+    clock.now += 2_000;
+    expect((await service.getPullRequest('repo', 12, true)).title).toBe('read 1');
+    expect(state.views).toBe(1);
+    // Past that, an ordinary read is answered from what was kept, and a fresh one asks GitHub.
+    clock.now += 10_000;
+    expect((await service.getPullRequest('repo', 12)).title).toBe('read 1');
+    expect((await service.getPullRequest('repo', 12, true)).title).toBe('read 2');
+    expect(state.views).toBe(2);
+  });
+
+  it('never answers a fresh read with a read that began before it was asked', async () => {
+    const { service, state } = server(path.join(await folder(), 'github-cache.json'));
+    let open!: () => void;
+    state.gate = new Promise<void>((resolve) => { open = resolve; });
+    const opened = service.getPullRequest('repo', 12);
+    await vi.waitFor(() => expect(state.views).toBe(1));
+    const refreshed = service.getPullRequest('repo', 12, true);
+    await vi.waitFor(() => expect(state.views).toBe(2));
+    open();
+    expect((await opened).title).toBe('read 1');
+    expect((await refreshed).title).toBe('read 2');
+    expect(state.views).toBe(2);
+  });
+
   it('keeps answers across a restart, for the same account only', async () => {
     const file = path.join(await folder(), 'github-cache.json');
     const clock = { now: Date.parse('2026-11-15T10:00:00Z') };

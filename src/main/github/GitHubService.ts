@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { ReadSingleFlight } from '../git/ReadSingleFlight';
 import type { CliCandidate } from '../ai/CliResolver';
@@ -37,6 +38,10 @@ const OPEN_PULL_REQUEST_MS = 60_000;
 const FINISHED_PULL_REQUEST_MS = 10 * 60_000;
 /** Lists are reused briefly, so reloading the app doesn't wait for GitHub; a change made through OpenTig drops them at once. */
 const LIST_MS = 30_000;
+/** A fresh read gets what GitHub answered this recently instead of asking again, so pressing Refresh twice costs one read. */
+const FRESH_FLOOR_MS = 5_000;
+/** Set while a fresh read runs, so the GitHub commands it runs don't join ones that began before it either. */
+const freshRead = new AsyncLocalStorage<true>();
 const LIST_LIMIT = 50;
 const RELEASES_MS = 60_000;
 /** How long the live state waits for stack membership once GitHub has answered everything else. */
@@ -215,17 +220,22 @@ export class GitHubService {
    * A shared read whose answer is kept (see `GitHubReadCache`). Within
    * `policy.freshMs` it is served as current. Past that, `kept` is handed it at
    * once with the read started behind it, and without `kept` the read is awaited.
-   * `fresh` always reads.
+   * `fresh` reads, with a read of its own rather than one already under way, unless GitHub
+   * answered within `FRESH_FLOOR_MS`; `onRead` is told when a fresh read goes to GitHub.
    */
-  private async keptRead<T>(repositoryId: string, resource: unknown[], policy: ReadPolicy<T>, read: () => Promise<T>, options: { fresh?: boolean; kept?: KeptAnswerSink | undefined } = {}): Promise<T> {
+  private async keptRead<T>(repositoryId: string, resource: unknown[], policy: ReadPolicy<T>, read: () => Promise<T>, options: { fresh?: boolean; kept?: KeptAnswerSink | undefined; onRead?: () => void } = {}): Promise<T> {
     const repository = this.repositories.get(repositoryId);
     const { remote, info } = await this.routing(repositoryId);
     const scope = this.cacheScope(repository, remote.url, info.nameWithOwner);
     const key = scope ? cacheKey(scope, resource) : null;
     // What this checkout read from a remote it no longer uses is not kept.
     if (scope) this.cache.dropWhere((entry) => entry.scope.path === repository.path && entry.scope.remote !== scope.remote);
-    const hit = key && !options.fresh ? await this.cache.get(key) : undefined;
-    const age = hit ? this.now() - hit.readAt : Infinity;
+    const cached = key ? await this.cache.get(key) : undefined;
+    const cachedAge = cached ? this.now() - cached.readAt : Infinity;
+    // Pressing Refresh again a moment later asks GitHub nothing new.
+    if (options.fresh && cached && cachedAge < FRESH_FLOOR_MS) return structuredClone(cached.value as T);
+    const hit = options.fresh ? undefined : cached;
+    const age = hit ? cachedAge : Infinity;
     // The client told of a refresh asks for it at once, without accepting a kept answer: it gets the
     // answer that refresh stored, as current, rather than a second read from GitHub.
     const refreshed = hit !== undefined && this.refreshedAt.get(key!) === hit.readAt && age < REFRESHED_GRACE_MS;
@@ -237,14 +247,15 @@ export class GitHubService {
       options.kept!({ readAt: new Date(hit.readAt).toISOString(), refresh: this.refreshBehind(repositoryId, resource, policy, read, key, scope, remote.url) });
       return structuredClone(hit.value as T);
     }
-    return this.readAndKeep(repositoryId, resource, policy, read, remote.url);
+    if (options.fresh) options.onRead?.();
+    return this.readAndKeep(repositoryId, resource, policy, read, remote.url, undefined, options.fresh);
   }
 
-  private async readAndKeep<T>(repositoryId: string, resource: unknown[], policy: ReadPolicy<T>, read: () => Promise<T>, remoteUrl: string, onKept?: (key: string, readAt: number) => void): Promise<T> {
+  private async readAndKeep<T>(repositoryId: string, resource: unknown[], policy: ReadPolicy<T>, read: () => Promise<T>, remoteUrl: string, onKept?: (key: string, readAt: number) => void, fresh = false): Promise<T> {
     const repository = this.repositories.get(repositoryId);
     const epoch = this.settledEpoch;
     const before = this.readKey(repository, []);
-    const value = await this.shareRead(repositoryId, resource, read);
+    const value = await this.shareRead(repositoryId, resource, read, fresh);
     // An account change gives the read a new key, and so does another remote.
     if (before !== this.readKey(this.repositories.get(repositoryId), [])) return value;
     const { remote, info } = await this.routing(repositoryId);
@@ -319,13 +330,14 @@ export class GitHubService {
     }
   }
 
-  private async shareRead<T>(repositoryId: string, resource: unknown[], read: () => Promise<T>): Promise<T> {
+  /** `fresh` starts a read of its own rather than joining one already under way (see `ReadSingleFlight.run`). */
+  private async shareRead<T>(repositoryId: string, resource: unknown[], read: () => Promise<T>, fresh = false): Promise<T> {
     for (let attempt = 0; attempt < 3; attempt++) {
       const repository = this.repositories.get(repositoryId);
       const revision = this.accounts.authRevision;
       const key = this.readKey(repository, resource);
       try {
-        const value = await this.reads.run(this.git.readScope(repository.path), key, read);
+        const value = await this.reads.run(this.git.readScope(repository.path), key, fresh ? () => freshRead.run(true, read) : read, true, fresh);
         if (revision === this.accounts.authRevision) return structuredClone(value);
       } catch (error) {
         if (revision !== this.accounts.authRevision) continue;
@@ -452,8 +464,8 @@ export class GitHubService {
 
   listPullRequests(repositoryId: string, states: PullRequestState[], fresh = false, kept?: KeptAnswerSink): Promise<PullRequestSummary[]> {
     // A list read again on request may hold a PR merged a moment ago, which the kept line counts don't know.
-    if (fresh) this.staleLineCounts.add(repositoryId);
-    return this.keptRead(repositoryId, ['list', [...states].sort()], { freshMs: () => LIST_MS }, () => this.readListPullRequests(repositoryId, states), { fresh, kept });
+    return this.keptRead(repositoryId, ['list', [...states].sort()], { freshMs: () => LIST_MS }, () => this.readListPullRequests(repositoryId, states),
+      { fresh, kept, onRead: () => this.staleLineCounts.add(repositoryId) });
   }
 
   private async readListPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
@@ -943,7 +955,7 @@ export class GitHubService {
     const key = createHash('sha256').update(JSON.stringify([args, options])).digest('hex');
     // The complete read owns retries so it re-resolves remote and credentials;
     // replaying this command would reuse the old routing/account snapshot.
-    return this.reads.run(this.git.readScope(options.cwd), `command:${key}`, () => this.runGh(args, options), false);
+    return this.reads.run(this.git.readScope(options.cwd), `command:${key}`, () => this.runGh(args, options), false, freshRead.getStore() === true);
   }
 
   private async runGh(args: string[], options: GhRunOptions): Promise<CliRunResult> {

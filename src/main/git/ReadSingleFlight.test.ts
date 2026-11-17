@@ -27,6 +27,20 @@ describe('pending read generations', () => {
     expect(await flights.run('repo', 'status', async () => 'settled')).toBe('settled');
   });
 
+  it('starts a read of its own for a reader that must not join one already under way, and shares it with later readers', async () => {
+    const flights = new ReadSingleFlight();
+    const earlier = deferred<string>();
+    const own = deferred<string>();
+    const first = flights.run('repo', 'details', () => earlier.promise);
+    const fresh = flights.run('repo', 'details', () => own.promise, true, true);
+    const later = flights.run('repo', 'details', async () => 'a third read');
+    earlier.resolve('before the ask');
+    own.resolve('after the ask');
+    expect(await first).toBe('before the ask');
+    expect(await fresh).toBe('after the ask');
+    expect(await later).toBe('after the ask');
+  });
+
   it('shares four readers, releases settled results, and isolates resources and repositories', async () => {
     const flights = new ReadSingleFlight();
     const gate = deferred<string>();

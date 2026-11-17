@@ -416,11 +416,16 @@ describe('pull request live state', () => {
   });
 
   it('reuses the PR list briefly, except for a manual refresh or after a change through OpenTig', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     const { service, run } = fixture(() => ok([{ number: 12, state: 'OPEN' }]));
     const lists = () => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'list').length;
     await service.listPullRequests('repo', ['OPEN']);
     await service.listPullRequests('repo', ['OPEN']);
     expect(lists()).toBe(1);
+    // A manual refresh a moment after GitHub answered gets that answer; a little later it asks again.
+    await service.listPullRequests('repo', ['OPEN'], true);
+    expect(lists()).toBe(1);
+    vi.setSystemTime(Date.now() + 6_000);
     await service.listPullRequests('repo', ['OPEN'], true);
     expect(lists()).toBe(2);
     await service.listPullRequests('repo', ['OPEN']);
@@ -490,6 +495,7 @@ describe('pull request live state', () => {
 
 describe('pull request lists', () => {
   it('lists closed and merged PRs without what GitHub is slow to work out, and reads their line counts apart', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     const { service, run } = fixture((args) => {
       const state = args[args.indexOf('--state') + 1]!;
       const fields = args[args.indexOf('--json') + 1]!.split(',');
@@ -516,6 +522,7 @@ describe('pull request lists', () => {
     // The counts are kept for minutes, except after the list was read again on request: it may hold a PR merged since.
     await service.listPullRequestLineCounts('repo', ['OPEN', 'MERGED']);
     expect(requested('merged')).toHaveLength(2);
+    vi.setSystemTime(Date.now() + 6_000);
     await service.listPullRequests('repo', ['OPEN', 'MERGED'], true);
     await service.listPullRequestLineCounts('repo', ['OPEN', 'MERGED']);
     expect(requested('merged').filter((fields) => fields === 'number,additions,deletions')).toHaveLength(2);
