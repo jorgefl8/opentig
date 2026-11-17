@@ -54,7 +54,7 @@ Download the `OpenTig-…-win32-x64-Setup.exe` installer from the [latest releas
 With **Node.js 24+** and **Git 2.31+** installed:
 
 ```bash
-npx --yes @opentig/cli@latest
+npx opentig@latest
 ```
 
 This starts OpenTig locally and opens a one-use browser pairing link. Open, clone, or find a repository from the start screen.
@@ -78,7 +78,7 @@ curl -fsSL https://opentig.com/install.sh | sh    # macOS and Linux
 irm https://opentig.com/install.ps1 | iex         # Windows PowerShell
 ```
 
-Or run `npx --yes @opentig/cli@latest service install` on any system with Node.js. In the desktop app, enable browser pairing separately in **Settings → Web access**. See [installation, services, and updates](docs/getting-started.md) and [remote access and pairing](docs/web-access.md).
+Or run `npx opentig@latest service install` on any system with Node.js; `opentig` is the short name of the `@opentig/cli` package. In the desktop app, enable browser pairing separately in **Settings → Web access**. See [installation, services, and updates](docs/getting-started.md) and [remote access and pairing](docs/web-access.md).
 
 ## Documentation and contributing
 

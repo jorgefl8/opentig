@@ -99,14 +99,16 @@ Run these commands on the machine that holds your repositories. Keep the process
 To start OpenTig and open a one-time browser pairing link:
 
 ```bash
-npx --yes @opentig/cli@latest
+npx opentig@latest
 ```
 
 On a server, or when you want to open the browser yourself, use `serve`:
 
 ```bash
-npx --yes @opentig/cli@latest serve
+npx opentig@latest serve
 ```
+
+`opentig` is the short name of the CLI package, `@opentig/cli`: it is published at the same version and runs the same command, so `npx @opentig/cli@latest` works the same. The first time, npx asks before downloading the package; answer `y`, or add `--yes` in scripts.
 
 This prints a pairing code, one-use link, and terminal QR without opening a browser. Use the link or code to pair your browser. For another device, follow [remote access and pairing](web-access.md).
 
@@ -129,6 +131,8 @@ Node.js is still required: plain `bunx` installs the package and launches its No
 npm install -g @opentig/cli@latest
 opentig serve
 ```
+
+Install only one of `@opentig/cli` and `opentig` globally: both provide the `opentig` command, and npm refuses the second with `EEXIST`.
 
 If npm reports `EACCES` because its global prefix (often `/usr/local` with the Node.js macOS installer) is not writable, do not use `sudo`. Install a [background service with npx](#background-services) instead, which also provides an `opentig` command, or [configure a per-user npm prefix](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally/).
 
@@ -195,7 +199,7 @@ A background service keeps OpenTig running after you close the terminal. It does
 Or, on any system with Node.js, run the same installation through npx:
 
 ```bash
-npx --yes @opentig/cli@latest service install
+npx opentig@latest service install
 ```
 
 With a global installation, run `opentig service install` instead. Add `--host` and `--port` to choose another address, for example `--host 127.0.0.1 --port 6768`. In an interactive terminal, installation then asks **Pair a device now? [Y/n]**: press Enter, `y`, or `yes` to print a one-time pairing link, code, and QR for the new service, or answer `n` and run `opentig pair` later. Non-interactive runs, such as scripts, print the pairing details without asking.
@@ -247,7 +251,7 @@ Uninstall a service installed by a script the same way as any other: `opentig se
 
 If the directory is already on `PATH`, nothing else is changed. With `--no-modify-path`, installation leaves `PATH` unchanged and tells you what to add yourself. `service uninstall` removes the command and only the `PATH` entries that point to that home.
 
-Commands printed by an `npx` run use the same pinned `npx -y @opentig/cli@<version>` form, so they work before the `opentig` command is available.
+Commands printed by an `npx` run, including one started as `npx opentig@latest`, use the pinned `npx -y @opentig/cli@<version>` form, so they work before the `opentig` command is available.
 
 ### When the service runs
 
@@ -381,7 +385,7 @@ If you keep OpenTig's data, paired browsers can reconnect after a reinstall. To 
 
 - **Windows desktop:** uninstall OpenTig from Windows **Settings → Apps**. Settings, sessions, and logs remain in `%APPDATA%\OpenTig`; delete that folder to remove them.
 - **CLI service:** run `opentig service uninstall`, with the same `--home` if you used one. It removes the service, its staged runtimes, and the `opentig` command, and keeps the home.
-- **Global CLI:** run `npm uninstall -g @opentig/cli`.
+- **Global CLI:** run `npm uninstall -g @opentig/cli`, or `npm uninstall -g opentig` if you installed the short name.
 - **CLI data:** after stopping every instance that uses it, delete the home (`~/.opentig` by default) to remove settings, paired sessions, credentials, history, and logs.
 
 ## Local tarball evaluation
