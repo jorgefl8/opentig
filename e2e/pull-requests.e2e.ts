@@ -34,6 +34,8 @@ test('Back returns to a pull request with bots still hidden and its code still g
 
   await tabs.getByRole('tab', { name: 'Code' }).click();
   await viewer.getByRole('button', { name: 'By commit' }).click();
+  // The commit picker moves from the loading view to the files' toolbar once the files arrive.
+  await expect(viewer.getByRole('button', { name: /read\.js/ })).toBeVisible();
   await viewer.getByRole('combobox', { name: 'Commit' }).click();
   await page.getByRole('option', { name: /Split the store/ }).click();
   await expect(viewer.getByRole('combobox', { name: 'Commit' })).toContainText('Split the store');

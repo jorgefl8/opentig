@@ -167,7 +167,9 @@ test('right-clicking or holding Back lists the steps behind, and choosing one go
   await expect(section(page, 'Search')).toHaveAttribute('aria-current', 'page');
   await expect(forward(page)).toBeDisabled();
 
-  // The menu key opens the list as the down arrow does, on its first step.
+  // The menu key opens the list as the down arrow does, on its first step. Choosing a row gave the focus back
+  // to Forward, as the list closed: Back is focused only after that.
+  await expect(forward(page)).toBeFocused();
   await back(page).focus();
   await page.keyboard.press('Shift+F10');
   const behind = page.getByRole('menu', { name: 'Go back to' });
