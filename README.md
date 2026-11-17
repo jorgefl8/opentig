@@ -10,7 +10,7 @@ Browse files, inspect diffs, edit, stage, and commit on your computer or a remot
 
 </div>
 
-![OpenTig reviewing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository](docs/images/workspace.png)
+![OpenTig reviewing an open pull request file by file, with side-by-side diffs of a renamed JavaScript file and its new test, in the Launchpad sample repository](docs/images/workspace.png)
 
 *OpenTig reviewing a sample pull request in the interactive demo.*
 

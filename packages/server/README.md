@@ -6,7 +6,7 @@ Browse files, review diffs, make edits, and commit changes. Work with branches, 
 
 [Website](https://opentig.com/) · [Installation](https://opentig.com/docs/getting-started/#run-the-headless-cli) · [Documentation](https://opentig.com/docs/) · [Source](https://github.com/jorgefl8/opentig) · [Report a bug](https://github.com/jorgefl8/opentig/issues)
 
-![OpenTig reviewing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository](https://raw.githubusercontent.com/jorgefl8/opentig/main/docs/images/workspace.png)
+![OpenTig reviewing an open pull request file by file, with side-by-side diffs of a renamed JavaScript file and its new test, in the Launchpad sample repository](https://raw.githubusercontent.com/jorgefl8/opentig/main/docs/images/workspace.png)
 
 *OpenTig reviewing a sample pull request in the interactive demo.*
 
