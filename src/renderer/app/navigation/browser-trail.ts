@@ -29,6 +29,12 @@ interface KnownStep {
   location: NavigationLocation;
 }
 
+interface PendingJump {
+  timer: number | null;
+  /** What a jump taken as missed took out of the lists, to put back if it arrives after all. */
+  missed: { steps: KnownStep[]; top: number } | null;
+}
+
 interface KeptTrails {
   steps: KnownStep[];
   /** The last step of each trail, which Forward cannot go past. */
@@ -69,11 +75,15 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
   let index = 0;
   let top = 0;
   let writeTimer: number | null = null;
-  let jumpTimer: number | null = null;
+  /**
+   * The one jump on its way. Past `arrivalMs` it is taken as missed and its steps leave the lists, but only
+   * until it arrives after all, which puts them back: a slow browser is not one that cannot get there.
+   */
+  let jump: PendingJump | null = null;
   let attached = false;
   /** The address last written, which a pull request's tab can change without the location changing. */
   let writtenUrl: string | null = null;
-  const kept = readKeptTrails();
+  let kept = readKeptTrails();
   let keptWritten = '';
   const save = () => {
     const serialized = JSON.stringify({ v: 2, steps: kept.steps, tops: [...kept.tops], last: kept.last });
@@ -81,11 +91,22 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     keptWritten = serialized;
     try { window.sessionStorage.setItem(STEPS_KEY, serialized); } catch { /* storage unavailable: the lists know this page's steps only */ }
   };
-  /** Continues a trail the history entry names, as after a reload or the browser's Back into an earlier page load. */
-  const joinTrail = (id: string, position: number) => {
+  /**
+   * Continues a trail the history entry names, in a page that was not on it a moment ago: loaded again, or
+   * brought back by the browser. What is ahead is offered only as far as the browser is known to still have
+   * it, since any page loaded in this tab after the step, the app's or another site's, dropped the rest
+   * without telling it. That is up to the step this tab last showed in the trail; and all of it for a reload
+   * of that very step, which leaves history as it was.
+   */
+  const joinTrail = (id: string, position: number, reloaded: boolean) => {
     trail = id;
     index = position;
-    top = Math.max(kept.tops.get(id) ?? position, position);
+    const keptTop = Math.max(kept.tops.get(id) ?? position, position);
+    const last = kept.last;
+    const shownHere = last?.trail === id && last.index === position;
+    const known = reloaded && shownHere ? keptTop : last?.trail === id ? Math.min(keptTop, Math.max(last.index, position)) : position;
+    top = position;
+    setTop(Math.max(position, known));
   };
   /**
    * Starts a trail for this page load. It came after the step last shown, so the browser dropped whatever
@@ -124,8 +145,20 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
   const forgetFrom = (position: number) => {
     kept.steps = kept.steps.filter((step) => step.trail !== trail || step.index < position);
   };
-  const stopWaitingForJump = () => {
-    if (jumpTimer !== null) { window.clearTimeout(jumpTimer); jumpTimer = null; }
+  /** The page is being left: a jump not yet arrived is not a missed one, and nothing is written for it. */
+  const abandonJump = () => {
+    if (jump?.timer != null) window.clearTimeout(jump.timer);
+    jump = null;
+    window.removeEventListener('beforeunload', abandonJump);
+  };
+  /** A move arrived: if it was the jump taken as missed, its steps come back as they were. */
+  const jumpArrived = () => {
+    const missed = jump?.missed;
+    abandonJump();
+    if (!missed) return;
+    const ids = new Set(kept.steps.map((step) => `${step.trail}\n${step.index}`));
+    kept.steps.push(...missed.steps.filter((step) => !ids.has(`${step.trail}\n${step.index}`)));
+    if (missed.top > top) setTop(missed.top);
   };
 
   const keep = (key: string, memory: EntryMemory) => {
@@ -152,11 +185,11 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
   };
   const onPopState = (event: PopStateEvent) => {
     if (writeTimer !== null) { window.clearTimeout(writeTimer); writeTimer = null; }
-    stopWaitingForJump();
+    jumpArrived();
     const stored = readStored(event.state);
     let entry: NavigationEntry;
     if (stored) {
-      if (stored.trail !== trail) joinTrail(stored.trail, stored.index);
+      if (stored.trail !== trail) joinTrail(stored.trail, stored.index, false);
       index = stored.index;
       if (index > top) setTop(index);
       entry = { key: stored.key, location: stored.location, memory: memories.get(stored.key) ?? stored.memory };
@@ -178,7 +211,23 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     changed();
     signals.restore(entry);
   };
-  const onPageHide = () => flush();
+  const onPageHide = () => {
+    abandonJump();
+    flush();
+  };
+  /**
+   * The browser brought the page back from its cache, as it was when left. Another page load of this tab
+   * may have written since, so what the tab keeps is read again before anything is written over it, and the
+   * step on screen is joined as any page coming back to it is.
+   */
+  const onPageShow = (event: PageTransitionEvent) => {
+    if (!event.persisted || !current) return;
+    kept = readKeptTrails();
+    keptWritten = '';
+    joinTrail(trail, index, false);
+    know(current);
+    changed();
+  };
 
   return {
     current: () => current,
@@ -193,7 +242,7 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     adopt(entry) {
       const stored = readStored(window.history.state);
       // A reload keeps its place in the trail; a pasted address starts one.
-      if (stored?.key === entry.key) joinTrail(stored.trail, stored.index);
+      if (stored?.key === entry.key) joinTrail(stored.trail, stored.index, wasReloaded());
       else startTrail();
       know(entry);
       current = entry;
@@ -201,7 +250,7 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     },
     start(location) {
       const stored = readStored(window.history.state);
-      if (stored) joinTrail(stored.trail, stored.index);
+      if (stored) joinTrail(stored.trail, stored.index, wasReloaded());
       else startTrail();
       current = { key: newEntryKey(), location, memory: EMPTY_MEMORY };
       write(current, 'replace');
@@ -265,20 +314,28 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
     },
     go(offset) {
       // The browser moves through its own history, so the address and what its Back and Forward do stay in step.
-      if (!Number.isSafeInteger(offset) || offset === 0 || index + offset < 0 || index + offset > top) return;
+      // One jump at a time: another asked for before the first arrives is ignored.
+      if (jump || !Number.isSafeInteger(offset) || offset === 0 || index + offset < 0 || index + offset > top) return;
       flush();
-      stopWaitingForJump();
       const target = index + offset;
+      const pending: PendingJump = { timer: null, missed: null };
       // A step the browser no longer holds is never reached: nothing moves, so the view and the address still
       // agree, and the step and those past it leave the lists.
-      jumpTimer = window.setTimeout(() => {
-        jumpTimer = null;
-        kept.steps = kept.steps.filter((step) => step.trail !== trail || (offset < 0 ? step.index > target : step.index < target));
+      pending.timer = window.setTimeout(() => {
+        if (jump !== pending) return;
+        pending.timer = null;
+        window.removeEventListener('beforeunload', abandonJump);
+        const gone = (step: KnownStep) => step.trail === trail && (offset < 0 ? step.index <= target : step.index >= target);
+        pending.missed = { steps: kept.steps.filter(gone), top };
+        kept.steps = kept.steps.filter((step) => !gone(step));
         if (offset > 0) setTop(target - 1);
         save();
         changed();
         signals.missed();
       }, arrivalMs);
+      jump = pending;
+      // A step of a page load that is gone loads a page again, which can take longer than the wait.
+      window.addEventListener('beforeunload', abandonJump);
       window.history.go(offset);
     },
     onMissedJump: signals.onMissed,
@@ -291,13 +348,15 @@ export function createBrowserTrail(addressFor: (location: NavigationLocation) =>
       try { window.history.scrollRestoration = 'manual'; } catch { /* not supported */ }
       window.addEventListener('popstate', onPopState);
       window.addEventListener('pagehide', onPageHide);
+      window.addEventListener('pageshow', onPageShow);
     },
     detach() {
+      abandonJump();
       flush();
-      stopWaitingForJump();
       attached = false;
       window.removeEventListener('popstate', onPopState);
       window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pageshow', onPageShow);
     },
   };
 }
@@ -310,6 +369,16 @@ function storedLocation(location: NavigationLocation): NavigationLocation {
     selection: strip(location.selection),
     fileHistory: location.fileHistory ? { ...location.fileHistory, returnTo: { ...location.fileHistory.returnTo, selection: strip(location.fileHistory.returnTo.selection) } } : null,
   };
+}
+
+/** Whether this page load is the browser reloading its entry, which leaves the history around it as it was. */
+function wasReloaded(): boolean {
+  try {
+    const [navigation] = window.performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    return navigation?.type === 'reload';
+  } catch {
+    return false;
+  }
 }
 
 /** The most trails whose last step is kept: a tab rarely has more page loads that history still reaches. */

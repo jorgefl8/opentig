@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addressOf } from './address';
 import { createBrowserTrail } from './browser-trail';
 import type { NavigationEntry, NavigationLocation } from './location';
@@ -12,7 +12,13 @@ const trails: Array<{ detach(): void }> = [];
 afterEach(() => {
   for (const trail of trails.splice(0)) trail.detach();
   window.sessionStorage.clear();
+  vi.restoreAllMocks();
 });
+
+/** The next page load is the browser reloading its entry. */
+function reloading() {
+  vi.spyOn(window.performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as PerformanceNavigationTiming]);
+}
 
 function open() {
   const trail = createBrowserTrail((location) => addressOf(location));
@@ -48,6 +54,7 @@ describe('the trail kept in the browser’s history, as a list', () => {
 
     // A reload starts a new page, which still knows the steps around the one it opens on.
     trail.detach();
+    reloading();
     const reloaded = open();
     const opened = reloaded.initial().entry!;
     reloaded.adopt(opened);
@@ -186,5 +193,118 @@ describe('the browser trail across page loads', () => {
       Object.defineProperty(window.history, 'length', length);
       delete (window.history as unknown as Record<string, unknown>).length;
     }
+  });
+});
+
+describe('what the browser trail offers ahead, after the page was away', () => {
+  function traverse(offset: number): Promise<void> {
+    return new Promise((resolve) => {
+      window.addEventListener('popstate', () => resolve(), { once: true });
+      window.history.go(offset);
+    });
+  }
+  const views: NavigationLocation['view'][] = ['files', 'history', 'changes', 'search', 'prs', 'files', 'history', 'changes'];
+  async function eightStepsBackTo(position: number) {
+    const trail = open();
+    trail.start(at(views[0]!));
+    for (const view of views.slice(1)) trail.push(at(view));
+    const arrival = landed(trail);
+    trail.go(position - 7);
+    await arrival;
+    return trail;
+  }
+  function load() {
+    const trail = open();
+    trail.adopt(trail.initial().entry!);
+    return trail;
+  }
+
+  it('offers nothing ahead to a page the browser brings back from somewhere else, which dropped those steps', async () => {
+    (await eightStepsBackTo(3)).detach();
+    // Another site opened in the tab, then the browser's Back: the page loads again on the fourth step.
+    const back = load();
+    expect(back.steps().forward).toEqual([]);
+    expect(back.state()).toEqual({ canGoBack: true, canGoForward: false });
+    back.detach();
+    // That stays so through a reload of it.
+    reloading();
+    expect(load().state().canGoForward).toBe(false);
+  });
+
+  it('offers what is ahead to a reload of the step the tab was on, which keeps the history as it was', async () => {
+    (await eightStepsBackTo(3)).detach();
+    reloading();
+    const reloaded = load();
+    expect(reloaded.steps().forward.map((step) => step.location.view)).toEqual(['prs', 'files', 'history', 'changes']);
+    expect(reloaded.state().canGoForward).toBe(true);
+  });
+
+  it('reads the tab’s steps again when the browser brings the page back from its cache, and offers nothing ahead', async () => {
+    const page = await eightStepsBackTo(5);
+    page.detach();
+    // An address pasted: a page load with its own trail, which drops the steps that were ahead.
+    window.history.pushState(null, '', '/r/repo/file/later.txt');
+    const later = load();
+    later.push(at('files', { type: 'file', path: 'later-too.txt' }));
+    later.detach();
+    await traverse(-2);
+    // The first page, as it was left, shown again, then saving what changes on it.
+    page.attach();
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    expect(page.steps().forward).toEqual([]);
+    expect(page.state().canGoForward).toBe(false);
+    page.replace({ ...at('files'), pane: 'viewer' });
+    // The later page load's steps are still kept.
+    const kept = JSON.parse(window.sessionStorage.getItem('opentig.navigation.steps')!) as { steps: Array<{ location: NavigationLocation }> };
+    const paths = kept.steps.map((step) => step.location.selection?.type === 'file' ? step.location.selection.path : null);
+    expect(paths).toEqual(expect.arrayContaining(['later.txt', 'later-too.txt']));
+  });
+});
+
+describe('a jump that takes its time', () => {
+  function slowTrail() {
+    const trail = createBrowserTrail((location) => addressOf(location), { arrivalMs: 20 });
+    trail.attach();
+    trails.push(trail);
+    trail.start(at('files'));
+    trail.push(at('history'));
+    trail.push(at('changes'));
+    trail.push(at('search'));
+    return trail;
+  }
+
+  it('puts back what it took out when the browser arrives after the wait', async () => {
+    const trail = slowTrail();
+    const go = window.history.go.bind(window.history);
+    vi.spyOn(window.history, 'go').mockImplementation((offset) => { window.setTimeout(() => go(offset), 80); });
+    const missed = new Promise<void>((resolve) => { trail.onMissedJump(resolve); });
+    const arrival = landed(trail);
+    trail.go(-2);
+    await missed;
+    expect(trail.steps().back.map((step) => step.location.view)).toEqual(['changes']);
+    expect((await arrival).location.view).toBe('history');
+    expect(trail.steps().back.map((step) => step.location.view)).toEqual(['files']);
+    expect(trail.steps().forward.map((step) => step.location.view)).toEqual(['changes', 'search']);
+  });
+
+  it('writes nothing for a jump still on its way when the page is left', async () => {
+    const trail = slowTrail();
+    vi.spyOn(window.history, 'go').mockImplementation(() => undefined);
+    const missed = vi.fn();
+    trail.onMissedJump(missed);
+    trail.go(-3);
+    window.dispatchEvent(new Event('beforeunload'));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(missed).not.toHaveBeenCalled();
+    expect(trail.steps().back).toHaveLength(3);
+  });
+
+  it('takes one jump at a time', () => {
+    const trail = slowTrail();
+    const go = vi.spyOn(window.history, 'go').mockImplementation(() => undefined);
+    trail.go(-1);
+    trail.go(-3);
+    expect(go).toHaveBeenCalledOnce();
+    expect(go).toHaveBeenCalledWith(-1);
   });
 });
