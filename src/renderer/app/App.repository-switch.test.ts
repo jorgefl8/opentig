@@ -339,12 +339,15 @@ it('reads the repository on a timer while the server watches another one, until 
     }
     await act(async () => calls.repositoryChanged!('repo', 'worktree', 'watching', 'second'));
     await quiet();
-    // Watched again: the timed read is gone.
+    // Watched again: the timed read is gone, and no other took its place. The timer is what is
+    // counted, not the reads: one started by the announcement can still be landing on a slow
+    // machine, which says nothing about a timer.
     expect(timed[0]!.cleared).toBe(true);
-    const watched = reads();
+    const fired = timed[0]!.fired;
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     await settle();
-    expect(reads()).toBe(watched);
+    expect(timed[0]!.fired).toBe(fired);
+    expect(intervals.slice(known).filter((item) => item.ms === 10_000 && !item.cleared)).toHaveLength(0);
     // The connection dropped and came back to the same server, whose watch never stopped: what is read
     // from now on can be relied on again, instead of the cache staying off until the watch changes.
     const kept = (content: string) => {
@@ -533,6 +536,9 @@ it.each([
 ] as const)('%s', async (_name, failures, reported) => {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
   await settle();
+  // The reads of start-up can still be landing on a slow machine after one `settle`: the count is
+  // taken once no more arrive, so that only the refresh below and its retry are counted.
+  for (let seen = -1; seen !== calls.getStatus.mock.calls.length;) { seen = calls.getStatus.mock.calls.length; await settle(); await settle(); }
   const reads = calls.getStatus.mock.calls.length;
   for (let index = 0; index < failures; index++) calls.getStatus.mockRejectedValueOnce(new Error('index.lock exists'));
   vi.useFakeTimers();
