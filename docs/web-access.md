@@ -17,7 +17,7 @@ You can connect from the same computer, a trusted LAN/VPN, or an HTTPS reverse p
 1. Start OpenTig on the remote machine:
 
    ```bash
-   npx opentig@latest serve
+   npx --yes @opentig/cli@latest serve
    ```
 
 2. Keep that process running. On your laptop, forward a local port:

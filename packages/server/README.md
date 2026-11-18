@@ -15,7 +15,7 @@ Browse files, review diffs, make edits, and commit changes. Work with branches, 
 Works on **macOS, Linux, and Windows** with **Node.js 24+** and **Git 2.31+** installed.
 
 ```bash
-npx opentig@latest
+npx --yes @opentig/cli@latest
 ```
 
 This starts OpenTig at `127.0.0.1:6767` and opens a one-use browser pairing link. Open, clone, or find a repository from the start screen and start reviewing. Repositories are managed in the UI; you do not need to start a separate server for each one.
@@ -53,7 +53,7 @@ opentig
 Start without opening a browser:
 
 ```bash
-npx opentig@latest serve
+npx --yes @opentig/cli@latest serve
 ```
 
 Server mode is designed for personal access through **Cloudflare Tunnel**, a **private network such as Tailscale**, or an SSH tunnel. The default listener stays on `127.0.0.1:6767`, which a tunnel or HTTPS reverse proxy on the same machine can reach. For direct private-network access, bind to its interface with `--host`; alternatively, keep loopback and use a private HTTPS proxy such as Tailscale Serve. Tunnel and VPN setup are managed separately from OpenTig.
@@ -79,7 +79,7 @@ irm https://opentig.com/install.ps1 | iex         # Windows PowerShell
 The same installation through npx, on any system:
 
 ```bash
-npx opentig@latest service install
+npx --yes @opentig/cli@latest service install
 ```
 
 After installing globally, opt into a background service on Linux, macOS, or Windows:
