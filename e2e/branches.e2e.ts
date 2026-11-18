@@ -330,6 +330,8 @@ test('worktrees left behind by a moved repository are explained, and can be repa
   await rows.getByRole('option', { name: /sample-project-review/ }).click();
   await expect(rows.getByRole('option', { name: /sample-project-review/ })).toContainText('Broken link');
   await expect(dialog.getByText(/so Git can't use or remove this worktree as it is\. Repair link reconnects it/)).toBeVisible();
+  // Its branch keeps its checkout and work in the folder, so cleaning up never deletes it.
+  await expect(dialog.getByRole('checkbox', { name: /Also delete branch/ })).toBeHidden();
   await dialog.getByRole('button', { name: 'Repair link' }).click();
 
   await expect(dialog.getByText('Link repaired.')).toBeVisible();
@@ -337,6 +339,35 @@ test('worktrees left behind by a moved repository are explained, and can be repa
   await expect(dialog.getByRole('button', { name: 'Open worktree' })).toBeVisible();
   await expect(rows.getByRole('option', { name: /sample-project-review/ })).not.toContainText('Broken link');
   expect(await git(review, 'status', '--porcelain')).toBe('M README.md');
+});
+
+test('a folder another repository took over offers only to clean up this repository\'s entry, and leaves that repository alone', async ({ pairedPage: page, repository }) => {
+  const taken = `${repository.path}-taken`;
+  await repository.git('worktree', 'add', '-q', '-b', 'taken', taken);
+  // Deleted by hand, so this repository kept its entry; then another repository put a worktree there.
+  await rm(taken, { recursive: true });
+  const other = `${repository.path}-other`;
+  const run = promisify(execFile);
+  await run('git', ['init', '-q', '-b', 'main', other]);
+  await run('git', ['-C', other, '-c', 'user.name=E2E Tester', '-c', 'user.email=e2e@example.com', 'commit', '-q', '--allow-empty', '-m', 'Other']);
+  await run('git', ['-C', other, 'worktree', 'add', '-q', '-b', 'theirs', taken]);
+  await openRepository(page, repository);
+  const dialog = await openBranchManager(page);
+  await dialog.getByRole('tab', { name: /^Worktrees/ }).click();
+  const row = dialog.getByRole('listbox', { name: 'Worktrees' }).getByRole('option', { name: /sample-project-taken/ });
+
+  await row.click();
+  await expect(dialog.getByText('This folder is now a worktree of another repository:')).toBeVisible();
+  await expect(dialog.getByText(/This repository's entry for it is left over\. Clean up entry removes that entry and leaves the folder and the other repository untouched\./)).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Repair link' })).toBeHidden();
+  await dialog.getByRole('button', { name: 'Clean up entry' }).click();
+  await expect(dialog.getByText(/The folder and the other repository stay as they are\./)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Clean up entry' }).click();
+
+  await expect(row).toBeHidden({ timeout: 20_000 });
+  await expect(dialog.getByText(/Git no longer tracks this worktree/)).toBeHidden();
+  expect((await run('git', ['-C', taken, 'rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()).toBe('theirs');
+  expect(await repository.git('worktree', 'list', '--porcelain')).not.toContain(taken);
 });
 
 test.describe('coding agents in worktrees', () => {

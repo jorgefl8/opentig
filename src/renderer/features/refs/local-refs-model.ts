@@ -180,8 +180,8 @@ export function worktreeRemoveEligibility(details: WorktreeDetails): DeleteEligi
   if (details.locked) return { allowed: false, reason: `Locked${details.locked === 'locked' ? '' : `: ${details.locked}`}. Unlock it in Git before removing it.` };
   // Git refuses even a forced removal while its `.git` file doesn't lead back here.
   if (details.brokenLink) {
-    const explanation = brokenLinkExplanation(details.brokenLink, details.onlyGitFile === true);
-    return { allowed: false, forceAllowed: true, cleanupOnly: true, reason: [explanation.lead, explanation.path, explanation.cause, explanation.nothingLost, BROKEN_LINK_ACTIONS].filter(Boolean).join(' ') };
+    const explanation = brokenLinkExplanation(details);
+    return { allowed: false, forceAllowed: true, cleanupOnly: true, reason: [explanation.lead, explanation.path, explanation.cause, ...explanation.notes, explanation.actions].filter(Boolean).join(' ') };
   }
   if (details.prunable) return { allowed: false, forceAllowed: true, cleanupOnly: true, reason: details.leftoverFiles
     ? 'This worktree is incomplete, for example because a removal stopped before it finished. Git can no longer use it, but its folder still has files.'
@@ -194,28 +194,47 @@ export function worktreeRemoveEligibility(details: WorktreeDetails): DeleteEligi
   return { allowed: true, reason: 'No local changes. Removing it deletes the folder from disk and leaves its branch intact.' };
 }
 
-/** What the two ways out of a broken link do; the panel shows the button names in bold. */
-export const BROKEN_LINK_ACTIONS = 'Repair link reconnects it to this repository. Clean up entry makes Git forget it and leaves the folder on disk.';
-
-/** Why a worktree's link is broken, in parts the panel styles: the path goes on its own line. */
+/** Why a worktree's link is broken, in parts the panel styles: the path on its own line, notes in bold. */
 export interface BrokenLinkExplanation {
   lead: string;
-  /** Where its `.git` file points, as written there. */
+  /** Where its `.git` points, or the Git folder the folder belongs to now. */
   path: string | null;
   cause: string | null;
-  /** Only when the folder holds nothing but its `.git` file. */
-  nothingLost: string | null;
+  /** What cleaning up its entry would or would not lose. */
+  notes: string[];
+  /** Repair link is offered only where the folder is still this repository's. */
+  repairable: boolean;
+  /** What the actions do; the panel shows the button names in bold. */
+  actions: string;
 }
 
-export function brokenLinkExplanation(link: BrokenWorktreeLink, onlyGitFile: boolean): BrokenLinkExplanation {
-  const nothingLost = onlyGitFile ? 'The folder has no other files, so no work would be lost.' : null;
+export const REPAIR_ACTIONS = 'Repair link reconnects it to this repository. Clean up entry makes Git forget it and leaves the folder on disk.';
+export const TAKEN_ACTIONS = 'Clean up entry removes that entry and leaves the folder and the other repository untouched.';
+
+export function brokenLinkExplanation(details: Pick<WorktreeDetails, 'brokenLink' | 'nothingLost' | 'unreachableHead'>): BrokenLinkExplanation {
+  const link: BrokenWorktreeLink = details.brokenLink ?? { kind: 'unlinked', pointsTo: null, pointsToMissing: false };
+  const unreachable = unreachableHeadNote(details);
+  if (link.kind === 'taken') {
+    return {
+      lead: link.by === 'worktree' ? 'This folder is now a worktree of another repository:' : 'This folder now holds a repository of its own:',
+      path: link.owner, cause: 'This repository\'s entry for it is left over.', notes: unreachable ? [unreachable] : [], repairable: false, actions: TAKEN_ACTIONS,
+    };
+  }
+  const notes = [...(details.nothingLost ? ['The folder has no other files, so no work would be lost.'] : []), ...(unreachable ? [unreachable] : [])];
+  const base = { notes, repairable: true, actions: REPAIR_ACTIONS };
   if (link.pointsTo === null) {
-    return { lead: 'Its .git file doesn\'t say where its repository is, so Git can\'t use or remove this worktree as it is.', path: null, cause: null, nothingLost };
+    return { ...base, lead: 'Its .git file doesn\'t say where its repository is, so Git can\'t use or remove this worktree as it is.', path: null, cause: null };
   }
   if (link.pointsToMissing) {
-    return { lead: 'Its .git file points to a folder that no longer exists:', path: link.pointsTo, cause: 'The repository was probably moved, so Git can\'t use or remove this worktree as it is.', nothingLost };
+    return { ...base, lead: 'Its .git file points to a folder that no longer exists:', path: link.pointsTo, cause: 'The repository was probably moved, so Git can\'t use or remove this worktree as it is.' };
   }
-  return { lead: 'Its .git file points to a folder that is not this repository\'s entry for it:', path: link.pointsTo, cause: 'Git can\'t use or remove this worktree as it is.', nothingLost };
+  return { ...base, lead: 'Its .git file points to a folder that is not this repository\'s entry for it:', path: link.pointsTo, cause: 'Git can\'t use or remove this worktree as it is.' };
+}
+
+/** Names a HEAD on no branch or tag, which cleaning up the entry would leave unreachable. */
+export function unreachableHeadNote(details: Pick<WorktreeDetails, 'unreachableHead'>): string | null {
+  const head = details.unreachableHead;
+  return head ? `Its HEAD, ${head.shortOid} ${head.subject}, is on no branch: cleaning up the entry leaves that commit unreachable.` : null;
 }
 
 function lastLine(text: string): string {

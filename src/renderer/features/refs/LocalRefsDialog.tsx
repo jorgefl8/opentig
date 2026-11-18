@@ -6,7 +6,7 @@ import {
   IconLink, IconRefresh, IconSearch, IconX,
 } from '@tabler/icons-react';
 import type { PullRequestSummary, RecentRepository, WorktreeRepairResult } from '../../../shared/contracts';
-import type { BranchDetails, BrokenWorktreeLink, LocalRefsSnapshot, RemoteBranchDetails, WorktreeAgents, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
+import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeAgents, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
 import { StatusWord } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -16,7 +16,7 @@ import { opentig } from '@/lib/opentig-api';
 import { UNCONFIRMED_RESULT_MESSAGE, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  agentsAt, samePath, branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, brokenLinkExplanation, filterBranches, filterWorktrees,
+  agentsAt, samePath, branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, brokenLinkExplanation, filterBranches, filterWorktrees, unreachableHeadNote,
   localChangeSummary, mergedPullRequestTip, nextSelectionKey, removingWorktreeBadges, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
   normalizeWorktreePath, type LocalRefsFocus, type LocalRefsTab, type RefBadge,
 } from './local-refs-model';
@@ -547,6 +547,9 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
   const force = eligibility.forceAllowed === true;
   const cleanup = eligibility.cleanupOnly === true;
   const removalAllowed = eligibility.allowed || force;
+  const brokenLink = details.brokenLink ?? null;
+  // A broken worktree's branch keeps its checkout and work in the folder, so its clean-up never deletes it.
+  const branchDeletion = deleteBranch && !brokenLink;
   useEffect(() => setDeleteBranch(deleteBranchByDefault), [details.path, deleteBranchByDefault]);
   return (
     <>
@@ -577,7 +580,7 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
           <Button variant="ghost" size="sm" onClick={onShowBranch} disabled={anyBusy}><IconGitBranch /> Show branch</Button>
         )}
       </div>
-      {!removing && details.branch && removalAllowed && (
+      {!removing && details.branch && removalAllowed && !brokenLink && (
         <label htmlFor="remove-worktree-delete-branch" className="local-refs-delete-branch">
           <Checkbox id="remove-worktree-delete-branch" checked={deleteBranch} onCheckedChange={(checked) => setDeleteBranch(checked === true)} disabled={anyBusy} />
           <span>Also delete branch <strong>{details.branch}</strong></span>
@@ -591,9 +594,9 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
           </p>
         </div>
       ) : <DestructiveSection
-        reason={details.brokenLink && cleanup ? <BrokenLinkReason link={details.brokenLink} onlyGitFile={details.onlyGitFile === true} /> : eligibility.reason}
+        reason={brokenLink && cleanup ? <BrokenLinkReason details={details} /> : eligibility.reason}
         notice={repaired ? <p className="local-refs-reason"><IconCheck className="local-refs-ok" aria-hidden="true" /><span>Link repaired.</span></p> : null}
-        extraAction={details.brokenLink && !details.main ? (
+        extraAction={brokenLink?.kind === 'unlinked' && !details.main ? (
           <Button variant="ghost" size="sm" className="local-refs-repair" onClick={() => { if (!repairing) onRepair(); }} disabled={anyBusy && !repairing} aria-disabled={repairing || undefined}>
             {repairing ? <Spinner /> : <IconLink />} {repairing ? 'Repairing…' : 'Repair link'}
           </Button>
@@ -606,28 +609,28 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
         confirmLabel={cleanup ? 'Clean up entry' : force ? 'Permanently remove' : 'Remove worktree'}
         allowed={removalAllowed}
         confirmation={<>
-          {cleanup
-            ? <>Remove Git's entry for this worktree? {details.brokenLink && details.onlyGitFile
-              ? <>The folder <strong className="local-refs-path">{details.path}</strong> stays on disk with only its .git file, so delete it yourself. </>
-              : details.leftoverFiles || details.brokenLink ? <>The files in <strong className="local-refs-path">{details.path}</strong> stay on disk, so delete that folder yourself. </> : null}</>
+          {cleanup && brokenLink
+            ? <BrokenLinkCleanup details={details} />
+            : cleanup
+            ? <>Remove Git's entry for this worktree? {details.leftoverFiles ? <>The files in <strong className="local-refs-path">{details.path}</strong> stay on disk, so delete that folder yourself. </> : null}</>
             : force
-            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? (details.operation ? `The ${details.operation}` : details.unreadable ? 'Any local changes' : details.submodules ? 'Its submodules' : 'The current Git operation')}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>
+            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{details.unreadable ? 'Any local changes' : changes ?? (details.operation ? `The ${details.operation}` : details.submodules ? 'Its submodules' : 'The current Git operation')}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>
             : <>Remove the worktree at <strong className="local-refs-path">{details.path}</strong>? The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>}
-          {deleteBranch && details.branch
+          {branchDeletion && details.branch
             ? <>The branch <strong>{details.branch}</strong> will also be force-deleted. Commits found only on that branch may become inaccessible.</>
             : details.branch ? <>The branch <strong>{details.branch}</strong> and its commits stay in the repository.</> : 'No branch is deleted.'}
         </>}
         onConfirm={onConfirm}
         onCancel={onCancel}
-        onAct={() => cleanup ? onRemove(false, deleteBranch, true) : onRemove(force, deleteBranch, false)}
+        onAct={() => cleanup ? onRemove(false, branchDeletion, true) : onRemove(force, deleteBranch, false)}
       />}
     </>
   );
 }
 
-/** Where a broken link points and the two ways out, with the path on its own line. */
-function BrokenLinkReason({ link, onlyGitFile }: { link: BrokenWorktreeLink; onlyGitFile: boolean }) {
-  const explanation = brokenLinkExplanation(link, onlyGitFile);
+/** Where a broken link points or whose folder it is now, and the ways out, with the path on its own line. */
+function BrokenLinkReason({ details }: { details: WorktreeDetails }) {
+  const explanation = brokenLinkExplanation(details);
   return (
     <p className="local-refs-reason">
       <IconAlertTriangle className="local-refs-warning" aria-hidden="true" />
@@ -635,10 +638,29 @@ function BrokenLinkReason({ link, onlyGitFile }: { link: BrokenWorktreeLink; onl
         {explanation.lead}
         {explanation.path ? <span className="local-refs-path local-refs-selectable">{explanation.path}</span> : ' '}
         {explanation.cause && <>{explanation.cause} </>}
-        {explanation.nothingLost && <><b>{explanation.nothingLost}</b> </>}
-        <b>Repair link</b> reconnects it to this repository. <b>Clean up entry</b> makes Git forget it and leaves the folder on disk.
+        {explanation.notes.map((note) => <span key={note}><b>{note}</b> </span>)}
+        {explanation.repairable
+          ? <><b>Repair link</b> reconnects it to this repository. <b>Clean up entry</b> makes Git forget it and leaves the folder on disk.</>
+          : <><b>Clean up entry</b> removes that entry and leaves the folder and the other repository untouched.</>}
       </span>
     </p>
+  );
+}
+
+/** What cleaning up a broken worktree's entry keeps and what it makes Git forget. */
+function BrokenLinkCleanup({ details }: { details: WorktreeDetails }) {
+  const unreachable = unreachableHeadNote(details);
+  const path = <strong className="local-refs-path">{details.path}</strong>;
+  const forgotten = 'what was staged there and the worktree\'s own history, such as its reflog.';
+  return (
+    <>
+      {details.brokenLink?.kind === 'taken'
+        ? <>Remove this repository's entry for the worktree at {path}? The folder and the other repository stay as they are. </>
+        : details.onlyGitFile
+        ? <>Remove Git's entry for this worktree? The folder {path} stays on disk with only its .git file, so delete it yourself. {details.nothingLost ? null : <>Git also forgets {forgotten} </>}</>
+        : <>Remove Git's entry for this worktree? Its files stay in {path}, but Git forgets {forgotten} </>}
+      {unreachable && <><strong>{unreachable}</strong> </>}
+    </>
   );
 }
 
@@ -742,9 +764,8 @@ function worktreeFailure(status: string): string {
 
 function repairFailure(result: Exclude<WorktreeRepairResult, { status: 'repaired' | 'not-broken' }>): string {
   if (result.status === 'missing') return worktreeFailure('missing');
-  // Every Git the app supports has `worktree repair`; this only explains an older one in plain words.
-  if (/unknown subcommand|usage: git worktree/i.test(result.message)) return 'This version of Git can\'t repair worktree links. Update Git, or use Clean up entry.';
-  return `Git could not repair this link, so nothing changed. Clean up entry still works.${result.message ? ` Git said: ${result.message}` : ''}`;
+  if (result.status === 'taken') return 'This folder belongs to another repository now, so its link can\'t be repaired from here. Clean up entry removes this repository\'s entry for it.';
+  return `Could not repair this link: ${result.message} Clean up entry still works.`;
 }
 
 function removalNoticeKey(removal: WorktreeRemovalState): string {

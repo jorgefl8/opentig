@@ -143,16 +143,24 @@ export interface WorktreeAgents {
 }
 
 /**
- * A linked worktree whose folder is still there, but whose `.git` file no longer
- * leads back to this repository's entry for it, typically because the repository
- * was moved. Git still lists it as usable, yet can neither use nor remove it.
+ * A linked worktree whose folder is still there, but whose `.git` no longer leads back to
+ * this repository's entry for it. Git still lists it as usable, yet can neither use nor remove it.
  */
-export interface BrokenWorktreeLink {
-  /** The folder its `.git` file names, as written there, or null when it names none. */
-  pointsTo: string | null;
-  /** Whether that folder is gone, as it is after the repository moved. */
-  pointsToMissing: boolean;
-}
+export type BrokenWorktreeLink =
+  /** Its `.git` file names nothing usable, or a place that isn't this entry, typically because the repository was moved. */
+  | {
+    kind: 'unlinked';
+    /** The folder its `.git` file names, as written there, or null when it names none. */
+    pointsTo: string | null;
+    /** Whether that folder is gone, as it is after the repository moved. */
+    pointsToMissing: boolean;
+  }
+  /**
+   * The folder is now another repository's worktree (`by: 'worktree'`), or holds a repository
+   * of its own (`by: 'repository'`); `owner` is that repository's Git folder. Only this
+   * repository's entry is left over.
+   */
+  | { kind: 'taken'; by: 'worktree' | 'repository'; owner: string };
 
 /** A worktree row annotated with whether OpenTig currently has it open. */
 export interface ManagedWorktree extends WorktreeInfo {
@@ -261,7 +269,18 @@ export interface WorktreeDetails {
   brokenLink?: BrokenWorktreeLink;
   /** Only with a broken link: the folder holds nothing but its `.git` file and empty folders. */
   onlyGitFile?: boolean;
-  /** Git could not read its local changes, and why; the counts are then zero but unknown. */
+  /**
+   * Only with a broken link: cleaning up its entry loses nothing. The folder holds only its
+   * `.git` file, HEAD is on a branch or tag, nothing is staged, and no operation is under way.
+   */
+  nothingLost?: boolean;
+  /** Only with a broken link: its HEAD is a commit on no branch or tag, which cleaning up its entry leaves unreachable. */
+  unreachableHead?: CommitSummary;
+  /**
+   * Git could not read its local changes, and why. Here and with a broken link, `conflictCount`
+   * is 1 and the other counts 0, so a client that knows neither field never takes the worktree
+   * for clean; a client that does reads these fields first.
+   */
   unreadable?: string;
   /** False when the worktree is missing, prunable, bare, or its link is broken, so no status ran. */
   available: boolean;

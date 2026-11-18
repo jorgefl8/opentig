@@ -355,13 +355,16 @@ export interface RemoveWorktreeRequest {
 }
 
 /**
- * Repairing never deletes anything. `failed` means Git ran but the link is still
- * broken, with what Git said, if anything; `not-broken` means there was nothing to repair.
+ * Repairing rewrites only the asked worktree's `.git` file and never deletes anything.
+ * `not-broken`: there was nothing to repair. `taken`: the folder belongs to another
+ * repository now, so only this repository's entry can go. `failed`: the file was left as it
+ * was, and `message` says why.
  */
 export type WorktreeRepairResult =
   | { status: 'repaired' }
   | { status: 'not-broken' }
   | { status: 'missing' }
+  | { status: 'taken' }
   | { status: 'failed'; message: string };
 
 /**
