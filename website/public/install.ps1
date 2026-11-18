@@ -32,10 +32,10 @@
 #   OPENTIG_VERSION   CLI version such as 1.0.0, or a tag such as latest
 #                     (default: latest).
 #   OPENTIG_PACKAGE   What to install instead of @opentig/cli@$OPENTIG_VERSION:
-#                     @opentig/cli or opentig, optionally followed by @ and a
-#                     version or tag, or the path of an existing .tgz file. A
-#                     relative path gets .\ in front, because npm reads dir/file
-#                     as a GitHub repository. Anything else is refused.
+#                     @opentig/cli, optionally followed by @ and a version or
+#                     tag, or the path of an existing .tgz file. A relative
+#                     path gets .\ in front, because npm reads dir/file as a
+#                     GitHub repository. Anything else is refused.
 #   OPENTIG_HOST, OPENTIG_PORT, OPENTIG_HOME
 #                     Listener address, port, and data directory, read by the
 #                     CLI itself (defaults: 127.0.0.1, 6767, ~\.opentig).
@@ -107,12 +107,12 @@
         $file = $package
       }
       if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Stop-Install "OPENTIG_PACKAGE names $($env:OPENTIG_PACKAGE), but there is no such file." @() }
-    } elseif ($package -ceq '@opentig/cli' -or $package -ceq 'opentig') {
+    } elseif ($package -ceq '@opentig/cli') {
       $package = "$package@$version"
-    } elseif ($package -cmatch '^(@opentig/cli|opentig)@(.*)$') {
-      if (-not (Test-VersionOrTag $Matches[2])) { Stop-Install "OPENTIG_PACKAGE must end in a version such as 1.0.0 or a tag such as latest, not `"$($Matches[2])`"." @() }
+    } elseif ($package -cmatch '^@opentig/cli@(.*)$') {
+      if (-not (Test-VersionOrTag $Matches[1])) { Stop-Install "OPENTIG_PACKAGE must end in a version such as 1.0.0 or a tag such as latest, not `"$($Matches[1])`"." @() }
     } else {
-      Stop-Install "OPENTIG_PACKAGE must be @opentig/cli or opentig, optionally with @ and a version or tag, or the path of a .tgz file, not `"$package`"." @()
+      Stop-Install "OPENTIG_PACKAGE must be @opentig/cli, optionally with @ and a version or tag, or the path of a .tgz file, not `"$package`"." @()
     }
   }
 

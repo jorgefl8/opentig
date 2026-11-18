@@ -228,7 +228,7 @@ Any value other than those below is refused before anything runs.
 | Environment variable | Effect |
 | --- | --- |
 | `OPENTIG_VERSION` | CLI version such as `1.0.0`, or a tag such as `latest`. Default: `latest`. |
-| `OPENTIG_PACKAGE` | What to install instead of `@opentig/cli@` followed by `OPENTIG_VERSION`: `@opentig/cli` or `opentig`, optionally followed by `@` and a version or tag, or the path of an existing `.tgz` file. A relative path such as `dist/opentig-cli-1.0.0.tgz` gets `./` (`.\` on Windows) in front, because npm reads `dist/opentig-cli-1.0.0.tgz` as a GitHub repository. |
+| `OPENTIG_PACKAGE` | What to install instead of `@opentig/cli@` followed by `OPENTIG_VERSION`: `@opentig/cli`, optionally followed by `@` and a version or tag, or the path of an existing `.tgz` file. A relative path such as `dist/opentig-cli-1.0.0.tgz` gets `./` (`.\` on Windows) in front, because npm reads `dist/opentig-cli-1.0.0.tgz` as a GitHub repository. |
 | `OPENTIG_HOST`, `OPENTIG_PORT`, `OPENTIG_HOME` | Read by the CLI itself, as in [the address and data directory options](#pair-another-browser). |
 | `NO_COLOR` | Turns off colored output. |
 

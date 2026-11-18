@@ -26,10 +26,10 @@
 #   OPENTIG_VERSION   CLI version such as 1.0.0, or a tag such as latest
 #                     (default: latest).
 #   OPENTIG_PACKAGE   What to install instead of @opentig/cli@$OPENTIG_VERSION:
-#                     @opentig/cli or opentig, optionally followed by @ and a
-#                     version or tag, or the path of an existing .tgz file. A
-#                     relative path gets ./ in front, because npm reads dir/file
-#                     as a GitHub repository. Anything else is refused.
+#                     @opentig/cli, optionally followed by @ and a version or
+#                     tag, or the path of an existing .tgz file. A relative
+#                     path gets ./ in front, because npm reads dir/file as a
+#                     GitHub repository. Anything else is refused.
 #   OPENTIG_HOST, OPENTIG_PORT, OPENTIG_HOME
 #                     Listener address, port, and data directory, read by the
 #                     CLI itself (defaults: 127.0.0.1, 6767, ~/.opentig).
@@ -125,16 +125,16 @@
             fail "OPENTIG_PACKAGE names $OPENTIG_PACKAGE, but there is no such file."
           fi
           ;;
-        @opentig/cli | opentig)
+        @opentig/cli)
           package=$package@$version
           ;;
-        @opentig/cli@* | opentig@*)
+        @opentig/cli@*)
           if ! is_version_or_tag "${package##*@}"; then
             fail "OPENTIG_PACKAGE must end in a version such as 1.0.0 or a tag such as latest, not \"${package##*@}\"."
           fi
           ;;
         *)
-          fail "OPENTIG_PACKAGE must be @opentig/cli or opentig, optionally with @ and a version or tag, or the path of a .tgz file, not \"$package\"."
+          fail "OPENTIG_PACKAGE must be @opentig/cli, optionally with @ and a version or tag, or the path of a .tgz file, not \"$package\"."
           ;;
       esac
     fi
