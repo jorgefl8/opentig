@@ -420,6 +420,10 @@
   html .local-refs-mobile-back { display: block; min-height: 44px; flex: none; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: var(--text-body); }
   html .local-refs-header, html .repository-projects-header { padding: 12px; gap: 8px; }
   html .local-refs-footer, html .local-refs-detail-actions { flex-wrap: wrap; }
+  /* The message takes the whole width, with its buttons on the row below. */
+  html .local-refs-removal-notice { flex-wrap: wrap; row-gap: 2px; }
+  html .local-refs-removal-notice > span { flex-basis: 100%; }
+  html .local-refs-removal-notice > span + button { margin-left: -8px; }
   html .repository-projects-body { padding: 12px; }
   html .repository-assignment-row [data-slot="combobox-trigger"] { margin-left: 0; }
   html .ai-log-dialog { padding: 12px; grid-template-rows: auto auto minmax(0, 1fr); }
