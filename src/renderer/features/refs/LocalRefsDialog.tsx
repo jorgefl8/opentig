@@ -69,8 +69,11 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  // The worktree whose link was just repaired, until another one is selected.
+  // The worktree whose link is being repaired, and the one whose link was just repaired, until another one is selected.
+  const [repairingPath, setRepairingPath] = useState<string | null>(null);
   const [repairedPath, setRepairedPath] = useState<string | null>(null);
+  // Read out by screen readers: the button that started a repair is gone once it succeeds.
+  const [announcement, setAnnouncement] = useState('');
   // Removals this window started, shown until the server's snapshot takes over.
   const [startedRemovals, setStartedRemovals] = useState<ReadonlySet<string>>(new Set());
   // Kept for the session, so a dismissed notice doesn't return while the server still holds it.
@@ -166,6 +169,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     setActionError(null);
     setCopied(false);
     setRepairedPath(null);
+    setAnnouncement('');
   }, [open]);
 
   useEffect(() => {
@@ -173,6 +177,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     setActionError(null);
     setCopied(false);
     setRepairedPath(null);
+    setAnnouncement('');
   }, [tab, selectedBranch, selectedWorktree]);
 
   const run = async (operation: string, action: () => Promise<boolean>) => {
@@ -262,17 +267,31 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   };
 
   // Repairing deletes nothing, so it asks no confirmation; reading the worktree again shows its real state.
-  const repairWorktree = (target: WorktreeDetails) => run('repair-worktree', async () => {
-    const result = await opentig.refs.repairWorktree({ repositoryId, path: target.path });
-    await load();
-    if (result.status === 'repaired' || result.status === 'not-broken') {
-      setRepairedPath(target.path);
-      onMutated(null);
-      return true;
-    }
-    setActionError(repairFailure(result));
-    return false;
-  });
+  const repairWorktree = (target: WorktreeDetails) => {
+    setRepairingPath(target.path);
+    setAnnouncement('');
+    return run('repair-worktree', async () => {
+      try {
+        const result = await opentig.refs.repairWorktree({ repositoryId, path: target.path });
+        await load();
+        // Only a repair made here is reported; one made elsewhere just shows the worktree as it is now.
+        if (result.status === 'repaired') {
+          setRepairedPath(target.path);
+          setAnnouncement('Link repaired.');
+        }
+        if (result.status === 'repaired' || result.status === 'not-broken') {
+          onMutated(null);
+          return true;
+        }
+        const message = repairFailure(result);
+        setActionError(message);
+        setAnnouncement(message);
+        return false;
+      } finally {
+        setRepairingPath(null);
+      }
+    });
+  };
 
   const dismissNotice = (removal: WorktreeRemovalState) => {
     const dismissed = new Set(dismissedNotices).add(removalNoticeKey(removal));
@@ -299,6 +318,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!busy) props.onOpenChange(next); }}>
       <DialogPopup className="local-refs-dialog">
+        <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
         <header className="local-refs-header">
           <DialogTitle>Branches and worktrees</DialogTitle>
           <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close the refs manager" disabled={Boolean(busy)} />}><IconX /></DialogClose>
@@ -450,8 +470,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 agents={agentsAt(props.worktreeAgents, worktreeDetails.path)}
                 deleteBranchByDefault={Boolean(props.focus?.worktree && samePath(props.focus.worktree, worktreeDetails.path))}
                 removing={removingPaths.has(worktreeDetails.path)}
-                repairing={busy === 'repair-worktree'}
-                repaired={repairedPath !== null && samePath(repairedPath, worktreeDetails.path) && !worktreeDetails.brokenLink}
+                repairing={repairingPath !== null && samePath(repairingPath, worktreeDetails.path)}
+                repaired={repairedPath !== null && samePath(repairedPath, worktreeDetails.path) && worktreeDetails.available && !worktreeDetails.brokenLink && !worktreeDetails.prunable}
                 anyBusy={Boolean(busy)}
                 confirming={confirming === 'remove-worktree'}
                 actionError={actionError}
@@ -550,7 +570,17 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
   const brokenLink = details.brokenLink ?? null;
   // A broken worktree's branch keeps its checkout and work in the folder, so its clean-up never deletes it.
   const branchDeletion = deleteBranch && !brokenLink;
+  const openRef = useRef<HTMLButtonElement>(null);
+  const copyRef = useRef<HTMLButtonElement>(null);
+  const focusedRepair = useRef(false);
   useEffect(() => setDeleteBranch(deleteBranchByDefault), [details.path, deleteBranchByDefault]);
+  // Repair link is gone once it worked, so focus moves to what the worktree now offers.
+  useEffect(() => {
+    if (!repaired) { focusedRepair.current = false; return; }
+    if (anyBusy || focusedRepair.current) return;
+    focusedRepair.current = true;
+    (openRef.current ?? copyRef.current)?.focus();
+  }, [repaired, anyBusy]);
   return (
     <>
       <div className="local-refs-detail-head">
@@ -570,11 +600,11 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
         {!removing && <Fact label="Local changes">{details.available && !details.unreadable ? (changes ?? 'None') : 'Not readable'}</Fact>}
       </dl>
       <div className="local-refs-detail-actions">
-        <Button variant="ghost" size="sm" onClick={onCopyPath} disabled={anyBusy}>
+        <Button ref={copyRef} variant="ghost" size="sm" onClick={onCopyPath} disabled={anyBusy}>
           {copied ? <IconCheck /> : <IconCopy />} {copied ? 'Copied' : 'Copy path'}
         </Button>
         {!removing && !details.current && details.available && (
-          <Button variant="ghost" size="sm" onClick={onOpen} disabled={anyBusy}><IconExternalLink /> Open worktree</Button>
+          <Button ref={openRef} variant="ghost" size="sm" onClick={onOpen} disabled={anyBusy}><IconExternalLink /> Open worktree</Button>
         )}
         {details.branch && (
           <Button variant="ghost" size="sm" onClick={onShowBranch} disabled={anyBusy}><IconGitBranch /> Show branch</Button>

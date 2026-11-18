@@ -334,11 +334,32 @@ test('worktrees left behind by a moved repository are explained, and can be repa
   await expect(dialog.getByRole('checkbox', { name: /Also delete branch/ })).toBeHidden();
   await dialog.getByRole('button', { name: 'Repair link' }).click();
 
-  await expect(dialog.getByText('Link repaired.')).toBeVisible();
+  await expect(dialog.locator('.local-refs-danger').getByText('Link repaired.')).toBeVisible();
+  await expect(dialog.getByRole('status')).toHaveText('Link repaired.');
   await expect(dialog.getByText('1 unstaged change', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Open worktree' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Open worktree' })).toBeFocused();
   await expect(rows.getByRole('option', { name: /sample-project-review/ })).not.toContainText('Broken link');
   expect(await git(review, 'status', '--porcelain')).toBe('M README.md');
+});
+
+test('a link repaired elsewhere meanwhile is shown as it is, not as repaired here', async ({ pairedPage: page, repository }) => {
+  const review = `${repository.path}-review`;
+  await repository.git('worktree', 'add', '-q', '-b', 'review', review);
+  const gitFile = await readFile(path.join(review, '.git'), 'utf8');
+  await writeFile(path.join(review, '.git'), `gitdir: ${repository.path}-gone/.git/worktrees/review\n`);
+  await openRepository(page, repository);
+  const dialog = await openBranchManager(page);
+  await dialog.getByRole('tab', { name: /^Worktrees/ }).click();
+  const row = dialog.getByRole('listbox', { name: 'Worktrees' }).getByRole('option', { name: /sample-project-review/ });
+  await row.click();
+  await expect(dialog.getByRole('button', { name: 'Repair link' })).toBeVisible();
+
+  await writeFile(path.join(review, '.git'), gitFile);
+  await dialog.getByRole('button', { name: 'Repair link' }).click();
+
+  await expect(dialog.getByRole('button', { name: 'Open worktree' })).toBeVisible();
+  await expect(row).not.toContainText('Broken link');
+  await expect(dialog.getByText('Link repaired.')).toHaveCount(0);
 });
 
 test('a folder another repository took over offers only to clean up this repository\'s entry, and leaves that repository alone', async ({ pairedPage: page, repository }) => {
