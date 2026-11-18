@@ -147,20 +147,24 @@ export interface WorktreeAgents {
  * this repository's entry for it. Git still lists it as usable, yet can neither use nor remove it.
  */
 export type BrokenWorktreeLink =
-  /** Its `.git` file names nothing usable, or a place that isn't this entry, typically because the repository was moved. */
+  /**
+   * Its `.git` file names a place that is gone, typically because the repository was moved,
+   * or names none in Git's format. Repair link can reconnect it.
+   */
   | {
     kind: 'unlinked';
     /** The folder its `.git` file names, as written there, or null when it names none. */
     pointsTo: string | null;
-    /** Whether that folder is gone, as it is after the repository moved. */
-    pointsToMissing: boolean;
+    /** That folder is on another drive than this repository, which may only be disconnected. */
+    otherDrive?: boolean;
   }
   /**
-   * The folder is now another repository's worktree (`by: 'worktree'`), or holds a repository
-   * of its own (`by: 'repository'`); `owner` is that repository's Git folder. Only this
-   * repository's entry is left over.
+   * Its `.git` leads to a place that exists and isn't this repository's entry for it: another
+   * repository's worktree record (`worktree`, `owner` being that repository's Git folder), a
+   * Git folder of its own such as a submodule's or a separate one (`repository`), or anything
+   * else (`other`). Only this repository's entry is left over.
    */
-  | { kind: 'taken'; by: 'worktree' | 'repository'; owner: string };
+  | { kind: 'taken'; by: 'worktree' | 'repository' | 'other'; owner: string };
 
 /** A worktree row annotated with whether OpenTig currently has it open. */
 export interface ManagedWorktree extends WorktreeInfo {

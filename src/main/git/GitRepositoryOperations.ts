@@ -33,7 +33,7 @@ import { REMOVE_WORKTREE_GIT_TIMEOUT_MS } from '../../shared/operation-timeouts'
 import { deleteWorktreeFolder, type RemoveEntry, type WorktreeFolderDeletion } from './worktreeDeletion';
 import { WorktreeAgentsDetector } from '../process/WorktreeAgents';
 import { holdsOnlyGitFile } from './worktreeFolder';
-import { readWorktreeRecords, recordOperation, worktreeLink, writeGitFile, type WorktreeLink, type WorktreeRecord, type WorktreeRecords } from './worktreeLink';
+import { GitFileWriteError, readWorktreeRecords, recordHoldsWork, worktreeLink, writeGitFile, type WorktreeLink, type WorktreeRecord, type WorktreeRecords } from './worktreeLink';
 import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
 
 /** What an older client is told is lost, where it can't know the worktree is unreadable or broken. */
@@ -1136,7 +1136,7 @@ export class GitRepositoryOperations {
         link.link.kind === 'unlinked' ? holdsOnlyGitFile(worktree.path) : false,
         this.recordState(repository.path, worktree, link.record),
       ]);
-      const nothingLost = onlyGitFile && record.headReachable === true && record.staged === false && record.operation === false;
+      const nothingLost = onlyGitFile && record.headReachable === true && record.staged === false && record.work === false;
       return {
         ...details, available: false, brokenLink: link.link, lastCommit, conflictCount: UNREAD_CONFLICTS,
         ...(onlyGitFile ? { onlyGitFile } : {}),
@@ -1308,10 +1308,15 @@ export class GitRepositoryOperations {
    */
   private async worktreeLink(commonDir: string, worktreePath: string, records?: WorktreeRecords): Promise<WorktreeLink> {
     const gitPath = path.join(worktreePath, '.git');
-    return worktreeLink(worktreePath, records ?? await readWorktreeRecords(commonDir), async (admin) => {
-      if (await normalizePath(path.dirname(admin)) !== await normalizePath(path.join(commonDir, 'worktrees'))) return false;
-      const back = await readFile(path.join(admin, 'gitdir'), 'utf8').catch(() => null);
-      return back !== null && await normalizePath(path.resolve(admin, back.trim())) === await normalizePath(gitPath);
+    const samePlace = (left: string, right: string) => samePath(left, right).catch(() => false);
+    return worktreeLink(worktreePath, records ?? await readWorktreeRecords(commonDir), {
+      commonDir,
+      samePath: samePlace,
+      linkedByPath: async (admin) => {
+        if (!await samePlace(path.dirname(admin), path.join(commonDir, 'worktrees'))) return false;
+        const back = await readFile(path.join(admin, 'gitdir'), 'utf8').catch(() => null);
+        return back !== null && await samePlace(path.resolve(admin, back.trim()), gitPath);
+      },
     });
   }
 
@@ -1330,9 +1335,9 @@ export class GitRepositoryOperations {
    * What cleaning up a broken worktree's record would lose, read from the repository and
    * the record without running Git in its folder; null where it can't be told.
    */
-  private async recordState(root: string, worktree: WorktreeInfo, record: WorktreeRecord): Promise<{ headReachable: boolean | null; staged: boolean | null; operation: boolean | null }> {
+  private async recordState(root: string, worktree: WorktreeInfo, record: WorktreeRecord): Promise<{ headReachable: boolean | null; staged: boolean | null; work: boolean | null }> {
     const oid = /^[0-9a-f]{40,64}$/i.test(worktree.oid) ? worktree.oid : null;
-    const [headReachable, staged, operation] = await Promise.all([
+    const [headReachable, staged, work] = await Promise.all([
       oid === null ? null : this.git.run(root, ['for-each-ref', '--count=1', `--contains=${oid}`, '--format=%(refname)', 'refs/heads', 'refs/tags'], {
         operation: 'worktree-head-reachable', readOnly: true, maxOutputBytes: 64 * 1024,
       }).then((output) => output.stdout.toString('utf8').trim() !== '', () => null),
@@ -1340,9 +1345,9 @@ export class GitRepositoryOperations {
       oid === null ? null : this.git.run(root, [`--git-dir=${record.dir}`, 'diff-index', '--cached', '--quiet', oid, '--'], {
         operation: 'worktree-staged', readOnly: true, maxOutputBytes: 64 * 1024,
       }).then(() => false, (error: unknown) => error instanceof GitOperationError && error.detail.exitCode === 1 ? true : null),
-      recordOperation(record.dir),
+      recordHoldsWork(record.dir),
     ]);
-    return { headReachable, staged, operation };
+    return { headReachable, staged, work };
   }
 
   /**
@@ -1410,7 +1415,11 @@ export class GitRepositoryOperations {
       try {
         await writeGitFile(worktree.path, link.record);
       } catch (error) {
-        return { status: 'failed', message: `its .git file could not be written (${error instanceof Error ? error.message : String(error)}), so it is unchanged.` };
+        const reason = error instanceof Error ? error.message : String(error);
+        if (error instanceof GitFileWriteError && error.state === 'damaged') {
+          return { status: 'failed', message: `writing its .git file stopped partway (${reason}), so it now holds neither the old link nor the new one${error.now === undefined ? '' : `: “${error.now.trim()}”`}.` };
+        }
+        return { status: 'failed', message: `its .git file could not be written (${reason}), so it is unchanged.` };
       }
       const now = await this.worktreeLink(repository.commonDir, worktree.path);
       return now.state === 'linked' ? { status: 'repaired' } : { status: 'failed', message: 'its .git file was rewritten, but OpenTig could not confirm that it now leads back to this repository.' };

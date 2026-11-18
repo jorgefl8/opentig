@@ -1,4 +1,8 @@
+import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitOperationError } from '../../shared/errors';
@@ -640,15 +644,12 @@ describe('GitRepositoryOperations worktree removal that deletes the folder first
     expect(await exists(path.join(library, '.git'))).toBe(true);
   }, process.platform === 'win32' ? 60_000 : 20_000);
 
-  // Windows creates links to files only with extra privileges.
-  it.skipIf(process.platform === 'win32')('falls back to Git when the folder is not a linked worktree with a .git file', async () => {
+  it('falls back to Git when the folder is not a linked worktree with a .git file', async () => {
     const fixture = await managementRepository({ worktreeDeletion: 'node', removeWorktreeEntry: async () => { throw new Error('Node deletion must not run.'); } });
     const review = await addWorktree(fixture, 'review', 'review');
     const oid = await git(review, ['rev-parse', 'HEAD']);
-    // Its `.git` is a link to a file now, which is neither linked nor provably broken, so only Git may decide what to delete.
-    const moved = path.join(fixture.root, 'moved-git-file');
-    await rename(path.join(review, '.git'), moved);
-    await symlink(moved, path.join(review, '.git'));
+    // Its `.git` file points onto a drive that isn't connected, so it is neither linked nor provably broken, and only Git may decide what to delete.
+    await pointGitFile(review, onMissingVolume('worktrees', 'review'));
     const run = vi.spyOn(fixture.gitProcess, 'run');
 
     await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, true).catch(() => undefined);
@@ -676,6 +677,24 @@ async function emptyFolder(worktree: string): Promise<void> {
 }
 
 const slow = process.platform === 'win32' ? 60_000 : 20_000;
+const run = promisify(execFile);
+
+/** A path on a drive, share or volume that isn't connected: an unused drive letter on Windows, an absent volume elsewhere. */
+function onMissingVolume(...parts: string[]): string {
+  if (process.platform === 'win32') {
+    const letter = [...'ZYXWVUTSRQPONMLKJIHGF'].find((candidate) => !existsSync(`${candidate}:\\`));
+    if (!letter) throw new Error('No unused drive letter.');
+    return path.win32.join(`${letter}:\\`, 'opentig-moved', ...parts);
+  }
+  const base = process.platform === 'darwin' ? '/Volumes' : '/media';
+  return path.posix.join(base, `opentig-missing-${randomUUID()}`, 'volume', ...parts);
+}
+
+/** A file's Windows attributes as `attrib` prints them, such as `A H R`. */
+async function attributes(file: string): Promise<string> {
+  const { stdout } = await run('attrib', [file], { windowsHide: true });
+  return stdout.slice(0, stdout.toLowerCase().indexOf(file.slice(0, 2).toLowerCase())).replace(/\s+/g, '');
+}
 
 describe('GitRepositoryOperations worktree with a broken link', () => {
   afterEach(() => { vi.restoreAllMocks(); });
@@ -691,11 +710,11 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
 
     const [main, listed] = (await fixture.operations.localRefsSnapshot(fixture.repositoryId)).worktrees;
     expect(main!.brokenLink).toBeUndefined();
-    expect(listed).toMatchObject({ prunable: null, brokenLink: { kind: 'unlinked', pointsTo: gone, pointsToMissing: true } });
+    expect(listed).toMatchObject({ prunable: null, brokenLink: { kind: 'unlinked', pointsTo: gone } });
 
     const details = await fixture.operations.worktreeDetails(fixture.repositoryId, review);
     // A client that doesn't know `brokenLink` still reads it as not clean, never as removable.
-    expect(details).toMatchObject({ available: false, brokenLink: { kind: 'unlinked', pointsTo: gone, pointsToMissing: true }, conflictCount: 1, stagedCount: 0, unstagedCount: 0, untrackedCount: 0 });
+    expect(details).toMatchObject({ available: false, brokenLink: { kind: 'unlinked', pointsTo: gone }, conflictCount: 1, stagedCount: 0, unstagedCount: 0, untrackedCount: 0 });
     expect(details.lastCommit?.oid).toBe(oid);
     expect(details.submodules).toBeUndefined();
     expect(details.unreadable).toBeUndefined();
@@ -719,7 +738,7 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
     const { id } = await fixture.repositories.openPath(moved);
 
     const before = await fixture.operations.worktreeDetails(id, review);
-    expect(before).toMatchObject({ available: false, stagedCount: 0, brokenLink: { pointsToMissing: true } });
+    expect(before).toMatchObject({ available: false, stagedCount: 0, brokenLink: { kind: 'unlinked' } });
     // Git writes forward slashes on Windows too.
     expect((before.brokenLink as { pointsTo: string }).pointsTo.replace(/\\/g, '/')).toMatch(/\/work\/\.git\/worktrees\/review$/);
     const otherGitFile = await readFile(path.join(other, '.git'), 'utf8');
@@ -731,7 +750,7 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
     expect(after.brokenLink).toBeUndefined();
     // Only the worktree asked for: the sibling the same move broke is left as it was.
     expect(await readFile(path.join(other, '.git'), 'utf8')).toBe(otherGitFile);
-    expect((await fixture.operations.worktreeDetails(id, other)).brokenLink).toMatchObject({ kind: 'unlinked', pointsToMissing: true });
+    expect((await fixture.operations.worktreeDetails(id, other)).brokenLink).toMatchObject({ kind: 'unlinked' });
     const oid = await git(review, ['rev-parse', 'HEAD']);
     expect(await fixture.operations.removeWorktree(id, review, oid)).toMatchObject({ status: 'dirty', unstagedCount: 1 });
     expect(await fixture.operations.removeWorktree(id, review, oid, true)).toMatchObject({ status: 'removed' });
@@ -802,22 +821,37 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
     expect(await git(stranger.work, ['worktree', 'list', '--porcelain'])).toContain('foreign');
   }, slow);
 
-  it('repairs from this repository without following the .git file into the repository it names', async () => {
+  it('never repairs a folder whose .git leads to a Git folder that exists and isn\'t this entry, whatever kind it is', async () => {
     const fixture = await managementRepository();
     const review = await addWorktree(fixture, 'review', 'review');
     const stranger = await standaloneRepository();
     const theirs = path.join(path.dirname(stranger.work), 'theirs');
     await git(stranger.work, ['worktree', 'add', '-b', 'theirs', theirs]);
     const theirRecord = path.join(stranger.work, '.git', 'worktrees', 'theirs');
-    const theirLink = await readFile(path.join(theirRecord, 'gitdir'), 'utf8');
-    await pointGitFile(review, theirRecord);
+    // A repository whose Git folder lives apart from its files, as with --separate-git-dir, and a submodule's.
+    const separate = path.join(fixture.root, 'separate.git');
+    await git(fixture.root, ['init', '-q', `--separate-git-dir=${separate}`, path.join(fixture.root, 'separate-work')]);
+    const plain = path.join(fixture.root, 'plain-folder');
+    await mkdir(plain);
+    const record = path.join(fixture.work, '.git', 'worktrees', 'review');
+    const cases: [string, string, () => Promise<void>][] = [
+      [theirRecord, 'worktree', async () => undefined],
+      // Its gitdir can't be read: still another repository's record.
+      [theirRecord, 'worktree', async () => { await rm(path.join(theirRecord, 'gitdir')); }],
+      [separate, 'repository', async () => undefined],
+      [plain, 'other', async () => undefined],
+    ];
+    for (const [target, by, prepare] of cases) {
+      await prepare();
+      await pointGitFile(review, target);
+      const before = await readFile(path.join(review, '.git'), 'utf8');
 
-    expect((await fixture.operations.worktreeDetails(fixture.repositoryId, review)).brokenLink).toEqual({ kind: 'unlinked', pointsTo: theirRecord, pointsToMissing: false });
-    expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'repaired' });
-
-    expect(await readFile(path.join(theirRecord, 'gitdir'), 'utf8')).toBe(theirLink);
-    expect(await git(theirs, ['status', '--porcelain'])).toBe('');
-    expect(await git(review, ['status', '--porcelain'])).toBe('');
+      expect((await fixture.operations.worktreeDetails(fixture.repositoryId, review)).brokenLink).toMatchObject({ kind: 'taken', by });
+      expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'taken' });
+      expect(await readFile(path.join(review, '.git'), 'utf8')).toBe(before);
+    }
+    expect(await exists(record)).toBe(true);
+    expect(await git(path.join(fixture.root, 'separate-work'), ['status', '--porcelain'])).toBe('');
   }, slow);
 
   it('tells when the folder holds nothing but its .git file and empty folders, without following links', async () => {
@@ -885,7 +919,9 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
     const repositoryPath = fixture.repositories.get(fixture.repositoryId).path;
 
     const details = await fixture.operations.worktreeDetails(fixture.repositoryId, review);
-    expect(details).toMatchObject({ available: false, untrackedCount: 0, brokenLink: { kind: 'taken', by: 'repository', owner: path.join(review, '.git') } });
+    expect(details).toMatchObject({ available: false, untrackedCount: 0, brokenLink: { kind: 'taken', by: 'repository' } });
+    // The same place however a temporary folder is spelled, such as with Windows' short names.
+    expect(await realPath((details.brokenLink as { owner: string }).owner)).toBe(await realPath(path.join(review, '.git')));
     expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, true)).toEqual({ status: 'broken-link' });
     expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'taken' });
     expect(run.mock.calls.filter(([cwd]) => cwd !== repositoryPath)).toEqual([]);
@@ -902,7 +938,7 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
     await rm(path.join(review, '.git'));
     await writeFile(path.join(review, '.git'), gitFile.replace('gitdir: ', 'gitdir:'));
 
-    expect((await fixture.operations.worktreeDetails(fixture.repositoryId, review)).brokenLink).toEqual({ kind: 'unlinked', pointsTo: null, pointsToMissing: false });
+    expect((await fixture.operations.worktreeDetails(fixture.repositoryId, review)).brokenLink).toEqual({ kind: 'unlinked', pointsTo: null });
     expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'repaired' });
     expect(await readFile(path.join(review, '.git'), 'utf8')).toMatch(/^gitdir: /);
     expect(await git(review, ['status', '--porcelain'])).toBe('');
@@ -951,8 +987,21 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
 
     expect(await details(clean)).toMatchObject({ onlyGitFile: true, nothingLost: true });
     expect((await details(clean)).unreachableHead).toBeUndefined();
-    await writeFile(path.join(fixture.work, '.git', 'worktrees', 'clean', 'MERGE_HEAD'), `${await git(fixture.work, ['rev-parse', 'HEAD'])}\n`);
-    expect((await details(clean)).nothingLost).toBeUndefined();
+    const cleanRecord = path.join(fixture.work, '.git', 'worktrees', 'clean');
+    const head = await git(fixture.work, ['rev-parse', 'HEAD']);
+    // Each of these is work the record holds, which cleaning it up would forget.
+    for (const [marker, write] of [
+      ['MERGE_HEAD', () => writeFile(path.join(cleanRecord, 'MERGE_HEAD'), `${head}\n`)],
+      // A cherry-pick of several commits, paused after one conflict was resolved and committed.
+      ['sequencer', () => mkdir(path.join(cleanRecord, 'sequencer'))],
+      ['refs', () => mkdir(path.join(cleanRecord, 'refs', 'worktree'), { recursive: true }).then(() => writeFile(path.join(cleanRecord, 'refs', 'worktree', 'kept'), `${head}\n`))],
+      ['refs', () => mkdir(path.join(cleanRecord, 'refs', 'bisect'), { recursive: true }).then(() => writeFile(path.join(cleanRecord, 'refs', 'bisect', 'bad'), `${head}\n`))],
+    ] as const) {
+      await write();
+      expect((await details(clean)).nothingLost).toBeUndefined();
+      await rm(path.join(cleanRecord, marker), { recursive: true, force: true });
+      expect((await details(clean)).nothingLost).toBe(true);
+    }
 
     expect(await details(staged)).toMatchObject({ onlyGitFile: true });
     expect((await details(staged)).nothingLost).toBeUndefined();
@@ -960,6 +1009,108 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
     const lost = await details(detached);
     expect(lost.nothingLost).toBeUndefined();
     expect(lost.unreachableHead).toMatchObject({ subject: 'Only on this HEAD', oid: lost.oid });
+  }, slow);
+
+  it('takes a .git file pointing onto a drive that isn\'t connected for unknown, not for proof the repository moved', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    await pointGitFile(review, onMissingVolume('.git', 'worktrees', 'review'));
+
+    expect((await fixture.operations.localRefsSnapshot(fixture.repositoryId)).worktrees.every((worktree) => worktree.brokenLink === undefined)).toBe(true);
+    expect((await fixture.operations.worktreeDetails(fixture.repositoryId, review)).brokenLink).toBeUndefined();
+    expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'not-broken' });
+  }, slow);
+
+  it.runIf(process.platform === 'win32')('says when the folder a .git file names is on another drive, which may only be disconnected', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const own = path.win32.parse(path.resolve(fixture.work)).root.toLowerCase();
+    const other = [...'CDEFGHIJKLMNOPQRSTUVWXYZ'].map((letter) => `${letter}:\\`).find((root) => root.toLowerCase() !== own && existsSync(root));
+    if (!other) return;
+    const gone = path.win32.join(other, `opentig-moved-${randomUUID()}`, '.git', 'worktrees', 'review');
+    await pointGitFile(review, gone);
+
+    expect((await fixture.operations.worktreeDetails(fixture.repositoryId, review)).brokenLink).toEqual({ kind: 'unlinked', pointsTo: gone, otherDrive: true });
+  }, slow);
+
+  it.runIf(process.platform === 'win32')('repairs a hidden .git file in place, so it stays hidden', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const gitFile = path.join(review, '.git');
+    await pointGitFile(review, path.join(fixture.root, 'gone', '.git', 'worktrees', 'review'));
+    await run('attrib', ['+h', gitFile], { windowsHide: true });
+
+    expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'repaired' });
+    expect(await attributes(gitFile)).toContain('H');
+    expect(await git(review, ['status', '--porcelain'])).toBe('');
+  }, slow);
+
+  it.runIf(process.platform === 'win32')('leaves a read-only .git file as it was, and says so', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const gitFile = path.join(review, '.git');
+    await pointGitFile(review, path.join(fixture.root, 'gone', '.git', 'worktrees', 'review'));
+    const before = await readFile(gitFile, 'utf8');
+    await run('attrib', ['+r', gitFile], { windowsHide: true });
+    try {
+      expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'failed', message: expect.stringMatching(/could not be written .*, so it is unchanged\.$/) });
+      expect(await readFile(gitFile, 'utf8')).toBe(before);
+      expect(await attributes(gitFile)).toContain('R');
+    } finally {
+      await run('attrib', ['-r', gitFile], { windowsHide: true });
+    }
+  }, slow);
+
+  // Why a repair rewrites `.git` in place on Windows rather than replacing it.
+  it.runIf(process.platform === 'win32')('on Windows, replacing a hidden .git file drops its hidden attribute, and replacing a read-only one fails', async () => {
+    const fixture = await managementRepository();
+    const outcome = async (attribute: string) => {
+      const target = path.join(fixture.root, `target-${attribute}`);
+      const replacement = path.join(fixture.root, `replacement-${attribute}`);
+      await writeFile(target, 'old\n');
+      await writeFile(replacement, 'new\n');
+      await run('attrib', [attribute, target], { windowsHide: true });
+      const renamed = await rename(replacement, target).then(() => 'renamed', (error: NodeJS.ErrnoException) => error.code ?? 'failed');
+      const result = { renamed, content: (await readFile(target, 'utf8')).trim(), attributes: (await attributes(target)).replace('A', '') };
+      await run('attrib', ['-r', '-h', target], { windowsHide: true });
+      return result;
+    };
+
+    expect(await outcome('+h')).toEqual({ renamed: 'renamed', content: 'new', attributes: '' });
+    expect(await outcome('+r')).toEqual({ renamed: 'EPERM', content: 'old', attributes: 'R' });
+  }, slow);
+
+  // Root may write anywhere, and Windows rewrites the file in place.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('leaves the .git file as it was when the new one can\'t be written, and says so', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    await pointGitFile(review, path.join(fixture.root, 'gone', '.git', 'worktrees', 'review'));
+    const before = await readFile(path.join(review, '.git'), 'utf8');
+    await chmod(review, 0o555);
+    try {
+      expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'failed', message: expect.stringMatching(/could not be written .*, so it is unchanged\.$/) });
+    } finally {
+      await chmod(review, 0o755);
+    }
+    expect(await readFile(path.join(review, '.git'), 'utf8')).toBe(before);
+  }, slow);
+
+  // Windows steps back from a link by name, as Git does there; elsewhere `..` leaves the link's target.
+  it.skipIf(process.platform === 'win32')('resolves a relative .git file from the folder\'s real location, as Git does', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const record = path.join(fixture.work, '.git', 'worktrees', 'review');
+    // Git lists the worktree through a link, at another depth than the folder itself.
+    const link = path.join(fixture.root, 'link');
+    await symlink(review, link, 'dir');
+    await writeFile(path.join(record, 'gitdir'), `${path.join(link, '.git')}\n`);
+    await rm(path.join(review, '.git'));
+    await writeFile(path.join(review, '.git'), `gitdir: ${path.relative(await realpath(review), await realpath(record))}\n`);
+    expect(await git(link, ['status', '--porcelain'])).toBe('');
+
+    const details = await fixture.operations.worktreeDetails(fixture.repositoryId, link);
+    expect(details.brokenLink).toBeUndefined();
+    expect(details).toMatchObject({ available: true, conflictCount: 0 });
   }, slow);
 
   it('says Git could not read a worktree rather than inventing a conflict, and keeps it from a plain removal', async () => {

@@ -271,7 +271,7 @@ describe('worktrees Git lost track of', () => {
   });
 
   it('offers only a cleanup for a broken link, says where it points, and promises nothing is lost only for an empty folder', () => {
-    const broken = { ...lost, prunable: null, detached: true, brokenLink: { kind: 'unlinked' as const, pointsTo: 'C:/old/repo/.git/worktrees/review', pointsToMissing: true }, conflictCount: 1 };
+    const broken = { ...lost, prunable: null, detached: true, brokenLink: { kind: 'unlinked' as const, pointsTo: 'C:/old/repo/.git/worktrees/review' }, conflictCount: 1 };
 
     const eligibility = worktreeRemoveEligibility(broken);
     expect(eligibility).toMatchObject({ allowed: false, cleanupOnly: true });
@@ -285,7 +285,7 @@ describe('worktrees Git lost track of', () => {
   });
 
   it('names a HEAD on no branch that cleaning up would leave unreachable', () => {
-    const broken = { ...lost, prunable: null, brokenLink: { kind: 'unlinked' as const, pointsTo: null, pointsToMissing: false },
+    const broken = { ...lost, prunable: null, brokenLink: { kind: 'unlinked' as const, pointsTo: null },
       unreachableHead: { oid: 'b'.repeat(40), shortOid: 'bbbbbbb', subject: 'Try a fix', author: 'A', date: '' } };
     expect(worktreeRemoveEligibility(broken).reason).toContain('Its HEAD, bbbbbbb Try a fix, is on no branch: cleaning up the entry leaves that commit unreachable.');
   });
@@ -296,6 +296,16 @@ describe('worktrees Git lost track of', () => {
     expect(explanation).toMatchObject({ lead: 'This folder is now a worktree of another repository:', path: '/sample/other/.git', repairable: false });
     expect(worktreeRemoveEligibility(taken)).toMatchObject({ allowed: false, cleanupOnly: true, reason: expect.stringContaining('This repository\'s entry for it is left over.') });
     expect(worktreeRemoveEligibility(taken).reason).not.toContain('Repair link');
+    // A folder or Git folder of no other repository: nothing to say about one.
+    const elsewhere = { ...taken, brokenLink: { kind: 'taken' as const, by: 'other' as const, owner: '/sample/somewhere' } };
+    expect(brokenLinkExplanation(elsewhere)).toMatchObject({ lead: 'Its .git file points to a folder that is not this repository\'s entry for it:', repairable: false,
+      actions: 'Clean up entry removes that entry and leaves the folder untouched.' });
+  });
+
+  it('says a folder on another drive may only be disconnected', () => {
+    const broken = { ...lost, prunable: null, brokenLink: { kind: 'unlinked' as const, pointsTo: 'E:/repos/app/.git/worktrees/review', otherDrive: true } };
+    expect(brokenLinkExplanation(broken).notes).toContain('That folder is on another drive than this repository, which may only be disconnected: connect it before you clean up the entry.');
+    expect(brokenLinkExplanation({ ...broken, brokenLink: { ...broken.brokenLink, otherDrive: false } }).notes).toEqual([]);
   });
 
   it('never offers a plain removal for a worktree whose changes Git could not read, and prefers that to the count kept for older clients', () => {

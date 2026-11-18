@@ -210,25 +210,27 @@ export interface BrokenLinkExplanation {
 
 export const REPAIR_ACTIONS = 'Repair link reconnects it to this repository. Clean up entry makes Git forget it and leaves the folder on disk.';
 export const TAKEN_ACTIONS = 'Clean up entry removes that entry and leaves the folder and the other repository untouched.';
+export const LEFT_OVER_ACTIONS = 'Clean up entry removes that entry and leaves the folder untouched.';
 
 export function brokenLinkExplanation(details: Pick<WorktreeDetails, 'brokenLink' | 'nothingLost' | 'unreachableHead'>): BrokenLinkExplanation {
-  const link: BrokenWorktreeLink = details.brokenLink ?? { kind: 'unlinked', pointsTo: null, pointsToMissing: false };
+  const link: BrokenWorktreeLink = details.brokenLink ?? { kind: 'unlinked', pointsTo: null };
   const unreachable = unreachableHeadNote(details);
   if (link.kind === 'taken') {
-    return {
-      lead: link.by === 'worktree' ? 'This folder is now a worktree of another repository:' : 'This folder now holds a repository of its own:',
-      path: link.owner, cause: 'This repository\'s entry for it is left over.', notes: unreachable ? [unreachable] : [], repairable: false, actions: TAKEN_ACTIONS,
-    };
+    const leftOver = { path: link.owner, cause: 'This repository\'s entry for it is left over.', notes: unreachable ? [unreachable] : [], repairable: false };
+    if (link.by === 'worktree') return { ...leftOver, lead: 'This folder is now a worktree of another repository:', actions: TAKEN_ACTIONS };
+    if (link.by === 'repository') return { ...leftOver, lead: 'This folder now holds a repository of its own:', actions: TAKEN_ACTIONS };
+    return { ...leftOver, lead: 'Its .git file points to a folder that is not this repository\'s entry for it:', actions: LEFT_OVER_ACTIONS };
   }
-  const notes = [...(details.nothingLost ? ['The folder has no other files, so no work would be lost.'] : []), ...(unreachable ? [unreachable] : [])];
+  const notes = [
+    ...(link.otherDrive ? ['That folder is on another drive than this repository, which may only be disconnected: connect it before you clean up the entry.'] : []),
+    ...(details.nothingLost ? ['The folder has no other files, so no work would be lost.'] : []),
+    ...(unreachable ? [unreachable] : []),
+  ];
   const base = { notes, repairable: true, actions: REPAIR_ACTIONS };
   if (link.pointsTo === null) {
     return { ...base, lead: 'Its .git file doesn\'t say where its repository is, so Git can\'t use or remove this worktree as it is.', path: null, cause: null };
   }
-  if (link.pointsToMissing) {
-    return { ...base, lead: 'Its .git file points to a folder that no longer exists:', path: link.pointsTo, cause: 'The repository was probably moved, so Git can\'t use or remove this worktree as it is.' };
-  }
-  return { ...base, lead: 'Its .git file points to a folder that is not this repository\'s entry for it:', path: link.pointsTo, cause: 'Git can\'t use or remove this worktree as it is.' };
+  return { ...base, lead: 'Its .git file points to a folder that no longer exists:', path: link.pointsTo, cause: 'The repository was probably moved, so Git can\'t use or remove this worktree as it is.' };
 }
 
 /** Names a HEAD on no branch or tag, which cleaning up the entry would leave unreachable. */

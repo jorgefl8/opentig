@@ -671,7 +671,7 @@ function BrokenLinkReason({ details }: { details: WorktreeDetails }) {
         {explanation.notes.map((note) => <span key={note}><b>{note}</b> </span>)}
         {explanation.repairable
           ? <><b>Repair link</b> reconnects it to this repository. <b>Clean up entry</b> makes Git forget it and leaves the folder on disk.</>
-          : <><b>Clean up entry</b> removes that entry and leaves the folder and the other repository untouched.</>}
+          : <><b>Clean up entry</b>{explanation.actions.slice('Clean up entry'.length)}</>}
       </span>
     </p>
   );
@@ -685,7 +685,7 @@ function BrokenLinkCleanup({ details }: { details: WorktreeDetails }) {
   return (
     <>
       {details.brokenLink?.kind === 'taken'
-        ? <>Remove this repository's entry for the worktree at {path}? The folder and the other repository stay as they are. </>
+        ? <>Remove this repository's entry for the worktree at {path}? {details.brokenLink.by === 'other' ? 'The folder stays as it is.' : 'The folder and the other repository stay as they are.'} </>
         : details.onlyGitFile
         ? <>Remove Git's entry for this worktree? The folder {path} stays on disk with only its .git file, so delete it yourself. {details.nothingLost ? null : <>Git also forgets {forgotten} </>}</>
         : <>Remove Git's entry for this worktree? Its files stay in {path}, but Git forgets {forgotten} </>}
