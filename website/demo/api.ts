@@ -111,7 +111,7 @@ export const opentig: OpenTigApi = {
       preferences,
       performanceAutomation: false,
       // The sample answers the commands of these features as an installed server would.
-      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true, fileHistory: true, pullRequestFiles: true },
+      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true, fileHistory: true, pullRequestFiles: true, commitAuthorAvatars: true },
     }),
     capabilities: async () => ({
       runtimeMode: "headless",
@@ -443,6 +443,8 @@ export const opentig: OpenTigApi = {
     getPullRequestFiles: async (_id, number, scope) => demoPulls.files(number, scope.commitOid),
     getPullRequestFileDiff: async (_id, number, scope, file) => demoPulls.fileDiff(number, file.path, scope.commitOid),
     getPullRequestCommits: async (_id, number) => ({ commits: demoPulls.get(number).commits, complete: true }),
+    // The sample's commits are not on GitHub, so their authors have no picture.
+    getCommitAuthorAvatar: async () => null,
     listReleases: async (_id, fresh) => fromGitHub("releases", fresh, () => demoReleases.list()),
     getRelease: async (_id, tagName) => demoReleases.get(tagName),
     checkReleaseTag: async (_id, tagName) => demoReleases.checkTag(tagName),

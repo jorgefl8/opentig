@@ -21,6 +21,7 @@ import { PR_CONVERSATION_QUERY, parsePullRequestConversation } from './PullReque
 import { PullRequestActionRunner } from './PullRequestActionRunner';
 import { GitHubReleases } from './GitHubReleases';
 import { GitHubActions } from './GitHubActions';
+import { COMMIT_AUTHOR_AVATAR_OPERATION, CommitAuthorAvatars } from './CommitAuthorAvatars';
 import { withPrivateTextFile, type GhRunOptions, type GitHubChange } from './GitHubAccess';
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestLineCounts, parsePullRequestList, PR_DETAIL_FIELDS, PR_FINISHED_LIST_FIELDS, PR_LINE_COUNT_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
@@ -128,6 +129,7 @@ export class GitHubService {
   private readonly actions: PullRequestActionRunner;
   private readonly releases: GitHubReleases;
   private readonly actionRuns: GitHubActions;
+  private readonly commitAuthorAvatars: CommitAuthorAvatars;
   gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
   readonly accounts: GitHubAccountsService;
 
@@ -165,6 +167,17 @@ export class GitHubService {
     this.actions = new PullRequestActionRunner(access);
     this.releases = new GitHubReleases(access);
     this.actionRuns = new GitHubActions(access);
+    this.commitAuthorAvatars = new CommitAuthorAvatars({
+      repository: async (repositoryId) => ({ path: this.repositories.get(repositoryId).path, nameWithOwner: (await this.repositoryInfo(repositoryId)).nameWithOwner }),
+      authorEmail: async (cwd, oid) => {
+        try {
+          const output = await this.git.run(cwd, ['show', '--no-patch', '--format=%ae', `${oid}^{commit}`, '--'], { operation: COMMIT_AUTHOR_AVATAR_OPERATION, readOnly: true, maxOutputBytes: 64 * 1024 });
+          return output.stdout.toString('utf8').trim() || null;
+        } catch { return null; }
+      },
+      requireGitHub: (repositoryId, operation) => this.requireGitHub(repositoryId, operation),
+      run: (executable, args, options) => this.run(executable, args, options),
+    });
   }
 
   /**
@@ -881,6 +894,11 @@ export class GitHubService {
       const known = new Map(details.commits.map(commit => [commit.oid, commit]));
       return { commits: local.map(commit => known.get(commit.oid) ?? commit), complete: true };
     });
+  }
+
+  /** The GitHub picture of a commit's author, or null; see `CommitAuthorAvatars`. */
+  getCommitAuthorAvatar(repositoryId: string, oid: string): Promise<string | null> {
+    return this.commitAuthorAvatars.avatar(repositoryId, oid);
   }
 
   getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {

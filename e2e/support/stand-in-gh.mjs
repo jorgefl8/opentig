@@ -131,6 +131,12 @@ if (command === 'api') {
     done({ name, full_name: world.nameWithOwner, owner: { login: owner }, private: false, default_branch: 'main', permissions: { admin: false, maintain: false, push: true, triage: true, pull: true } });
   }
   if (endpoint?.startsWith(`repos/${world.nameWithOwner}/actions/`)) done({ total_count: 0, workflow_runs: [], workflows: [] });
+  const commit = endpoint?.startsWith(`repos/${world.nameWithOwner}/commits/`) ? endpoint.split('/').at(-1) : undefined;
+  if (commit) {
+    // The author's picture, as `--jq '.author.avatar_url // ""'` cuts GitHub's answer down to it.
+    if (!world.commitAvatars || !(commit in world.commitAvatars)) refuse(`gh: No commit found for SHA: ${commit} (HTTP 422)`);
+    done(`${world.commitAvatars[commit] ?? ''}\n`);
+  }
   refuse('HTTP 404: Not Found (stand-in)');
 }
 refuse(`unknown command ${JSON.stringify(args)} for the stand-in GitHub CLI`);

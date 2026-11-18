@@ -85,4 +85,6 @@ export interface OpenTigServerIdentity {
    * (`brokenLink`) or whose changes Git can't read (`unreadable`). Absent on servers older than it.
    */
   worktreeRepair?: true;
+  /** Answers `github:commit-author-avatar`. Absent on servers older than it. */
+  commitAuthorAvatars?: true;
 }

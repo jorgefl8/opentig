@@ -577,3 +577,14 @@ describe('GitHub native stacks', () => {
     }
   });
 });
+describe('commit author pictures', () => {
+  it("reads the author from Git and asks GitHub about the commit in the remote's repository", async () => {
+    const oid = 'd'.repeat(40);
+    const shown: string[][] = [];
+    const { service, run } = fixture((args) => ({ exitCode: 0, stdout: args[0] === 'api' ? 'https://avatars.githubusercontent.com/u/9?v=4\n' : '', stderr: '' }), undefined, undefined,
+      (args) => { if (args[0] !== 'show') return undefined; shown.push(args); return 'ada@example.com\n'; });
+    expect(await service.getCommitAuthorAvatar('repo', oid)).toBe('https://avatars.githubusercontent.com/u/9?v=4&s=64');
+    expect(shown).toEqual([['show', '--no-patch', '--format=%ae', `${oid}^{commit}`, '--']]);
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user').map(([, args]) => args[1])).toEqual([`repos/example/demo/commits/${oid}`]);
+  });
+});

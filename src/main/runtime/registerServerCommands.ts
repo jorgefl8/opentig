@@ -646,6 +646,7 @@ export function registerServerCommands(
   handleWithContext(IPC.githubPrListStacks, 'gh-pr-list-stacks', (context, id, numbers) => services.github.listPullRequestStacks(stringArg(id, 'gh-pr-list-stacks', 64), prNumbersArg(numbers, 'gh-pr-list-stacks'), context.kept));
   handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber, range) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff'), pullRequestRangeArg(range, 'gh-pr-diff')));
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));
+  handle(IPC.githubCommitAuthorAvatar, 'gh-commit-author-avatar', (id, oid) => services.github.getCommitAuthorAvatar(stringArg(id, 'gh-commit-author-avatar', 64), oidArg(oid, 'gh-commit-author-avatar')));
   handle(IPC.githubPrFiles, 'gh-pr-files', (id, prNumber, scope) => services.github.getPullRequestFiles(stringArg(id, 'gh-pr-files', 64), prNumberArg(prNumber, 'gh-pr-files'), pullRequestFilesScopeArg(scope, 'gh-pr-files')));
   handle(IPC.githubPrFileDiff, 'gh-pr-file-diff', (id, prNumber, scope, file) => services.github.getPullRequestFileDiff(
     stringArg(id, 'gh-pr-file-diff', 64), prNumberArg(prNumber, 'gh-pr-file-diff'), pullRequestFilesScopeArg(scope, 'gh-pr-file-diff'), pullRequestFileArg(file, 'gh-pr-file-diff'),

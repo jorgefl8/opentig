@@ -45,6 +45,8 @@ export interface GitHubWorld {
   clone?: string;
   /** How long `gh pr list` takes to list the pull requests, to see what shows while the list is read. */
   pullListDelayMs?: number;
+  /** The commits GitHub has, by id, with the picture of the account it links each one's author to, or null for none. */
+  commitAvatars?: Record<string, string | null>;
 }
 
 /** Sets what the stand-in GitHub CLI reports. Each of its runs reads it again, so a journey can change it as it goes. */

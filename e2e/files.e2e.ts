@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { colorPreview, colorSwatches, hoverCenter, openRepository } from './support/app';
+import { cloneOfGitHub, colorPreview, colorSwatches, hoverCenter, openRepository } from './support/app';
 import { expect, test, type GitRepository } from './support/fixtures';
 
 /** Opens the repository and shows its Files tree. */
@@ -346,8 +346,10 @@ test('an edited line reads "Not committed yet" and line blame can be turned off'
 
   await expect(page.getByRole('tablist', { name: 'Open files' }).getByRole('tab', { name: 'notes.txt, unsaved changes' })).toBeVisible();
   await expect(blameText(page)).toHaveText('Not committed yet');
+  // A line that isn't in a commit has no author, and so no picture.
   const card = await openBlameCard(page);
   await expect(card.getByText('This line has changes, saved or unsaved, that are not in a commit yet.')).toBeVisible();
+  await expect(card.locator('.line-blame-card-avatar')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Hide line blame' }).click();
   await expect(blameText(page)).toBeHidden();
@@ -409,4 +411,82 @@ test('a read-only file, which has no caret, shows the blame of the line clicked'
   // A click outside the editor lets the line go.
   await fileTree(page).click();
   await expect(blameText(page)).toBeHidden();
+});
+
+test('without GitHub the blame card keeps the placeholder in place of the picture', async ({ pairedPage: page, repository }) => {
+  await commitAs(repository, 'Grace Hopper', 'grace@example.com', 'notes.txt', 'First line\n', 'Add notes');
+  await openFiles(page, repository);
+
+  await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
+  await editorLine(page, 1).click();
+  const card = await openBlameCard(page);
+  const avatar = card.locator('.line-blame-card-avatar');
+  await expect(avatar.locator('svg')).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(avatar.locator('img')).toHaveCount(0);
+  await expect(avatar).toHaveCSS('width', '32px');
+});
+
+test.describe('with GitHub', () => {
+  // GitHub is a stand-in CLI (see support/stand-in-gh.mjs), and its pictures are served by the test.
+  test.use({ standInGitHub: true });
+
+  /** A 1×1 PNG. */
+  const PICTURE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+
+  test('the blame card shows the author\'s GitHub picture, asked for once the card opens and once per author', async ({ pairedPage: page, repository, github, server }) => {
+    await cloneOfGitHub(repository);
+    await commitAs(repository, 'Grace Hopper', 'grace@example.com', 'notes.txt', 'First line\n', 'Add notes');
+    await commitAs(repository, 'Grace Hopper', 'grace@example.com', 'notes.txt', 'First line\nSecond line\n', 'Add a second line');
+    const [first, second] = await Promise.all([repository.git('rev-parse', 'HEAD~1'), repository.git('rev-parse', 'HEAD')]);
+    await github({ login: 'e2e-tester', nameWithOwner: 'e2e/sample-project', pulls: [], commitAvatars: {
+      [first]: 'https://avatars.githubusercontent.com/u/1?v=4', [second]: 'https://avatars.githubusercontent.com/u/1?v=4',
+    } });
+    const pictures: string[] = [];
+    await page.route('https://avatars.githubusercontent.com/**', (route) => {
+      pictures.push(route.request().url());
+      return route.fulfill({ contentType: 'image/png', body: PICTURE });
+    });
+    const commitReads = async () => (await readFile(`${server.githubWorld}.log`, 'utf8').catch(() => '')).split('\n').filter((line) => line.includes('/commits/')).length;
+    await openFiles(page, repository);
+
+    await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
+    await editorLine(page, 1).click();
+    await expect(blameText(page)).toHaveText(/^Grace Hopper, .+ • Add notes$/);
+    // The text alone asks GitHub nothing.
+    await page.waitForTimeout(500);
+    expect(await commitReads()).toBe(0);
+
+    let card = await openBlameCard(page);
+    const avatar = card.locator('.line-blame-card-avatar img');
+    await expect(avatar).toHaveAttribute('src', 'https://avatars.githubusercontent.com/u/1?v=4&s=64');
+    await expect(avatar).toBeVisible();
+    expect(await commitReads()).toBe(1);
+    expect(pictures[0]).toBe('https://avatars.githubusercontent.com/u/1?v=4&s=64');
+
+    // Another commit by the same author shows the picture without asking GitHub again.
+    await page.mouse.move(0, 0);
+    await expect(card).toBeHidden();
+    await editorLine(page, 2).click();
+    await expect(blameText(page)).toHaveText(/^Grace Hopper, .+ • Add a second line$/);
+    card = await openBlameCard(page);
+    await expect(card.locator('.line-blame-card-avatar img')).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(await commitReads()).toBe(1);
+  });
+
+  test('a commit GitHub does not have keeps the placeholder in the blame card', async ({ pairedPage: page, repository, github }) => {
+    await cloneOfGitHub(repository);
+    await commitAs(repository, 'Grace Hopper', 'grace@example.com', 'notes.txt', 'First line\n', 'Add notes');
+    // Not pushed: GitHub has none of the commits.
+    await github({ login: 'e2e-tester', nameWithOwner: 'e2e/sample-project', pulls: [] });
+    await openFiles(page, repository);
+
+    await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
+    await editorLine(page, 1).click();
+    const card = await openBlameCard(page);
+    await expect(card.locator('.line-blame-card-avatar svg')).toBeVisible();
+    await page.waitForTimeout(800);
+    await expect(card.locator('.line-blame-card-avatar img')).toHaveCount(0);
+  });
 });

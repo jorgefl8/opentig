@@ -20,9 +20,11 @@ export interface ServerFeatures {
   repositoryPerClient: boolean;
   /** `refs.repairWorktree`. */
   worktreeRepair: boolean;
+  /** `github.getCommitAuthorAvatar`. */
+  commitAuthorAvatars: boolean;
 }
 
-export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, pullRequestFiles: false, repositoryPerClient: false, worktreeRepair: false };
+export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, pullRequestFiles: false, repositoryPerClient: false, worktreeRepair: false, commitAuthorAvatars: false };
 
 export function serverFeatures(identity: OpenTigServerIdentity | undefined): ServerFeatures {
   return {
@@ -31,6 +33,7 @@ export function serverFeatures(identity: OpenTigServerIdentity | undefined): Ser
     pullRequestFiles: identity?.pullRequestFiles === true,
     repositoryPerClient: identity?.repositoryPerClient === true,
     worktreeRepair: identity?.worktreeRepair === true,
+    commitAuthorAvatars: identity?.commitAuthorAvatars === true,
   };
 }
 

@@ -5,6 +5,9 @@ import { formatDateTime } from '@shared/date-format';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
+import { GitHubAvatar } from '@/features/pulls/GitHubAvatar';
+import { useServerFeatures } from '@/lib/server-features';
+import { useCommitAuthorAvatar } from './blame-avatar';
 import { FileViewerToolbarButton } from './FileViewerToolbar';
 import { LineBlameContext } from './line-blame-context';
 import { useLineBlame } from './useLineBlame';
@@ -81,6 +84,7 @@ export function LineBlameLayer({ path, text, savedText, layoutKey, editing }: { 
   const settings = useContext(LineBlameContext);
   const phone = useMobileChrome() !== null;
   const enabled = Boolean(settings?.enabled) && !phone;
+  const features = useServerFeatures();
   const result = useLineBlame({
     enabled,
     repositoryId: settings?.repositoryId ?? '',
@@ -210,6 +214,13 @@ export function LineBlameLayer({ path, text, savedText, layoutKey, editing }: { 
     };
   }, [layoutKey, target, text, visible]);
 
+  const cardOpen = cardLine !== null && blame !== null && position !== null;
+  const avatar = useCommitAuthorAvatar({
+    enabled: enabled && cardOpen && features.commitAuthorAvatars,
+    repositoryId: settings?.repositoryId ?? '',
+    commit: blame?.commit ?? null,
+  });
+
   if (!enabled || !settings) return null;
   const ghostStyle: CSSProperties | undefined = position ? {
     top: position.top,
@@ -219,7 +230,6 @@ export function LineBlameLayer({ path, text, savedText, layoutKey, editing }: { 
     lineHeight: `${position.height}px`,
     fontSize: position.fontSize,
   } : undefined;
-  const cardOpen = cardLine !== null && blame !== null && position !== null;
 
   return (
     <div ref={layerRef} className="line-blame-layer">
@@ -242,7 +252,7 @@ export function LineBlameLayer({ path, text, savedText, layoutKey, editing }: { 
                 if (timers.current.close === undefined) timers.current.close = window.setTimeout(() => { timers.current.close = undefined; setCardLine(null); }, CARD_CLOSE_DELAY_MS);
               }}
             >
-              {blame && <LineBlameCard blame={blame} now={now} onOpenCommit={(oid, subject) => { setCardLine(null); overPopup.current = false; settings.openCommit(oid, subject); }} />}
+              {blame && <LineBlameCard blame={blame} now={now} avatar={avatar} onOpenCommit={(oid, subject) => { setCardLine(null); overPopup.current = false; settings.openCommit(oid, subject); }} />}
             </Popover.Popup>
           </Popover.Positioner>
         </Popover.Portal>
@@ -251,9 +261,11 @@ export function LineBlameLayer({ path, text, savedText, layoutKey, editing }: { 
   );
 }
 
-function LineBlameCard({ blame, now, onOpenCommit }: {
+/** The commit card. `avatar` is the author's picture once it has loaded; until then, and without one, a placeholder of the same size. */
+export function LineBlameCard({ blame, now, avatar, onOpenCommit }: {
   blame: NonNullable<ReturnType<typeof blameForLine>>;
   now: number;
+  avatar: string | null;
   onOpenCommit(oid: string, subject: string): void;
 }) {
   const { commit, originalLine } = blame;
@@ -268,8 +280,11 @@ function LineBlameCard({ blame, now, onOpenCommit }: {
   return (
     <>
       <div className="line-blame-card-author">
-        <p className="line-blame-card-title">{commit.authorName}</p>
-        {commit.authorEmail && <p className="line-blame-card-meta">{commit.authorEmail}</p>}
+        <GitHubAvatar key={avatar ?? ''} src={avatar} className="line-blame-card-avatar" />
+        <div className="line-blame-card-author-name">
+          <p className="line-blame-card-title">{commit.authorName}</p>
+          {commit.authorEmail && <p className="line-blame-card-meta">{commit.authorEmail}</p>}
+        </div>
       </div>
       <p className="line-blame-card-meta">{formatBlameAge(commit.authoredAt, now)} · {formatDateTime(commit.authoredAt)}</p>
       <p className="line-blame-card-summary">{commit.summary}</p>

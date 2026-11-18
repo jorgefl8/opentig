@@ -43,6 +43,42 @@
 
 .line-blame-card-meta { color: var(--muted-foreground); }
 
+.line-blame-card-author {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.line-blame-card-author-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Drawn like the pull request avatars; the placeholder icon holds the picture's place until it arrives. */
+.line-blame-card-avatar {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.line-blame-card-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.line-blame-card-avatar svg {
+  width: 100%;
+  height: 100%;
+  color: var(--muted-foreground);
+}
+
 .line-blame-card-summary {
   overflow-wrap: anywhere;
   line-height: 1.45;

@@ -3,6 +3,7 @@ import type { OpenTigServerApi } from './server-api';
 import { AI_SERVER_TIMEOUT_MS } from './ai-timeouts';
 import {
   CLIENT_TIMEOUT_MARGIN_MS,
+  COMMIT_AUTHOR_AVATAR_TIMEOUT_MS,
   COMMIT_TIMEOUT_MS,
   FETCH_TIMEOUT_MS,
   GITHUB_ACTION_TIMEOUT_MS,
@@ -177,6 +178,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.getPullRequestFiles': command(IPC.githubPrFiles, 'gh-pr-files', false, { timeoutMs: PULL_REQUEST_DIFF_TIMEOUT_MS }),
   'github.getPullRequestFileDiff': command(IPC.githubPrFileDiff, 'gh-pr-file-diff', false, { timeoutMs: PULL_REQUEST_DIFF_TIMEOUT_MS }),
   'github.getPullRequestCommits': command(IPC.githubPrCommits, 'gh-pr-commits', false, { timeoutMs: PULL_REQUEST_COMMITS_TIMEOUT_MS }),
+  'github.getCommitAuthorAvatar': command(IPC.githubCommitAuthorAvatar, 'gh-commit-author-avatar', false, { timeoutMs: COMMIT_AUTHOR_AVATAR_TIMEOUT_MS }),
   'github.createPullRequest': command(IPC.githubPrCreate, 'gh-pr-create', true, { timeoutMs: PULL_REQUEST_CREATE_TIMEOUT_MS }),
   'github.listReleases': command(IPC.githubReleaseList, 'gh-release-list', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.getRelease': command(IPC.githubReleaseView, 'gh-release-view', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),

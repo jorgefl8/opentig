@@ -36,6 +36,13 @@ export const PULL_REQUEST_DIFF_TIMEOUT_MS = GITHUB_NETWORK_TIMEOUT_MS + 2 * PULL
 /** The PR's details, downloading its head and base, then the commit list. */
 export const PULL_REQUEST_COMMITS_TIMEOUT_MS = GITHUB_NETWORK_TIMEOUT_MS + 2 * PULL_REQUEST_FETCH_TIMEOUT_MS + 60_000 + STEP_MARGIN_MS;
 
+/**
+ * The longest a commit author's picture is waited for, all steps included. It only decorates the
+ * blame card, so a slow GitHub ends it early and the card keeps its placeholder.
+ */
+export const COMMIT_AUTHOR_AVATAR_READ_TIMEOUT_MS = 15_000;
+export const COMMIT_AUTHOR_AVATAR_TIMEOUT_MS = COMMIT_AUTHOR_AVATAR_READ_TIMEOUT_MS + 5_000;
+
 /** A status read that repeats while a PR is open, so a slow GitHub ends quickly. */
 export const GITHUB_LIVE_READ_TIMEOUT_MS = 20_000;
 /** One GitHub CLI call that changes something. */
