@@ -80,4 +80,9 @@ export interface OpenTigServerIdentity {
    * than it, where every client shares one repository.
    */
   repositoryPerClient?: true;
+  /**
+   * Answers `refs:repair-worktree`, and reports a worktree whose link to the repository is broken
+   * (`brokenLink`) or whose changes Git can't read (`unreadable`). Absent on servers older than it.
+   */
+  worktreeRepair?: true;
 }

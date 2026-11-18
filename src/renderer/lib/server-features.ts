@@ -18,9 +18,11 @@ export interface ServerFeatures {
    * address opens its repository at once instead of offering to.
    */
   repositoryPerClient: boolean;
+  /** `refs.repairWorktree`. */
+  worktreeRepair: boolean;
 }
 
-export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, pullRequestFiles: false, repositoryPerClient: false };
+export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, pullRequestFiles: false, repositoryPerClient: false, worktreeRepair: false };
 
 export function serverFeatures(identity: OpenTigServerIdentity | undefined): ServerFeatures {
   return {
@@ -28,6 +30,7 @@ export function serverFeatures(identity: OpenTigServerIdentity | undefined): Ser
     fileHistory: identity?.fileHistory === true,
     pullRequestFiles: identity?.pullRequestFiles === true,
     repositoryPerClient: identity?.repositoryPerClient === true,
+    worktreeRepair: identity?.worktreeRepair === true,
   };
 }
 

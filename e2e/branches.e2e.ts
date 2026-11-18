@@ -362,6 +362,32 @@ test('a link repaired elsewhere meanwhile is shown as it is, not as repaired her
   await expect(dialog.getByText('Link repaired.')).toHaveCount(0);
 });
 
+test('a server that can\'t repair a link is never asked to, and its entry can still be cleaned up', async ({ pairedPage: page, repository }) => {
+  // The page takes the server for one older than repairing, which doesn't announce it.
+  await page.routeWebSocket(/\/ws$/, (client) => {
+    const server = client.connectToServer();
+    client.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      const parsed = JSON.parse(String(message)) as { type?: string; result?: { value?: { server?: Record<string, unknown> } } };
+      if (parsed.type !== 'result' || !parsed.result?.value?.server) return client.send(message);
+      delete parsed.result.value.server.worktreeRepair;
+      client.send(JSON.stringify(parsed));
+    });
+  });
+  await page.reload();
+  const review = `${repository.path}-review`;
+  await repository.git('worktree', 'add', '-q', '-b', 'review', review);
+  await writeFile(path.join(review, '.git'), `gitdir: ${repository.path}-gone/.git/worktrees/review\n`);
+  await openRepository(page, repository);
+  const dialog = await openBranchManager(page);
+  await dialog.getByRole('tab', { name: /^Worktrees/ }).click();
+  await dialog.getByRole('listbox', { name: 'Worktrees' }).getByRole('option', { name: /sample-project-review/ }).click();
+
+  await expect(dialog.getByText(/so Git can't use or remove this worktree as it is\. Clean up entry makes Git forget it and leaves the folder on disk\./)).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Repair link' })).toBeHidden();
+  await expect(dialog.getByRole('button', { name: 'Clean up entry' })).toBeVisible();
+});
+
 test('a folder another repository took over offers only to clean up this repository\'s entry, and leaves that repository alone', async ({ pairedPage: page, repository }) => {
   const taken = `${repository.path}-taken`;
   await repository.git('worktree', 'add', '-q', '-b', 'taken', taken);

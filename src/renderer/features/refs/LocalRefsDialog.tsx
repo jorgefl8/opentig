@@ -28,6 +28,7 @@ import { RemoteBranchDetailPanel } from './RemoteBranchDetailPanel';
 import { AgentLabel } from './AgentLabel';
 import { Spinner } from '@/components/ui/spinner';
 import { detachedHeadLabel, shortCommitId } from './detached-head';
+import { useServerFeatures } from '@/lib/server-features';
 
 const DISMISSED_NOTICES_KEY = 'opentig.dismissedWorktreeRemovalNotices';
 
@@ -568,6 +569,8 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
   const cleanup = eligibility.cleanupOnly === true;
   const removalAllowed = eligibility.allowed || force;
   const brokenLink = details.brokenLink ?? null;
+  // A server older than repairing never reports a broken link; this keeps the button off one that can't repair.
+  const canRepair = useServerFeatures().worktreeRepair;
   // A broken worktree's branch keeps its checkout and work in the folder, so its clean-up never deletes it.
   const branchDeletion = deleteBranch && !brokenLink;
   const openRef = useRef<HTMLButtonElement>(null);
@@ -624,9 +627,9 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
           </p>
         </div>
       ) : <DestructiveSection
-        reason={brokenLink && cleanup ? <BrokenLinkReason details={details} /> : eligibility.reason}
+        reason={brokenLink && cleanup ? <BrokenLinkReason details={details} canRepair={canRepair} /> : eligibility.reason}
         notice={repaired ? <p className="local-refs-reason"><IconCheck className="local-refs-ok" aria-hidden="true" /><span>Link repaired.</span></p> : null}
-        extraAction={brokenLink?.kind === 'unlinked' && !details.main ? (
+        extraAction={brokenLink?.kind === 'unlinked' && !details.main && canRepair ? (
           <Button variant="ghost" size="sm" className="local-refs-repair" onClick={() => { if (!repairing) onRepair(); }} disabled={anyBusy && !repairing} aria-disabled={repairing || undefined}>
             {repairing ? <Spinner /> : <IconLink />} {repairing ? 'Repairing…' : 'Repair link'}
           </Button>
@@ -659,7 +662,7 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
 }
 
 /** Where a broken link points or whose folder it is now, and the ways out, with the path on its own line. */
-function BrokenLinkReason({ details }: { details: WorktreeDetails }) {
+function BrokenLinkReason({ details, canRepair }: { details: WorktreeDetails; canRepair: boolean }) {
   const explanation = brokenLinkExplanation(details);
   return (
     <p className="local-refs-reason">
@@ -669,8 +672,10 @@ function BrokenLinkReason({ details }: { details: WorktreeDetails }) {
         {explanation.path ? <span className="local-refs-path local-refs-selectable">{explanation.path}</span> : ' '}
         {explanation.cause && <>{explanation.cause} </>}
         {explanation.notes.map((note) => <span key={note}><b>{note}</b> </span>)}
-        {explanation.repairable
+        {explanation.repairable && canRepair
           ? <><b>Repair link</b> reconnects it to this repository. <b>Clean up entry</b> makes Git forget it and leaves the folder on disk.</>
+          : explanation.repairable
+          ? <><b>Clean up entry</b> makes Git forget it and leaves the folder on disk.</>
           : <><b>Clean up entry</b>{explanation.actions.slice('Clean up entry'.length)}</>}
       </span>
     </p>
