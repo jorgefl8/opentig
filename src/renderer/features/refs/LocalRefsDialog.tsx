@@ -73,6 +73,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   // The worktree whose link is being repaired, and the one whose link was just repaired, until another one is selected.
   const [repairingPath, setRepairingPath] = useState<string | null>(null);
   const [repairedPath, setRepairedPath] = useState<string | null>(null);
+  // After a repair, focus belongs on what the worktree now offers until the user moves it.
+  const repairFocus = useRef(false);
   // Read out by screen readers: the button that started a repair is gone once it succeeds.
   const [announcement, setAnnouncement] = useState('');
   // Removals this window started, shown until the server's snapshot takes over.
@@ -170,6 +172,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     setActionError(null);
     setCopied(false);
     setRepairedPath(null);
+    repairFocus.current = false;
     setAnnouncement('');
   }, [open]);
 
@@ -178,6 +181,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     setActionError(null);
     setCopied(false);
     setRepairedPath(null);
+    repairFocus.current = false;
     setAnnouncement('');
   }, [tab, selectedBranch, selectedWorktree]);
 
@@ -277,6 +281,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
         await load();
         // Only a repair made here is reported; one made elsewhere just shows the worktree as it is now.
         if (result.status === 'repaired') {
+          repairFocus.current = true;
           setRepairedPath(target.path);
           setAnnouncement('Link repaired.');
         }
@@ -474,6 +479,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 repairing={repairingPath !== null && samePath(repairingPath, worktreeDetails.path)}
                 repaired={repairedPath !== null && samePath(repairedPath, worktreeDetails.path) && worktreeDetails.available && !worktreeDetails.brokenLink && !worktreeDetails.prunable}
                 anyBusy={Boolean(busy)}
+                focusWanted={repairFocus}
                 confirming={confirming === 'remove-worktree'}
                 actionError={actionError}
                 copied={copied}
@@ -555,11 +561,11 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   );
 }
 
-function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault, removing, repairing, repaired, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onRepair, onCopyPath, onOpen, onShowBranch }: {
+function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault, removing, repairing, repaired, anyBusy, focusWanted, confirming, actionError, copied, onConfirm, onCancel, onRemove, onRepair, onCopyPath, onOpen, onShowBranch }: {
   details: WorktreeDetails;
   /** HEAD's commit, shortened as Git abbreviates it (see `shortCommitId`). */
   shortOid: string | null;
-  agents: string[]; deleteBranchByDefault: boolean; removing: boolean; repairing: boolean; repaired: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
+  agents: string[]; deleteBranchByDefault: boolean; removing: boolean; repairing: boolean; repaired: boolean; anyBusy: boolean; focusWanted: { current: boolean }; confirming: boolean; actionError: string | null; copied: boolean;
   onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean, cleanupOnly: boolean): void; onRepair(): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
 }) {
   const [deleteBranch, setDeleteBranch] = useState(deleteBranchByDefault);
@@ -575,15 +581,34 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
   const branchDeletion = deleteBranch && !brokenLink;
   const openRef = useRef<HTMLButtonElement>(null);
   const copyRef = useRef<HTMLButtonElement>(null);
-  const focusedRepair = useRef(false);
   useEffect(() => setDeleteBranch(deleteBranchByDefault), [details.path, deleteBranchByDefault]);
-  // Repair link is gone once it worked, so focus moves to what the worktree now offers.
+  // Repair link is gone once it worked, so focus moves to what the worktree now offers. The read that
+  // follows a repair redraws this panel and disables its buttons for a moment, and each time the
+  // dialog takes the focus its button lost. So focus is given back whenever it falls to the dialog
+  // itself, until the user presses a key or the pointer, which is theirs to place.
   useEffect(() => {
-    if (!repaired) { focusedRepair.current = false; return; }
-    if (anyBusy || focusedRepair.current) return;
-    focusedRepair.current = true;
-    (openRef.current ?? copyRef.current)?.focus();
-  }, [repaired, anyBusy]);
+    if (!repaired || !focusWanted.current) return;
+    const give = () => {
+      if (!focusWanted.current) return;
+      const target = openRef.current ?? copyRef.current;
+      const active = document.activeElement;
+      const dropped = active === null || active === document.body || active.getAttribute('role') === 'dialog';
+      if (target && !target.disabled && active !== target && dropped) target.focus();
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof Element && event.target.getAttribute('role') === 'dialog') give();
+    };
+    const release = () => { focusWanted.current = false; };
+    give();
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('keydown', release, true);
+    document.addEventListener('pointerdown', release, true);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('keydown', release, true);
+      document.removeEventListener('pointerdown', release, true);
+    };
+  }, [repaired, anyBusy, focusWanted]);
   return (
     <>
       <div className="local-refs-detail-head">
