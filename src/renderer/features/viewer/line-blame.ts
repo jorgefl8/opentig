@@ -43,15 +43,17 @@ export function blameForLine(result: LineBlameResult | null, lineNumber: number)
 }
 
 /**
- * Which line shows its blame: the hovered line wins; otherwise the caret's
- * line while the editor has focus, as an editor's current-line blame does.
+ * Which line shows its blame: the line you clicked. While the file can be
+ * edited that is the caret's line, shown while the editor has focus; a
+ * read-only file has no caret, so it is the line a click selected.
  */
-export function blameTargetLine({ hovered, caret, focused }: { hovered: number | null; caret: number | null; focused: boolean }): number | null {
-  return hovered ?? (focused ? caret : null);
+export function blameTargetLine({ editing, caret, focused, clicked }: { editing: boolean; caret: number | null; focused: boolean; clicked: number | null }): number | null {
+  if (!editing) return clicked;
+  return focused ? caret : null;
 }
 
 /**
- * The one-based line under a pointer event inside Pierre's shadow DOM, from a
+ * The one-based line a pointer event inside Pierre's shadow DOM is on, from a
  * content row (`[data-line]`) or its gutter number (`[data-column-number]`).
  */
 export function lineNumberFromEventPath(path: readonly EventTarget[]): number | null {

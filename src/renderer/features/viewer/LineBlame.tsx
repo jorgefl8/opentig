@@ -13,7 +13,6 @@ import './line-blame.css';
 
 const CARD_OPEN_DELAY_MS = 300;
 const CARD_CLOSE_DELAY_MS = 200;
-const HOVER_CLEAR_DELAY_MS = 120;
 
 interface GhostPosition {
   top: number;
@@ -71,12 +70,14 @@ function caretLine(root: ShadowRoot): number | null {
 const inside = (rect: DOMRect | undefined, x: number, y: number) => Boolean(rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
 
 /**
- * GitLens-style blame for the Files editor: faint text after the hovered line,
- * or the caret's line while editing, and a card with the commit on hovering it.
- * The ghost text ignores the pointer, so clicking past a line still places the
- * caret there; the card follows the pointer's position over the text instead.
+ * Inline blame for the Files editor: faint text after the line you clicked, and
+ * a card with the commit on resting the pointer over that text. While the file
+ * can be edited that is the caret's line, as long as the editor has focus, so
+ * the text follows the caret; a read-only file has no caret, so a click selects
+ * the line instead. The text ignores the pointer, so clicking past a line still
+ * places the caret there; the card follows the pointer's position over the text.
  */
-export function LineBlameLayer({ path, text, savedText, layoutKey }: { path: string; text: string; savedText: string; layoutKey: string }) {
+export function LineBlameLayer({ path, text, savedText, layoutKey, editing }: { path: string; text: string; savedText: string; layoutKey: string; editing: boolean }) {
   const settings = useContext(LineBlameContext);
   const phone = useMobileChrome() !== null;
   const enabled = Boolean(settings?.enabled) && !phone;
@@ -91,18 +92,24 @@ export function LineBlameLayer({ path, text, savedText, layoutKey }: { path: str
 
   const layerRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLSpanElement>(null);
-  const [hovered, setHovered] = useState<number | null>(null);
   const [caret, setCaret] = useState<number | null>(null);
   const [focused, setFocused] = useState(false);
+  const [clicked, setClicked] = useState<number | null>(null);
   const [cardLine, setCardLine] = useState<number | null>(null);
   const [position, setPosition] = useState<GhostPosition | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const timers = useRef<Record<'clear' | 'open' | 'close', number | undefined>>({ clear: undefined, open: undefined, close: undefined });
+  const timers = useRef<Record<'open' | 'close', number | undefined>>({ open: undefined, close: undefined });
   const overPopup = useRef(false);
-  const target = cardLine ?? blameTargetLine({ hovered, caret, focused });
+  const target = cardLine ?? blameTargetLine({ editing, caret, focused, clicked });
   const blame = target === null ? null : blameForLine(result, target);
   const targetRef = useRef(target);
   useLayoutEffect(() => { targetRef.current = target; }, [target]);
+  const editingRef = useRef(editing);
+  useLayoutEffect(() => {
+    editingRef.current = editing;
+    // Once the file can be edited, the caret says which line was clicked.
+    if (editing) setClicked(null);
+  }, [editing]);
 
   // Pointer, focus and caret tracking on the editor's content element.
   useEffect(() => {
@@ -121,28 +128,29 @@ export function LineBlameLayer({ path, text, savedText, layoutKey }: { path: str
     };
     const move = (event: PointerEvent) => {
       if (event.pointerType === 'touch') return;
-      const line = lineNumberFromEventPath(event.composedPath());
-      if (line !== null) { stop('clear'); setHovered(line); }
-      else if (pending.clear === undefined) pending.clear = window.setTimeout(() => { pending.clear = undefined; setHovered(null); }, HOVER_CLEAR_DELAY_MS);
       if (inside(ghostRef.current?.getBoundingClientRect(), event.clientX, event.clientY)) {
         stop('close');
         const line = targetRef.current;
         if (pending.open === undefined && line !== null) pending.open = window.setTimeout(() => { pending.open = undefined; setNow(Date.now()); setCardLine(line); }, CARD_OPEN_DELAY_MS);
       } else closeCardSoon();
     };
-    const leave = () => {
-      stop('clear');
-      setHovered(null);
-      closeCardSoon();
+    // Without a caret, a press on a line or its number selects that line, and one anywhere else
+    // but the card lets it go.
+    const press = (event: PointerEvent) => {
+      if (editingRef.current || event.button !== 0) return;
+      const path = event.composedPath();
+      if (path.some((target) => target instanceof Element && target.classList.contains('line-blame-card'))) return;
+      setClicked(path.includes(container) ? lineNumberFromEventPath(path) : null);
     };
     const focusIn = () => setFocused(true);
     const focusOut = (event: FocusEvent) => { if (!(event.relatedTarget instanceof Node && container.contains(event.relatedTarget))) setFocused(false); };
     const scroller = container.parentElement;
-    const scrolled = () => { stop('clear'); setHovered(null); stop('open'); setCardLine(null); };
+    const scrolled = () => { stop('open'); setCardLine(null); };
     container.addEventListener('pointermove', move);
-    container.addEventListener('pointerleave', leave);
+    container.addEventListener('pointerleave', closeCardSoon);
     container.addEventListener('focusin', focusIn);
     container.addEventListener('focusout', focusOut);
+    document.addEventListener('pointerdown', press, true);
     scroller?.addEventListener('scroll', scrolled, { passive: true });
 
     // The caret's line, as Pierre marks it on its rendered row. The shadow root
@@ -159,11 +167,12 @@ export function LineBlameLayer({ path, text, savedText, layoutKey }: { path: str
     };
     watchCaret();
     return () => {
-      for (const name of ['clear', 'open', 'close'] as const) stop(name);
+      for (const name of ['open', 'close'] as const) stop(name);
       container.removeEventListener('pointermove', move);
-      container.removeEventListener('pointerleave', leave);
+      container.removeEventListener('pointerleave', closeCardSoon);
       container.removeEventListener('focusin', focusIn);
       container.removeEventListener('focusout', focusOut);
+      document.removeEventListener('pointerdown', press, true);
       scroller?.removeEventListener('scroll', scrolled);
       window.cancelAnimationFrame(frame);
       observer?.disconnect();

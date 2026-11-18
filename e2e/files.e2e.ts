@@ -258,25 +258,49 @@ function editorLine(page: Page, line: number) {
   return page.locator(`[data-content] > [data-line="${line}"]`);
 }
 
-test('line blame names the commit of a hovered line and opens it in History', async ({ pairedPage: page, repository }) => {
+/** The faint blame text after a line. */
+function blameText(page: Page) {
+  return page.locator('.line-blame-ghost');
+}
+
+/** Rests the pointer on the blame text, which opens its card. The text ignores the pointer, so this goes by its position. */
+async function openBlameCard(page: Page) {
+  const box = await blameText(page).boundingBox();
+  if (!box) throw new Error('The blame text has no position.');
+  await page.mouse.move(box.x + 8, box.y + box.height / 2);
+  const card = page.getByRole('dialog', { name: 'Line blame' });
+  await expect(card).toBeVisible();
+  return card;
+}
+
+test('line blame shows on the clicked line, not the one under the pointer, and opens its commit in History', async ({ pairedPage: page, repository }) => {
   await repository.commit('notes.txt', 'First line\n', 'Add notes');
   await commitAs(repository, 'Grace Hopper', 'grace@example.com', 'notes.txt', 'First line\nSecond line\n', 'Explain the second step');
   await openFiles(page, repository);
 
   await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
   await expect(page.getByRole('textbox', { name: 'notes.txt' })).toContainText('Second line');
+  // Moving the pointer over the lines shows nothing.
   await editorLine(page, 1).hover();
-  const ghost = page.locator('.line-blame-ghost');
-  await expect(ghost).toHaveText(/^E2E Tester, .+ • Add notes$/);
   await editorLine(page, 2).hover();
-  await expect(ghost).toHaveText(/^Grace Hopper, .+ • Explain the second step$/);
+  await page.waitForTimeout(400);
+  await expect(blameText(page)).toBeHidden();
 
-  // The ghost text ignores the pointer; resting over it opens the card.
-  const box = await ghost.boundingBox();
-  if (!box) throw new Error('The blame text has no position.');
-  await page.mouse.move(box.x + 8, box.y + box.height / 2);
-  const card = page.getByRole('dialog', { name: 'Line blame' });
-  await expect(card).toBeVisible();
+  await editorLine(page, 2).click();
+  await expect(blameText(page)).toHaveText(/^Grace Hopper, .+ • Explain the second step$/);
+  await expect(blameText(page)).toHaveAttribute('data-line-blame', '2');
+  // The text stays on the clicked line while the pointer moves over another.
+  await editorLine(page, 1).hover();
+  await page.waitForTimeout(400);
+  await expect(blameText(page)).toHaveAttribute('data-line-blame', '2');
+  // So does a click on a line number.
+  await page.locator('[data-gutter] > [data-column-number="1"]').click();
+  await expect(blameText(page)).toHaveText(/^E2E Tester, .+ • Add notes$/);
+  await page.locator('[data-gutter] > [data-column-number="2"]').click();
+  await expect(blameText(page)).toHaveText(/^Grace Hopper, .+ • Explain the second step$/);
+
+  // Resting the pointer on the text opens the card.
+  const card = await openBlameCard(page);
   await expect(card.getByText('Grace Hopper', { exact: true })).toBeVisible();
   await expect(card.getByText('grace@example.com')).toBeVisible();
   await expect(card.getByText('Explain the second step')).toBeVisible();
@@ -289,6 +313,25 @@ test('line blame names the commit of a hovered line and opens it in History', as
   await expect(page.getByRole('main').getByRole('heading', { name: 'Explain the second step', level: 2 })).toBeVisible();
 });
 
+test('line blame follows the caret as the arrow keys move it', async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'First line\n', 'Add notes');
+  await commitAs(repository, 'Grace Hopper', 'grace@example.com', 'notes.txt', 'First line\nSecond line\n', 'Explain the second step');
+  await openFiles(page, repository);
+
+  await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
+  await editorLine(page, 1).click();
+  await expect(blameText(page)).toHaveText(/^E2E Tester, .+ • Add notes$/);
+  await page.keyboard.press('ArrowDown');
+  await expect(blameText(page)).toHaveText(/^Grace Hopper, .+ • Explain the second step$/);
+  await expect(blameText(page)).toHaveAttribute('data-line-blame', '2');
+  await page.keyboard.press('ArrowUp');
+  await expect(blameText(page)).toHaveAttribute('data-line-blame', '1');
+
+  // Leaving the editor takes the text away.
+  await fileTree(page).click();
+  await expect(blameText(page)).toBeHidden();
+});
+
 test('an edited line reads "Not committed yet" and line blame can be turned off', async ({ pairedPage: page, repository }) => {
   await repository.commit('notes.txt', 'First line\nSecond line\n', 'Add notes');
   await openFiles(page, repository);
@@ -296,20 +339,18 @@ test('an edited line reads "Not committed yet" and line blame can be turned off'
   await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
   const editor = page.getByRole('textbox', { name: 'notes.txt' });
   await expect(editor).toContainText('Second line');
-  // The caret's line shows its blame while the editor has focus.
   await editorLine(page, 1).click();
   await page.keyboard.press('End');
-  const ghost = page.locator('.line-blame-ghost');
-  await expect(ghost).toHaveText(/^E2E Tester, .+ • Add notes$/);
-  // Move the pointer away so the caret's line, not the hovered one, is blamed.
-  await page.getByRole('tree', { name: 'Files' }).hover();
+  await expect(blameText(page)).toHaveText(/^E2E Tester, .+ • Add notes$/);
   await page.keyboard.type(' edited');
 
   await expect(page.getByRole('tablist', { name: 'Open files' }).getByRole('tab', { name: 'notes.txt, unsaved changes' })).toBeVisible();
-  await expect(ghost).toHaveText('Not committed yet');
+  await expect(blameText(page)).toHaveText('Not committed yet');
+  const card = await openBlameCard(page);
+  await expect(card.getByText('This line has changes, saved or unsaved, that are not in a commit yet.')).toBeVisible();
 
   await page.getByRole('button', { name: 'Hide line blame' }).click();
-  await expect(ghost).toBeHidden();
+  await expect(blameText(page)).toBeHidden();
   await expect(page.getByRole('button', { name: 'Show line blame' })).toHaveAttribute('aria-pressed', 'false');
 
   // The choice is saved with the other preferences.
@@ -327,12 +368,45 @@ test('line blame is written after a syntax problem on the same line', async ({ p
   const problem = page.getByText('Trailing comma.', { exact: true });
   await expect(problem).toBeVisible();
 
-  await editorLine(page, 2).hover();
-  const ghost = page.locator('.line-blame-ghost');
+  await editorLine(page, 2).click();
+  const ghost = blameText(page);
   await expect(ghost).toHaveText(/^E2E Tester, .+ • Add settings$/);
   // Both stay readable: the blame starts where the problem's message ends.
   await expect.poll(async () => {
     const [message, blame] = await Promise.all([problem.boundingBox(), ghost.boundingBox()]);
     return message !== null && blame !== null && blame.x >= message.x + message.width;
   }).toBe(true);
+});
+
+test('a read-only file, which has no caret, shows the blame of the line clicked', async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'First line\nSecond line\nThird line\n', 'Add notes');
+  await repository.git('checkout', '-q', '-b', 'other');
+  await commitAs(repository, 'Grace Hopper', 'grace@example.com', 'notes.txt', 'First line\nSecond line\nThird line, theirs\n', 'Change the third line');
+  await repository.git('checkout', '-q', 'main');
+  await repository.commit('README.md', '# Sample project\n\nNotes.\n', 'Describe the notes');
+  await openFiles(page, repository);
+  await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
+  await expect(page.getByRole('textbox', { name: 'notes.txt' })).toContainText('Third line');
+
+  // A merge in progress makes the repository, and so the open file, read-only.
+  await repository.git('merge', '--no-commit', '--no-ff', 'other');
+  await expect(page.getByText('Repository is read-only: merge is in progress.')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'notes.txt' })).toContainText('Third line, theirs');
+  await editorLine(page, 2).hover();
+  await page.waitForTimeout(400);
+  await expect(blameText(page)).toBeHidden();
+
+  await editorLine(page, 3).click();
+  await expect(blameText(page)).toHaveText(/^Grace Hopper, .+ • Change the third line$/);
+  await editorLine(page, 1).hover();
+  await page.waitForTimeout(400);
+  await expect(blameText(page)).toHaveAttribute('data-line-blame', '3');
+  await page.locator('[data-gutter] > [data-column-number="1"]').click();
+  await expect(blameText(page)).toHaveText(/^E2E Tester, .+ • Add notes$/);
+  const card = await openBlameCard(page);
+  await expect(card.getByText('E2E Tester', { exact: true })).toBeVisible();
+
+  // A click outside the editor lets the line go.
+  await fileTree(page).click();
+  await expect(blameText(page)).toBeHidden();
 });

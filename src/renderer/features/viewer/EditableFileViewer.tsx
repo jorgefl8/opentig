@@ -205,7 +205,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     </>
   );
   const lineBlame = lineBlameBaseline === undefined ? null
-    : <LineBlameLayer path={path} text={value} savedText={lineBlameBaseline} layoutKey={`${wrapLines}:${themeType}`} />;
+    : <LineBlameLayer path={path} text={value} savedText={lineBlameBaseline} layoutKey={`${wrapLines}:${themeType}`} editing={editing} />;
 
   return (
     <PierreWorkerPool>

@@ -55,10 +55,15 @@ describe('blameForLine', () => {
 });
 
 describe('blameTargetLine', () => {
-  it('prefers the hovered line and shows the caret line only while editing', () => {
-    expect(blameTargetLine({ hovered: 3, caret: 7, focused: true })).toBe(3);
-    expect(blameTargetLine({ hovered: null, caret: 7, focused: true })).toBe(7);
-    expect(blameTargetLine({ hovered: null, caret: 7, focused: false })).toBeNull();
+  it('follows the caret while an editable file has focus, and nothing else', () => {
+    expect(blameTargetLine({ editing: true, caret: 7, focused: true, clicked: 3 })).toBe(7);
+    expect(blameTargetLine({ editing: true, caret: 7, focused: false, clicked: 3 })).toBeNull();
+    expect(blameTargetLine({ editing: true, caret: null, focused: true, clicked: 3 })).toBeNull();
+  });
+
+  it('shows the clicked line of a read-only file, which has no caret', () => {
+    expect(blameTargetLine({ editing: false, caret: null, focused: false, clicked: 3 })).toBe(3);
+    expect(blameTargetLine({ editing: false, caret: 7, focused: true, clicked: null })).toBeNull();
   });
 });
 
