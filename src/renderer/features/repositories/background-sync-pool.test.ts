@@ -38,16 +38,4 @@ describe('background sync pool', () => {
     pool.request(['a']);
     expect(started).toEqual(['a', 'b', 'c', 'a']);
   });
-
-  it('syncs once more after a change made while a sync was running', async () => {
-    const { pool, started, complete } = harness(2);
-    pool.request(['a']);
-    pool.request(['a'], true);
-    pool.request(['a'], true);
-    expect(started).toEqual(['a']);
-    await complete('a');
-    expect(started).toEqual(['a', 'a']);
-    await complete('a');
-    expect(started).toEqual(['a', 'a']);
-  });
 });

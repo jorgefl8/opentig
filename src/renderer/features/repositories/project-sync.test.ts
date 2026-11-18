@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countsAfterFailedFetch, mobileSyncPill, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, visibleRepositorySyncActions } from './project-sync';
+import { countsAfterFailedFetch, mobileSyncPill, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, settleRepositorySync, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from './project-sync';
 
 describe('the sync pill in a phone top bar', () => {
   const status = { branch: 'feature', upstream: 'origin/feature', ahead: 0, behind: 0 };
@@ -189,5 +189,54 @@ describe('the counts of a repository whose fetch failed', () => {
   it('offers nothing for another repository, or for the open one before its status is read', () => {
     expect(countsAfterFailedFetch(counts, 'other', { repositoryId: 'open', status }).has('other')).toBe(false);
     expect(countsAfterFailedFetch(counts, 'open', { repositoryId: 'open', status: null }).has('open')).toBe(false);
+  });
+});
+
+describe('a row of the repository list as its pull or push ends', () => {
+  /**
+   * A row as the list draws it, noting what it shows after every change: an
+   * action with `…` while its spinner turns, the actions on offer otherwise.
+   */
+  function listRow(counts: RepositorySyncCounts, running: ProjectSyncAction) {
+    let state: { counts: RepositorySyncCounts; running?: ProjectSyncAction } = { counts, running };
+    const shown: string[][] = [];
+    const draw = () => shown.push(state.running ? [`${state.running}…`] : visibleRepositorySyncActions(state.counts));
+    draw();
+    return {
+      shown,
+      // The repository's status is read again, and answers a moment later.
+      recount: (after: RepositorySyncCounts) => async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        state = { ...state, counts: after };
+        draw();
+      },
+      release: () => { state = { counts: state.counts }; draw(); },
+    };
+  }
+
+  it('goes from the spinner straight to what is left, for a pull and for a push', async () => {
+    const pulled = listRow({ ahead: 0, behind: 2 }, 'pull');
+    await settleRepositorySync(pulled.recount({ ahead: 0, behind: 0 }), pulled.release);
+    expect(pulled.shown).toEqual([['pull…'], ['pull…'], []]);
+
+    const pushed = listRow({ ahead: 3, behind: 0 }, 'push');
+    await settleRepositorySync(pushed.recount({ ahead: 0, behind: 0 }), pushed.release);
+    expect(pushed.shown).toEqual([['push…'], ['push…'], []]);
+  });
+
+  it('offers again what is still pending after a pull that failed or a push that was refused', async () => {
+    const failed = listRow({ ahead: 0, behind: 2 }, 'pull');
+    await settleRepositorySync(failed.recount({ ahead: 0, behind: 2 }), failed.release);
+    expect(failed.shown.at(-1)).toEqual(['pull']);
+
+    const refused = listRow({ ahead: 1, behind: 0 }, 'push');
+    await settleRepositorySync(refused.recount({ ahead: 1, behind: 1 }), refused.release);
+    expect(refused.shown).toEqual([['push…'], ['push…'], ['pull', 'push']]);
+  });
+
+  it('lets the row go when its status cannot be read', async () => {
+    const row = listRow({ ahead: 0, behind: 2 }, 'pull');
+    await settleRepositorySync(() => Promise.reject(new Error('The server did not answer.')), row.release);
+    expect(row.shown.at(-1)).not.toEqual(['pull…']);
   });
 });

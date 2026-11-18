@@ -94,8 +94,11 @@ export interface ToolbarProps {
   onRefsManaged(recentRepositories: RecentRepository[] | null, commonDir: string): void;
   onPull(): void; onPush(): void;
   repositorySyncOperations: ReadonlyMap<string, ProjectSyncAction>;
-  /** `settled` runs after the action, and after any follow-up the user takes from its notice. */
-  onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled: () => void): Promise<void>;
+  /**
+   * `settled` reads the row's counts again after the action, and after any follow-up the user
+   * takes from its notice. The operation holds the row until it has.
+   */
+  onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled: () => Promise<void>): Promise<void>;
   settingsOpen: boolean; settingsSection: SettingsSection;
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
@@ -197,10 +200,25 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
     }
   }, []);
   const syncPool = useRef<BackgroundSyncPool | null>(null);
-  const refreshRepositorySyncCounts = useCallback((repositories: RepositoryOption[], afterChange = false) => {
+  const refreshRepositorySyncCounts = useCallback((repositories: RepositoryOption[]) => {
     syncPool.current ??= createBackgroundSyncPool(PICKER_SYNC_CONCURRENCY, syncRepositoryCounts);
-    syncPool.current.request(repositories.filter((item) => !unavailableRepositoryIds.current.has(item.recent.id)).map((item) => item.recent.id), afterChange);
+    syncPool.current.request(repositories.filter((item) => !unavailableRepositoryIds.current.has(item.recent.id)).map((item) => item.recent.id));
   }, [syncRepositoryCounts]);
+  // After a pull or push the repository's own status is enough: the operation has just talked to the
+  // remote, so a fetch would add nothing. A list fetch that began before it is not kept over this read.
+  const recountRepository = useCallback(async (repositoryId: string) => {
+    const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
+    repositoryStatusVersions.current.set(repositoryId, version);
+    try {
+      const status = await opentig.repository.getStatus(repositoryId, false);
+      if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+      setRepositorySyncCounts((current) => new Map(current).set(repositoryId, syncCountsOf(status)));
+    } catch {
+      if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+      const open = shownStatus.current;
+      setRepositorySyncCounts((current) => countsAfterFailedFetch(current, repositoryId, open));
+    }
+  }, []);
 
   useEffect(() => {
     const currentStatus = props.status;
@@ -346,7 +364,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    void props.onRepositorySync(group, projectName, action, () => void refreshRepositorySyncCounts([group], true));
+                    void props.onRepositorySync(group, projectName, action, () => recountRepository(group.recent.id));
                   }}
                 />
               )}>

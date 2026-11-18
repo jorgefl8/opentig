@@ -63,7 +63,7 @@ After you locate one moved repository, OpenTig looks for the other missing ones 
 
 **Sync from the repository picker**
 
-Pull or push from an individual repository's row. Opening the picker fetches the listed repositories, four at a time, to refresh their checkout and ahead/behind counts. Only pending operations appear, with their commit counts; multiple repositories can sync concurrently with separate progress and result notifications.
+Pull or push from an individual repository's row. Opening the picker fetches the listed repositories, four at a time, to refresh their checkout and ahead/behind counts. Only pending operations appear, with their commit counts; multiple repositories can sync concurrently with separate progress and result notifications. A row keeps its spinner until the repository's counts have been read again, then shows what is left: nothing once everything has been pulled or pushed, or the action with its count when a pull failed or a push was refused.
 
 Choose periodic remote checks, or turn them off, in **Settings → General**. Manual Refresh still fetches when periodic checks are off. See [remote checks and refresh](interface.md#remote-checks-and-refresh).
 

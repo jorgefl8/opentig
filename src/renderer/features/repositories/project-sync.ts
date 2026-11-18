@@ -41,6 +41,22 @@ export function countsAfterFailedFetch(
   return next;
 }
 
+/**
+ * Ends a pull or push started from the repository list. The row's counts are read
+ * again while the operation still holds the row, and only then is it let go: a
+ * row let go first shows, until that read comes back, the action and count it had
+ * before the operation. A read that fails still lets the row go.
+ */
+export async function settleRepositorySync(recount: (() => Promise<void>) | undefined, release: () => void): Promise<void> {
+  try {
+    await recount?.();
+  } catch {
+    // The row shows what it already knows.
+  } finally {
+    release();
+  }
+}
+
 let nextSyncToastId = 0;
 
 /** Isolate each operation from other notices and pending Sileo exit timers. */

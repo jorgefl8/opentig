@@ -111,7 +111,7 @@ import { startupSplashDetail } from '@/lib/startup-splash';
 import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, inBackground, isConnectionLoss, isUnconfirmedResult, withSignal } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
-import { needsBranchPublication, newBranchPublishedCopy, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pullSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, syncToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
+import { needsBranchPublication, newBranchPublishedCopy, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pullSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, settleRepositorySync, syncToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
 import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { updatesApi } from '@/features/settings/update-api';
@@ -177,7 +177,7 @@ class PushBlocked extends Error {
 interface SyncTarget {
   repositoryId: string;
   label: string;
-  row?: { item: RepositoryOption; projectName: string | null; settled: (() => void) | undefined };
+  row?: { item: RepositoryOption; projectName: string | null; settled: (() => Promise<void>) | undefined };
 }
 
 const CloneRepositoryDialog = lazyWithRetry(() => import('@/features/onboarding/CloneRepositoryDialog').then(module => ({ default: module.CloneRepositoryDialog })));
@@ -3262,12 +3262,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } catch {
       // sileo.promise() already rendered the matching error toast above.
     } finally {
-      stage(null);
-      row?.settled?.();
+      await settleRepositorySync(row?.settled, () => stage(null));
     }
   };
 
-  const syncRepository = async (item: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled?: () => void) => {
+  const syncRepository = async (item: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled?: () => Promise<void>) => {
     const repositoryId = item.recent.id;
     if (repositorySyncOperationsRef.current.has(repositoryId)) return;
     repositorySyncOperationsRef.current.set(repositoryId, action);
@@ -3306,9 +3305,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } catch {
       // Sileo rendered the repository-specific failure.
     } finally {
-      repositorySyncOperationsRef.current.delete(repositoryId);
-      setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
-      settled?.();
+      await settleRepositorySync(settled, () => {
+        repositorySyncOperationsRef.current.delete(repositoryId);
+        setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+      });
     }
   };
 

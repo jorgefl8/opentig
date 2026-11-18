@@ -1,10 +1,6 @@
 export interface BackgroundSyncPool {
-  /**
-   * Asks for each repository to be synced. One that is already waiting or
-   * running is left alone, unless `afterChange` says its state has just
-   * changed: then it runs once more when the current run ends.
-   */
-  request(repositoryIds: Iterable<string>, afterChange?: boolean): void;
+  /** Asks for each repository to be synced. One that is already waiting or running is left alone. */
+  request(repositoryIds: Iterable<string>): void;
 }
 
 /**
@@ -15,7 +11,6 @@ export interface BackgroundSyncPool {
 export function createBackgroundSyncPool(concurrency: number, sync: (repositoryId: string) => Promise<void>): BackgroundSyncPool {
   const waiting: string[] = [];
   const running = new Set<string>();
-  const repeat = new Set<string>();
 
   const next = () => {
     while (running.size < concurrency && waiting.length > 0) {
@@ -23,18 +18,15 @@ export function createBackgroundSyncPool(concurrency: number, sync: (repositoryI
       running.add(repositoryId);
       void sync(repositoryId).catch(() => undefined).finally(() => {
         running.delete(repositoryId);
-        if (repeat.delete(repositoryId)) waiting.push(repositoryId);
         next();
       });
     }
   };
 
   return {
-    request(repositoryIds, afterChange = false) {
+    request(repositoryIds) {
       for (const repositoryId of repositoryIds) {
-        if (running.has(repositoryId)) {
-          if (afterChange) repeat.add(repositoryId);
-        } else if (!waiting.includes(repositoryId)) waiting.push(repositoryId);
+        if (!running.has(repositoryId) && !waiting.includes(repositoryId)) waiting.push(repositoryId);
       }
       next();
     },

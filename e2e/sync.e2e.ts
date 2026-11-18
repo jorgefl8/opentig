@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { openRepository } from './support/app';
+import { addRepository, openRepository, otherRepository, repositoryPicker } from './support/app';
 import { expect, test, type GitRepository } from './support/fixtures';
 
 // Safe pull and push against a local bare `origin` (docs/features.md, "Safe pull and push").
@@ -294,4 +294,111 @@ test('a branch that tracks another remote branch is published under its own name
   expect(await remoteTip(repository, bare, 'fix/login')).toBe(await repository.git('rev-parse', 'HEAD'));
   expect(await remoteTip(repository, bare, 'dev')).toBe(devTip);
   expect(await repository.git('rev-parse', '--abbrev-ref', 'fix/login@{upstream}')).toBe('origin/fix/login');
+});
+
+/**
+ * Records every state the repository list shows for one row's Pull or Push, as
+ * the page draws it: `idle` when the action is on offer, `running` while its
+ * spinner turns, `gone` when the row offers neither. Consecutive repeats are
+ * folded, so a state that lasted a single frame is still in the list.
+ */
+async function recordListAction(page: Page, action: 'Pull' | 'Push', repository: string): Promise<() => Promise<string[]>> {
+  await page.evaluate(({ label }) => {
+    const states: string[] = [];
+    const note = () => {
+      const button = document.querySelector(`[role="listbox"] [aria-label="${label}"]`);
+      const state = !button ? 'gone' : button.querySelector('[data-slot="spinner"]') ? 'running' : 'idle';
+      if (states.at(-1) !== state) states.push(state);
+    };
+    note();
+    new MutationObserver(note).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+    (window as unknown as { listActionStates: string[] }).listActionStates = states;
+  }, { label: `${action} ${repository}` });
+  return () => page.evaluate(() => [...(window as unknown as { listActionStates: string[] }).listActionStates]);
+}
+
+/** What the row went through from its action being clicked: nothing but the spinner and then what is left. */
+const afterClick = (states: string[]) => states.slice(states.indexOf('running'));
+
+test('pulling another repository from the list goes from its spinner to nothing to pull, without Pull in between', async ({ pairedPage: page, repository }) => {
+  const { other } = await repository.addRemote();
+  await openRepository(page, repository);
+  const remoteHead = await pushFromOtherClone(other, 'remote.txt', 'from the remote\n', 'Add remote file');
+  const second = await otherRepository('second-project');
+  try {
+    await addRepository(page, second);
+    await repositoryPicker(page).click();
+    const list = page.getByRole('listbox', { name: 'Select project or repository' });
+    // Opening the list fetches each saved repository.
+    await expect(list.getByRole('button', { name: 'Pull sample-project' })).toContainText('1');
+    const states = await recordListAction(page, 'Pull', 'sample-project');
+
+    await list.getByRole('button', { name: 'Pull sample-project' }).click();
+
+    await expect(page.getByText('sample-project: 1 commit pulled')).toBeVisible();
+    await expect.poll(states).toContain('gone');
+    expect(afterClick(await states())).toEqual(['running', 'gone']);
+    expect(await repository.git('rev-parse', 'HEAD')).toBe(remoteHead);
+  } finally {
+    await second.dispose();
+  }
+});
+
+test('pulling the open repository from the list goes from its spinner to nothing to pull, without Pull in between', async ({ pairedPage: page, repository }) => {
+  const { other } = await repository.addRemote();
+  const remoteHead = await pushFromOtherClone(other, 'remote.txt', 'from the remote\n', 'Add remote file');
+  await openRepository(page, repository);
+  await fetchFromToolbar(page, 1);
+  await repositoryPicker(page).click();
+  const list = page.getByRole('listbox', { name: 'Select project or repository' });
+  await expect(list.getByRole('button', { name: 'Pull sample-project' })).toContainText('1');
+  const states = await recordListAction(page, 'Pull', 'sample-project');
+
+  await list.getByRole('button', { name: 'Pull sample-project' }).click();
+
+  await expect(page.getByText('sample-project: 1 commit pulled')).toBeVisible();
+  await expect.poll(states).toContain('gone');
+  expect(afterClick(await states())).toEqual(['running', 'gone']);
+  await expect(pullButton(page, 1)).toBeHidden();
+  expect(await repository.git('rev-parse', 'HEAD')).toBe(remoteHead);
+});
+
+test('pushing another repository from the list clears its Push at once, and a refused push offers it again', async ({ pairedPage: page, repository }) => {
+  const { bare, other } = await repository.addRemote();
+  await repository.commit('local.txt', 'from this clone\n', 'Add local file');
+  await openRepository(page, repository);
+  const second = await otherRepository('second-project');
+  try {
+    await addRepository(page, second);
+    await repositoryPicker(page).click();
+    const list = page.getByRole('listbox', { name: 'Select project or repository' });
+    const push = list.getByRole('button', { name: 'Push sample-project' });
+    await expect(push).toContainText('1');
+    let states = await recordListAction(page, 'Push', 'sample-project');
+
+    await push.click();
+
+    await expect(page.getByText('sample-project: 1 commit pushed')).toBeVisible();
+    await expect.poll(states).toContain('gone');
+    expect(afterClick(await states())).toEqual(['running', 'gone']);
+    expect(await remoteTip(repository, bare, 'main')).toBe(await repository.git('rev-parse', 'HEAD'));
+
+    // The remote moves on while another commit waits here: the push is refused, and Push stays on offer.
+    await repository.commit('local.txt', 'from this clone\nagain\n', 'Extend local file');
+    await other.git('pull', '-q', '--ff-only');
+    await pushFromOtherClone(other, 'remote.txt', 'from the remote\n', 'Add remote file');
+    await page.keyboard.press('Escape');
+    await repositoryPicker(page).click();
+    await expect(push).toContainText('1');
+    states = await recordListAction(page, 'Push', 'sample-project');
+
+    await push.click();
+
+    await expect(page.getByText('sample-project needs the latest commits first')).toBeVisible();
+    await expect.poll(async () => (await states()).at(-1)).toBe('idle');
+    expect(afterClick(await states())).toEqual(['running', 'idle']);
+    await expect(list.getByRole('button', { name: 'Pull sample-project' })).toContainText('1');
+  } finally {
+    await second.dispose();
+  }
 });
