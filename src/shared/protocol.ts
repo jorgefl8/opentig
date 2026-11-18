@@ -142,6 +142,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'refs.worktreeDetails': command(IPC.worktreeDetails, 'worktree-details', false),
   'refs.deleteBranch': command(IPC.branchDelete, 'delete-branch', true),
   'refs.removeWorktree': command(IPC.worktreeRemove, 'remove-worktree', true, { timeoutMs: REMOVE_WORKTREE_TIMEOUT_MS }),
+  'refs.repairWorktree': command(IPC.worktreeRepair, 'repair-worktree', true),
 
   'ai.repositoryInstructions': command(IPC.aiRepositoryInstructions, 'ai-repository-instructions', false),
   'ai.setRepositoryInstructions': command(IPC.aiSetRepositoryInstructions, 'ai-set-repository-instructions', true),

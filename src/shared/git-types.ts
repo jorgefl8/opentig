@@ -142,11 +142,24 @@ export interface WorktreeAgents {
   agents: string[];
 }
 
+/**
+ * A linked worktree whose folder is still there, but whose `.git` file no longer
+ * leads back to this repository's entry for it, typically because the repository
+ * was moved. Git still lists it as usable, yet can neither use nor remove it.
+ */
+export interface BrokenWorktreeLink {
+  /** The folder its `.git` file names, as written there, or null when it names none. */
+  pointsTo: string | null;
+  /** Whether that folder is gone, as it is after the repository moved. */
+  pointsToMissing: boolean;
+}
+
 /** A worktree row annotated with whether OpenTig currently has it open. */
 export interface ManagedWorktree extends WorktreeInfo {
   current: boolean;
   /** Git lost track of this worktree, but its folder is still on disk. */
   leftoverFiles?: boolean;
+  brokenLink?: BrokenWorktreeLink;
 }
 
 /**
@@ -244,7 +257,13 @@ export interface WorktreeDetails {
   leftoverFiles?: boolean;
   /** It has initialized submodules, which Git removes only with force. */
   submodules?: boolean;
-  /** False when the worktree is missing, prunable, or bare, so no status ran. */
+  /** Its link to the repository is broken, so no Git command ran inside it. */
+  brokenLink?: BrokenWorktreeLink;
+  /** Only with a broken link: the folder holds nothing but its `.git` file and empty folders. */
+  onlyGitFile?: boolean;
+  /** Git could not read its local changes, and why; the counts are then zero but unknown. */
+  unreadable?: string;
+  /** False when the worktree is missing, prunable, bare, or its link is broken, so no status ran. */
   available: boolean;
   stagedCount: number;
   unstagedCount: number;
@@ -280,6 +299,10 @@ export type WorktreeRemovalBlocked =
   /** It has initialized submodules, which only a forced removal deletes. */
   | { status: 'submodules' }
   | { status: 'prunable'; reason: string }
+  /** Its `.git` file doesn't lead back to this repository, so Git refuses even a forced removal. */
+  | { status: 'broken-link' }
+  /** Git could not read its local changes, so only a forced removal may delete them. */
+  | { status: 'unreadable'; reason: string }
   | { status: 'bare' }
   | { status: 'missing' }
   /** The request ended before Git started, so nothing changed. */

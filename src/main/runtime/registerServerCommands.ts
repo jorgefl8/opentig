@@ -554,6 +554,17 @@ export function registerServerCommands(
       for (const siblingId of siblingIds) services.events.repositoryChanged(siblingId, 'worktrees');
     }
   });
+  handle(IPC.worktreeRepair, 'repair-worktree', async (request) => {
+    const { repositoryId, path } = worktreeDetailsArg(request, 'repair-worktree');
+    const { commonDir } = services.repositories.get(repositoryId);
+    try {
+      return await services.operations.repairWorktree(repositoryId, path);
+    } finally {
+      // Git repairs every worktree of the repository it can, and siblings list the same ones.
+      const siblingIds = new Set([repositoryId, ...services.repositories.recents().filter((item) => item.commonDir === commonDir).map((item) => item.id)]);
+      for (const siblingId of siblingIds) services.events.repositoryChanged(siblingId, 'worktrees');
+    }
+  });
   handle(IPC.refsPull, 'pull', (id) => services.operations.pull(stringArg(id, 'pull', 64)));
   handle(IPC.refsPushContext, 'push-context', (id, remote) => services.operations.publicationContext(stringArg(id, 'push-context', 64), remote == null ? undefined : stringArg(remote, 'push-context', 512)));
   handle(IPC.refsPush, 'push', (id, publish, expected) => services.operations.push(stringArg(id, 'push', 64), publishBranchArg(publish), expected == null ? undefined : stringArg(expected, 'push', 64)));

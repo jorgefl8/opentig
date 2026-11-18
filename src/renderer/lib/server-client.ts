@@ -216,6 +216,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       worktreeDetails: (request) => invoke(IPC.worktreeDetails, request),
       deleteBranch: (request) => invoke(IPC.branchDelete, request),
       removeWorktree: (request) => invoke(IPC.worktreeRemove, request),
+      repairWorktree: (request) => invoke(IPC.worktreeRepair, request),
     },
     ai: {
       repositoryInstructions: (id) => invoke(IPC.aiRepositoryInstructions, id),

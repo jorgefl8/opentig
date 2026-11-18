@@ -1,6 +1,6 @@
-import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
+import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult, WorktreeRepairResult } from '../../shared/contracts';
 import type {
-  BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
+  BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, BrokenWorktreeLink, CommitFile, CommitPage, CommitSummary,
   FileChange, FileHistoryPage, LocalRefsSnapshot, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
 } from '../../shared/git-types';
 import { AiOperationError, GitOperationError } from '../../shared/errors';
@@ -32,7 +32,22 @@ import { WorktreeRemovalTracker } from './WorktreeRemovalTracker';
 import { REMOVE_WORKTREE_GIT_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { deleteWorktreeFolder, type RemoveEntry, type WorktreeFolderDeletion } from './worktreeDeletion';
 import { WorktreeAgentsDetector } from '../process/WorktreeAgents';
+import { holdsOnlyGitFile } from './worktreeFolder';
 import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
+
+/** How a linked worktree's `.git` file and this repository's entry for it relate. */
+type WorktreeLink =
+  /** Each points at the other. */
+  | { state: 'linked'; admin: string }
+  /** The entry points at this `.git` file, but the file doesn't lead back to it. */
+  | { state: 'broken'; link: BrokenWorktreeLink }
+  /** Not a linked worktree of this repository, such as the main one or a folder without a `.git` file. */
+  | { state: 'none' };
+
+/** What a removal would lose, or why Git could not tell. */
+type WorktreeChangeCounts =
+  | { stagedCount: number; unstagedCount: number; untrackedCount: number; conflictCount: number }
+  | { unreadable: string };
 
 /**
  * Characters of staged diff and staged summary sent to the model. Generous on
@@ -1053,11 +1068,16 @@ export class GitRepositoryOperations {
     return {
       branches: managed.branches.sort(compareBranches),
       remotes: managed.remotes,
-      worktrees: await Promise.all(worktrees.map(async (worktree) => ({
-        ...worktree,
-        current: await samePath(worktree.path, repository.path),
-        ...(worktree.prunable && await pathExists(worktree.path) ? { leftoverFiles: true } : {}),
-      }))),
+      worktrees: await Promise.all(worktrees.map(async (worktree) => {
+        // A one-line file per linked worktree: cheap next to listing them, and nothing runs inside.
+        const link = worktree.main || worktree.bare || worktree.prunable ? null : await this.worktreeLink(repository.commonDir, worktree.path);
+        return {
+          ...worktree,
+          current: await samePath(worktree.path, repository.path),
+          ...(worktree.prunable && await pathExists(worktree.path) ? { leftoverFiles: true } : {}),
+          ...(link?.state === 'broken' ? { brokenLink: link.link } : {}),
+        };
+      })),
       ...(removals.length > 0 ? { worktreeRemovals: removals } : {}),
     };
   }
@@ -1110,12 +1130,19 @@ export class GitRepositoryOperations {
     // Never run Git inside a directory Git already reports as missing or bare.
     if (!details.available) return { ...details, ...(details.prunable && await pathExists(details.path) ? { leftoverFiles: true } : {}) };
 
+    const link = worktree.main ? null : await this.worktreeLink(repository.commonDir, worktree.path);
+    // Git inside it would fail, or reach whatever repository its `.git` file names.
+    if (link?.state === 'broken') {
+      const [lastCommit, onlyGitFile] = await Promise.all([this.lastCommit(repository.path, worktree.oid), holdsOnlyGitFile(worktree.path)]);
+      return { ...details, available: false, brokenLink: link.link, lastCommit, ...(onlyGitFile ? { onlyGitFile } : {}) };
+    }
     const [counts, operation, lastCommit, submodules] = await Promise.all([
       this.worktreeChangeCounts(worktree.path),
       this.repositories.operationAt(worktree.path).catch(() => null),
       this.lastCommit(repository.path, worktree.oid),
-      worktree.main ? false : this.linkedWorktreeAdmin(repository.commonDir, worktree.path).then((admin) => this.hasSubmodules(worktree.path, admin)),
+      worktree.main ? false : this.hasSubmodules(worktree.path, link?.state === 'linked' ? link.admin : null),
     ]);
+    // Unread counts stay at zero; `unreadable` says they are unknown rather than none.
     return { ...details, ...counts, operation, readOnly: operation !== null, lastCommit, ...(submodules ? { submodules } : {}) };
   }
 
@@ -1178,20 +1205,27 @@ export class GitRepositoryOperations {
         if (worktree.locked) return { status: 'locked', reason: worktree.locked };
         let linked = false;
         if (options.cleanupOnly) {
-          // Its folder may have returned, and then only a real removal could touch it.
-          if (!worktree.prunable) return { status: 'stale' };
+          // Its folder or its link may have come back, and then only a real removal could touch it.
+          if (!await this.lostWorktree(repository.commonDir, worktree)) return { status: 'stale' };
         } else {
           if (worktree.prunable) return { status: 'prunable', reason: worktree.prunable };
-          const [counts, operation, admin] = await Promise.all([
+          const link = await this.worktreeLink(repository.commonDir, worktree.path);
+          // Git validates the `.git` file before it looks at force, so this would only fail.
+          if (link.state === 'broken') return { status: 'broken-link' };
+          const admin = link.state === 'linked' ? link.admin : null;
+          linked = admin !== null;
+          const [counts, operation] = await Promise.all([
             this.worktreeChangeCounts(worktree.path),
             this.repositories.operationAt(worktree.path).catch(() => null),
-            this.linkedWorktreeAdmin(repository.commonDir, worktree.path),
           ]);
-          linked = admin !== null;
-          const dirty = counts.stagedCount + counts.unstagedCount + counts.untrackedCount + counts.conflictCount > 0;
-          if ((dirty || operation) && !force) return { status: 'dirty', ...counts, operation };
-          // Git refuses these without force too; deleting the folder ourselves must not skip that.
-          if (!force && await this.hasSubmodules(worktree.path, admin)) return { status: 'submodules' };
+          if (!force) {
+            // What Git could not read may be work, so only force removes it.
+            if ('unreadable' in counts) return { status: 'unreadable', reason: counts.unreadable };
+            const dirty = counts.stagedCount + counts.unstagedCount + counts.untrackedCount + counts.conflictCount > 0;
+            if (dirty || operation) return { status: 'dirty', ...counts, operation };
+            // Git refuses these without force too; deleting the folder ourselves must not skip that.
+            if (await this.hasSubmodules(worktree.path, admin) !== false) return { status: 'submodules' };
+          }
         }
         return options.signal?.aborted ? { status: 'cancelled' } : { worktree, linked };
       }, repository.commonDir);
@@ -1219,6 +1253,9 @@ export class GitRepositoryOperations {
 
       return this.git.runWriteTask(repository.path, async (run): Promise<WorktreeRemovalResult> => {
         if (options.cleanupOnly) {
+          // Checked again where the record is dropped: a worktree that works again keeps it.
+          const now = await this.findWorktree(repositoryId, worktree.path);
+          if (now && !await this.lostWorktree(repository.commonDir, now)) return { status: 'stale' };
           if (!await this.dropWorktreeRecord(repository.commonDir, worktree.path)) {
             throw new GitOperationError({ code: 'UNKNOWN', operation: 'clean-up-worktree', message: 'Git has no record of this worktree.' });
           }
@@ -1248,31 +1285,41 @@ export class GitRepositoryOperations {
   }
 
   /**
-   * The admin folder of a linked worktree whose `.git` file points at a record in
-   * this repository that points back at it, or null for anything else, including
-   * the main worktree, whose `.git` is a folder.
+   * Whether a linked worktree's `.git` file points at a record in this repository
+   * that points back at it (`linked`), or only the record points at the file
+   * (`broken`). Reads files only; no Git command runs inside the worktree.
    */
-  private async linkedWorktreeAdmin(commonDir: string, worktreePath: string): Promise<string | null> {
+  private async worktreeLink(commonDir: string, worktreePath: string): Promise<WorktreeLink> {
     const gitPath = path.join(worktreePath, '.git');
-    if (!(await lstat(gitPath).catch(() => null))?.isFile()) return null;
-    const pointer = /^gitdir:[ \t]*(.+?)\s*$/m.exec(await readFile(gitPath, 'utf8').catch(() => ''))?.[1];
-    if (!pointer) return null;
-    const admin = path.resolve(worktreePath, pointer);
-    if (await normalizePath(path.dirname(admin)) !== await normalizePath(path.join(commonDir, 'worktrees'))) return null;
-    const back = await readFile(path.join(admin, 'gitdir'), 'utf8').catch(() => null);
-    if (back === null || await normalizePath(path.resolve(admin, back.trim())) !== await normalizePath(gitPath)) return null;
-    return admin;
+    if (!(await lstat(gitPath).catch(() => null))?.isFile()) return { state: 'none' };
+    const pointer = /^gitdir:[ \t]*(.+?)\s*$/m.exec(await readFile(gitPath, 'utf8').catch(() => ''))?.[1] ?? null;
+    if (pointer) {
+      const admin = path.resolve(worktreePath, pointer);
+      if (await normalizePath(path.dirname(admin)) === await normalizePath(path.join(commonDir, 'worktrees'))) {
+        const back = await readFile(path.join(admin, 'gitdir'), 'utf8').catch(() => null);
+        if (back !== null && await normalizePath(path.resolve(admin, back.trim())) === await normalizePath(gitPath)) return { state: 'linked', admin };
+      }
+    }
+    if (!await this.worktreeRecord(commonDir, worktreePath)) return { state: 'none' };
+    return { state: 'broken', link: { pointsTo: pointer, pointsToMissing: pointer !== null && !await pathExists(path.resolve(worktreePath, pointer)) } };
   }
 
-  /** Git's own test before removing a worktree: initialized submodules, in its record or its checkout. */
-  private async hasSubmodules(worktreePath: string, admin: string | null): Promise<boolean> {
+  /** Git lost it (`prunable`), or its link is broken: either way only its record can go. */
+  private async lostWorktree(commonDir: string, worktree: WorktreeInfo): Promise<boolean> {
+    return Boolean(worktree.prunable) || (!worktree.main && (await this.worktreeLink(commonDir, worktree.path)).state === 'broken');
+  }
+
+  /**
+   * Git's own test before removing a worktree: initialized submodules, in its record or
+   * its checkout. Null when Git can't read the checkout, which callers must not take as none.
+   */
+  private async hasSubmodules(worktreePath: string, admin: string | null): Promise<boolean | null> {
     if (admin && await pathExists(path.join(admin, 'modules'))) return true;
     let index: string;
     try {
       index = (await this.git.run(worktreePath, ['ls-files', '--stage', '-z'], { operation: 'worktree-submodules', readOnly: true, maxOutputBytes: 64 * 1024 * 1024 })).stdout.toString('utf8');
     } catch {
-      // An unreadable worktree must never look safe to delete.
-      return true;
+      return null;
     }
     for (const entry of index.split('\0')) {
       const tab = entry.indexOf('\t');
@@ -1287,17 +1334,49 @@ export class GitRepositoryOperations {
    * drive, and Git can't remove a worktree whose folder exists without its `.git`.
    */
   private async dropWorktreeRecord(commonDir: string, worktreePath: string): Promise<boolean> {
+    const record = await this.worktreeRecord(commonDir, worktreePath);
+    if (!record) return false;
+    await rm(record, { recursive: true, force: true });
+    return true;
+  }
+
+  /** This repository's record of the worktree in `worktreePath`: the one whose `gitdir` names its `.git`. */
+  private async worktreeRecord(commonDir: string, worktreePath: string): Promise<string | null> {
     const records = path.join(commonDir, 'worktrees');
     const target = await normalizePath(path.join(worktreePath, '.git'));
-    for (const id of await readdir(records)) {
+    for (const id of await readdir(records).catch(() => [])) {
       const record = path.join(records, id);
       const gitFile = await readFile(path.join(record, 'gitdir'), 'utf8').catch(() => null);
-      if (gitFile !== null && await normalizePath(path.resolve(record, gitFile.trim())) === target) {
-        await rm(record, { recursive: true, force: true });
-        return true;
-      }
+      if (gitFile !== null && await normalizePath(path.resolve(record, gitFile.trim())) === target) return record;
     }
-    return false;
+    return null;
+  }
+
+  /**
+   * Reconnects a worktree whose `.git` file no longer leads back to this repository.
+   * Runs `git worktree repair` with no path: Git then rewrites `.git` files from this
+   * repository's own records, so it can fix every worktree the same move broke, but
+   * never follows a broken file to whatever other repository it names.
+   */
+  async repairWorktree(repositoryId: string, targetPath: string): Promise<WorktreeRepairResult> {
+    const repository = this.repositories.get(repositoryId);
+    if (this.worktreeRemovals.isRunning(await normalizePath(targetPath))) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'repair-worktree', message: 'This worktree is being removed.' });
+    }
+    return this.git.runWriteTask(repository.path, async (run): Promise<WorktreeRepairResult> => {
+      const worktree = await this.findWorktree(repositoryId, targetPath);
+      if (!worktree) return { status: 'missing' };
+      if (worktree.main || worktree.bare || worktree.prunable || (await this.worktreeLink(repository.commonDir, worktree.path)).state !== 'broken') return { status: 'not-broken' };
+      let failure: string | null = null;
+      try {
+        await run(['worktree', 'repair'], { operation: 'repair-worktree', timeoutMs: 60_000, maxOutputBytes: 1024 * 1024 });
+      } catch (error) {
+        failure = error instanceof Error ? error.message : String(error);
+      }
+      // Git can repair and still fail over another worktree, or succeed without fixing this one.
+      if ((await this.worktreeLink(repository.commonDir, worktree.path)).state === 'linked') return { status: 'repaired' };
+      return { status: 'failed', message: failure ?? '' };
+    }, repository.commonDir);
   }
 
   /**
@@ -1342,7 +1421,7 @@ export class GitRepositoryOperations {
     }
   }
 
-  private async worktreeChangeCounts(worktreePath: string): Promise<{ stagedCount: number; unstagedCount: number; untrackedCount: number; conflictCount: number }> {
+  private async worktreeChangeCounts(worktreePath: string): Promise<WorktreeChangeCounts> {
     try {
       const output = await this.git.run(worktreePath, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'], {
         operation: 'worktree-status', readOnly: true, maxOutputBytes: 32 * 1024 * 1024,
@@ -1356,9 +1435,9 @@ export class GitRepositoryOperations {
         untrackedCount,
         conflictCount: status.changes.filter((change) => change.conflict).length,
       };
-    } catch {
-      // An unreadable worktree must never look clean enough to remove.
-      return { stagedCount: 0, unstagedCount: 0, untrackedCount: 0, conflictCount: 1 };
+    } catch (error) {
+      // Never counted as clean: removal paths refuse it without force.
+      return { unreadable: error instanceof Error ? error.message : 'Git could not read it.' };
     }
   }
 

@@ -1,9 +1,9 @@
-import { chmod, mkdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitOperationError } from '../../shared/errors';
 import type { GitOutput } from './GitProcess';
-import { managementRepository, addWorktree, exists, realPath, git } from './test-support/repository-fixtures';
+import { managementRepository, standaloneRepository, addWorktree, exists, realPath, git } from './test-support/repository-fixtures';
 
 type Fixture = Awaited<ReturnType<typeof managementRepository>>;
 
@@ -644,10 +644,9 @@ describe('GitRepositoryOperations worktree removal that deletes the folder first
     const fixture = await managementRepository({ worktreeDeletion: 'node', removeWorktreeEntry: async () => { throw new Error('Node deletion must not run.'); } });
     const review = await addWorktree(fixture, 'review', 'review');
     const oid = await git(review, ['rev-parse', 'HEAD']);
-    // Its `.git` file no longer points at Git's record, so only Git may decide what to delete.
-    // Git for Windows hides `.git`, and Windows refuses to overwrite a hidden file, so replace it.
+    // Its `.git` is a folder now, not a file pointing at Git's record, so only Git may decide what to delete.
     await rm(path.join(review, '.git'));
-    await writeFile(path.join(review, '.git'), `gitdir: ${path.join(fixture.root, 'elsewhere')}\n`);
+    await mkdir(path.join(review, '.git'));
     const run = vi.spyOn(fixture.gitProcess, 'run');
 
     await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, true).catch(() => undefined);
@@ -661,4 +660,197 @@ describe('GitRepositoryOperations worktree removal that deletes the folder first
     expect(await fixture.operations.removeWorktree(fixture.repositoryId, fixture.work, oid, true)).toEqual({ status: 'main' });
     expect(await exists(path.join(fixture.work, 'file.txt'))).toBe(true);
   });
+});
+
+/** Points a worktree's `.git` file somewhere else. Git for Windows hides `.git`, and Windows refuses to overwrite a hidden file, so it is replaced. */
+async function pointGitFile(worktree: string, target: string): Promise<void> {
+  await rm(path.join(worktree, '.git'));
+  await writeFile(path.join(worktree, '.git'), `gitdir: ${target}\n`);
+}
+
+/** Deletes everything in a worktree's folder but its `.git` file, as a cleanup of temporary files can. */
+async function emptyFolder(worktree: string): Promise<void> {
+  for (const entry of await readdir(worktree)) if (entry !== '.git') await rm(path.join(worktree, entry), { recursive: true, force: true });
+}
+
+const slow = process.platform === 'win32' ? 60_000 : 20_000;
+
+describe('GitRepositoryOperations worktree with a broken link', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('reports a worktree whose .git file points nowhere as broken, not as a conflict, and runs no Git inside it', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+    await writeFile(path.join(review, 'file.txt'), 'changed\n');
+    const gone = path.join(fixture.root, 'gone', '.git', 'worktrees', 'review');
+    await pointGitFile(review, gone);
+    const run = vi.spyOn(fixture.gitProcess, 'run');
+
+    const [main, listed] = (await fixture.operations.localRefsSnapshot(fixture.repositoryId)).worktrees;
+    expect(main!.brokenLink).toBeUndefined();
+    expect(listed).toMatchObject({ prunable: null, brokenLink: { pointsTo: gone, pointsToMissing: true } });
+
+    const details = await fixture.operations.worktreeDetails(fixture.repositoryId, review);
+    expect(details).toMatchObject({ available: false, brokenLink: { pointsTo: gone, pointsToMissing: true }, conflictCount: 0, stagedCount: 0, unstagedCount: 0, untrackedCount: 0 });
+    expect(details.lastCommit?.oid).toBe(oid);
+    expect(details.submodules).toBeUndefined();
+    expect(details.unreadable).toBeUndefined();
+    expect(details.onlyGitFile).toBeUndefined();
+
+    // Git refuses even a forced removal here, so it is not tried.
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, true)).toEqual({ status: 'broken-link' });
+    expect(await exists(path.join(review, 'file.txt'))).toBe(true);
+    const repositoryPath = fixture.repositories.get(fixture.repositoryId).path;
+    expect(run.mock.calls.filter(([cwd]) => cwd !== repositoryPath)).toEqual([]);
+    expect(run.mock.calls.some(([, args]) => args.includes('remove'))).toBe(false);
+  }, slow);
+
+  it('recognizes a moved repository, repairs the link, and then reads the real changes', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const other = await addWorktree(fixture, 'other', 'other');
+    await writeFile(path.join(review, 'file.txt'), 'changed\n');
+    const moved = path.join(fixture.root, 'moved');
+    await rename(fixture.work, moved);
+    const { id } = await fixture.repositories.openPath(moved);
+
+    const before = await fixture.operations.worktreeDetails(id, review);
+    expect(before).toMatchObject({ available: false, conflictCount: 0, brokenLink: { pointsToMissing: true } });
+    // Git writes forward slashes on Windows too.
+    expect(before.brokenLink!.pointsTo!.replace(/\\/g, '/')).toMatch(/\/work\/\.git\/worktrees\/review$/);
+
+    expect(await fixture.operations.repairWorktree(id, review)).toEqual({ status: 'repaired' });
+
+    const after = await fixture.operations.worktreeDetails(id, review);
+    expect(after).toMatchObject({ available: true, unstagedCount: 1, conflictCount: 0 });
+    expect(after.brokenLink).toBeUndefined();
+    // The same move broke its sibling, and Git repairs every link it can.
+    expect((await fixture.operations.worktreeDetails(id, other)).brokenLink).toBeUndefined();
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+    expect(await fixture.operations.removeWorktree(id, review, oid)).toMatchObject({ status: 'dirty', unstagedCount: 1 });
+    expect(await fixture.operations.removeWorktree(id, review, oid, true)).toMatchObject({ status: 'removed' });
+    expect(await exists(review)).toBe(false);
+  }, slow);
+
+  it('cleans up only the broken entry, leaving its folder and a healthy worktree', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const healthy = await addWorktree(fixture, 'healthy', 'healthy');
+    const [oid, healthyOid] = [await git(review, ['rev-parse', 'HEAD']), await git(healthy, ['rev-parse', 'HEAD'])];
+    const [reported, reportedHealthy] = [await reportedPath(fixture, 'review'), await reportedPath(fixture, 'healthy')];
+    await pointGitFile(review, path.join(fixture.root, 'gone', '.git', 'worktrees', 'review'));
+
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, healthy, healthyOid, false, false, { cleanupOnly: true })).toEqual({ status: 'stale' });
+    const result = await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, false, false, { cleanupOnly: true });
+
+    expect(result).toMatchObject({ status: 'partial', branch: 'review', message: expect.stringContaining(reported) });
+    expect(await exists(path.join(review, 'file.txt'))).toBe(true);
+    expect(await exists(path.join(review, '.git'))).toBe(true);
+    const listed = await git(fixture.work, ['worktree', 'list', '--porcelain']);
+    expect(listed).not.toContain(reported);
+    expect(listed).toContain(reportedHealthy);
+    expect(await git(healthy, ['status', '--porcelain'])).toBe('');
+    expect(await git(fixture.work, ['branch', '--list', 'review'])).toContain('review');
+  }, slow);
+
+  it('keeps the entry when the link works again by the time it would be dropped', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+    const gitFile = await readFile(path.join(review, '.git'), 'utf8');
+    await pointGitFile(review, path.join(fixture.root, 'gone', '.git', 'worktrees', 'review'));
+
+    const result = await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, false, false, {
+      cleanupOnly: true,
+      // Repaired elsewhere after the cleanup was decided.
+      beforeDelete: async () => {
+        await rm(path.join(review, '.git'));
+        await writeFile(path.join(review, '.git'), gitFile);
+      },
+    });
+
+    expect(result).toEqual({ status: 'stale' });
+    expect(await git(review, ['status', '--porcelain'])).toBe('');
+    expect(await git(fixture.work, ['worktree', 'list', '--porcelain'])).toContain(await reportedPath(fixture, 'review'));
+  }, slow);
+
+  it('repairs and cleans up nothing for a healthy worktree or a path that is not this repository\'s', async () => {
+    const fixture = await managementRepository();
+    const healthy = await addWorktree(fixture, 'healthy', 'healthy');
+    const stranger = await standaloneRepository();
+    const foreign = path.join(path.dirname(stranger.work), 'foreign');
+    await git(stranger.work, ['worktree', 'add', '-b', 'foreign', foreign]);
+    const foreignOid = await git(foreign, ['rev-parse', 'HEAD']);
+    const brokenPointer = path.join(fixture.root, 'gone', '.git', 'worktrees', 'foreign');
+    await pointGitFile(foreign, brokenPointer);
+    const run = vi.spyOn(fixture.gitProcess, 'run');
+
+    expect(await fixture.operations.repairWorktree(fixture.repositoryId, healthy)).toEqual({ status: 'not-broken' });
+    expect(await fixture.operations.repairWorktree(fixture.repositoryId, fixture.work)).toEqual({ status: 'not-broken' });
+    expect(await fixture.operations.repairWorktree(fixture.repositoryId, foreign)).toEqual({ status: 'missing' });
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, foreign, foreignOid, false, false, { cleanupOnly: true })).toEqual({ status: 'missing' });
+
+    expect(run.mock.calls.some(([, args]) => args.includes('repair'))).toBe(false);
+    expect(await readFile(path.join(foreign, '.git'), 'utf8')).toContain(brokenPointer);
+    expect(await git(stranger.work, ['worktree', 'list', '--porcelain'])).toContain('foreign');
+  }, slow);
+
+  it('repairs from this repository without following the .git file into the repository it names', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const stranger = await standaloneRepository();
+    const theirs = path.join(path.dirname(stranger.work), 'theirs');
+    await git(stranger.work, ['worktree', 'add', '-b', 'theirs', theirs]);
+    const theirRecord = path.join(stranger.work, '.git', 'worktrees', 'theirs');
+    const theirLink = await readFile(path.join(theirRecord, 'gitdir'), 'utf8');
+    await pointGitFile(review, theirRecord);
+
+    expect((await fixture.operations.worktreeDetails(fixture.repositoryId, review)).brokenLink).toEqual({ pointsTo: theirRecord, pointsToMissing: false });
+    expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'repaired' });
+
+    expect(await readFile(path.join(theirRecord, 'gitdir'), 'utf8')).toBe(theirLink);
+    expect(await git(theirs, ['status', '--porcelain'])).toBe('');
+    expect(await git(review, ['status', '--porcelain'])).toBe('');
+  }, slow);
+
+  it('tells when the folder holds nothing but its .git file and empty folders, without following links', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    await mkdir(path.join(review, 'src', 'nested'), { recursive: true });
+    await writeFile(path.join(review, 'src', 'nested', 'kept.txt'), 'work\n');
+    await pointGitFile(review, path.join(fixture.root, 'gone', '.git', 'worktrees', 'review'));
+    const onlyGitFile = async () => (await fixture.operations.worktreeDetails(fixture.repositoryId, review)).onlyGitFile ?? false;
+
+    expect(await onlyGitFile()).toBe(false);
+    await rm(path.join(review, 'file.txt'));
+    // A file deep inside still counts.
+    expect(await onlyGitFile()).toBe(false);
+    await rm(path.join(review, 'src', 'nested', 'kept.txt'));
+    expect(await onlyGitFile()).toBe(true);
+    await emptyFolder(review);
+    expect(await onlyGitFile()).toBe(true);
+
+    // A junction or link is content even when what it leads to is empty, and is never walked into.
+    const outside = path.join(fixture.root, 'outside');
+    await mkdir(outside);
+    await symlink(outside, path.join(review, 'link'), 'junction');
+    expect(await onlyGitFile()).toBe(false);
+    expect(await exists(outside)).toBe(true);
+  }, slow);
+
+  it('says Git could not read a worktree rather than inventing a conflict, and keeps it from a plain removal', async () => {
+    const fixture = await managementRepository({ worktreeDeletion: 'git' });
+    const review = await addWorktree(fixture, 'review', 'review');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+    await writeFile(path.join(fixture.work, '.git', 'worktrees', 'review', 'index'), 'not an index');
+
+    const details = await fixture.operations.worktreeDetails(fixture.repositoryId, review);
+    expect(details).toMatchObject({ available: true, conflictCount: 0, unreadable: expect.stringMatching(/index/i) });
+    expect(details.brokenLink).toBeUndefined();
+    expect(details.submodules).toBeUndefined();
+
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid)).toMatchObject({ status: 'unreadable', reason: expect.stringMatching(/index/i) });
+    expect(await exists(path.join(review, 'file.txt'))).toBe(true);
+  }, slow);
 });

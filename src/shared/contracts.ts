@@ -355,6 +355,16 @@ export interface RemoveWorktreeRequest {
 }
 
 /**
+ * Repairing never deletes anything. `failed` means Git ran but the link is still
+ * broken, with what Git said, if anything; `not-broken` means there was nothing to repair.
+ */
+export type WorktreeRepairResult =
+  | { status: 'repaired' }
+  | { status: 'not-broken' }
+  | { status: 'missing' }
+  | { status: 'failed'; message: string };
+
+/**
  * Removing a worktree deletes its directory and invalidates only that
  * directory's recent entries. Its branch is deleted only by explicit request.
  */
@@ -1186,6 +1196,8 @@ export interface OpenTigApi {
     deleteBranch(request: DeleteBranchRequest): Promise<BranchDeletionResult>;
     /** Removes a worktree; dirty state and branch deletion require explicit confirmation. */
     removeWorktree(request: RemoveWorktreeRequest): Promise<WorktreeRemovalResult>;
+    /** Reconnects a worktree whose `.git` file no longer leads back to this repository. */
+    repairWorktree(request: WorktreeDetailsRequest): Promise<WorktreeRepairResult>;
   };
   ai: {
     repositoryInstructions(repositoryId: string): Promise<RepositoryAiInstructionsStatus>;
@@ -1300,7 +1312,7 @@ export const IPC = {
   commitsList: 'commits:list', commitsFiles: 'commits:files', commitsFileHistory: 'commits:file-history', commitsRecognize: 'commits:recognize', commitsCountAfter: 'commits:count-after', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
-  branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
+  branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree', worktreeRepair: 'refs:repair-worktree',
   remoteBranchDetails: 'refs:remote-branch-details', trackingBranchCreate: 'refs:create-tracking-branch', remoteBranchDelete: 'refs:delete-remote-branch', branchesFetch: 'refs:fetch-branches',
   aiRepositoryInstructions: 'ai:repository-instructions', aiSetRepositoryInstructions: 'ai:set-repository-instructions',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
