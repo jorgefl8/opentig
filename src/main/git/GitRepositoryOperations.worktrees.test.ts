@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitOperationError } from '../../shared/errors';
@@ -690,6 +691,10 @@ function onMissingVolume(...parts: string[]): string {
   return path.posix.join(base, `opentig-missing-${randomUUID()}`, 'volume', ...parts);
 }
 
+/** On Windows, a connected drive other than the one temporary folders are on, if there is one. */
+const otherDrive = process.platform !== 'win32' ? null : [...'CDEFGHIJKLMNOPQRSTUVWXYZ'].map((letter) => `${letter}:\\`)
+  .find((root) => root.toLowerCase() !== path.win32.parse(path.resolve(os.tmpdir())).root.toLowerCase() && existsSync(root)) ?? null;
+
 /** A file's Windows attributes as `attrib` prints them, such as `A H R`. */
 async function attributes(file: string): Promise<string> {
   const { stdout } = await run('attrib', [file], { windowsHide: true });
@@ -1021,12 +1026,10 @@ describe('GitRepositoryOperations worktree with a broken link', () => {
     expect(await fixture.operations.repairWorktree(fixture.repositoryId, review)).toEqual({ status: 'not-broken' });
   }, slow);
 
-  it.runIf(process.platform === 'win32')('says when the folder a .git file names is on another drive, which may only be disconnected', async () => {
+  it.runIf(otherDrive)('says when the folder a .git file names is on another drive, which may only be disconnected', async () => {
     const fixture = await managementRepository();
     const review = await addWorktree(fixture, 'review', 'review');
-    const own = path.win32.parse(path.resolve(fixture.work)).root.toLowerCase();
-    const other = [...'CDEFGHIJKLMNOPQRSTUVWXYZ'].map((letter) => `${letter}:\\`).find((root) => root.toLowerCase() !== own && existsSync(root));
-    if (!other) return;
+    const other = otherDrive!;
     const gone = path.win32.join(other, `opentig-moved-${randomUUID()}`, '.git', 'worktrees', 'review');
     await pointGitFile(review, gone);
 
