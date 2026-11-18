@@ -79,33 +79,6 @@ for (const entry of ['package/dist/bin.mjs', 'package/dist/server.mjs', 'package
   if (/from\s*["'](?:electron|uiohook-napi|@electron-forge\/)/.test(source)) throw new Error(`Desktop import found in ${entry}.`);
 }
 
-// The opentig alias: the same version, only its command, and @opentig/cli at exactly that version.
-const alias = metadata.alias;
-if (alias?.packageName !== 'opentig' || alias.version !== metadata.version || alias.filename !== `opentig-${metadata.version}.tgz`) {
-  throw new Error('The opentig alias is missing from the headless metadata or does not match the CLI version.');
-}
-const aliasPath = path.join(outputDirectory, alias.filename);
-const aliasBytes = await readFile(aliasPath);
-if (createHash('sha256').update(aliasBytes).digest('hex') !== alias.sha256
-  || `sha512-${createHash('sha512').update(aliasBytes).digest('base64')}` !== alias.npmIntegrity) {
-  throw new Error('The opentig alias tarball does not match its metadata.');
-}
-const { stdout: aliasListing } = await execute('tar', ['-tzf', aliasPath], { windowsHide: true });
-const aliasFiles = aliasListing.split(/\r?\n/).filter(Boolean).map((entry) => entry.replace(/^package\//, '')).sort();
-if (!isDeepStrictEqual(aliasFiles, ['LICENSE', 'README.md', 'bin.mjs', 'package.json'])
-  || !isDeepStrictEqual(alias.files.map((file) => file.path).sort(), aliasFiles)) throw new Error(`Unexpected opentig alias content: ${aliasFiles.join(', ')}`);
-const { stdout: aliasPackageBytes } = await execute('tar', ['-xOf', aliasPath, 'package/package.json'], { encoding: 'buffer', windowsHide: true });
-const aliasPackage = JSON.parse(Buffer.from(aliasPackageBytes).toString('utf8'));
-if (aliasPackage.name !== 'opentig' || aliasPackage.version !== metadata.version || aliasPackage.private === true
-  || aliasPackage.type !== 'module' || !isDeepStrictEqual(aliasPackage.bin, { opentig: 'bin.mjs' })
-  || !isDeepStrictEqual(aliasPackage.dependencies, { '@opentig/cli': metadata.version })
-  || aliasPackage.engines?.node !== packedPackage.engines?.node || aliasPackage.scripts !== undefined) {
-  throw new Error('Packed opentig alias metadata is invalid.');
-}
-if (packedPackage.exports?.['./bin'] !== './dist/bin.mjs') throw new Error('The CLI must export the command the opentig alias imports.');
-const { stdout: aliasEntryBytes } = await execute('tar', ['-xOf', aliasPath, 'package/bin.mjs'], { encoding: 'buffer', windowsHide: true });
-if (!/^import '@opentig\/cli\/bin';$/m.test(Buffer.from(aliasEntryBytes).toString('utf8'))) throw new Error('The opentig alias must run the @opentig/cli command.');
-
 process.stdout.write(`${JSON.stringify({
   packageName: metadata.packageName,
   version: metadata.version,
@@ -113,7 +86,6 @@ process.stdout.write(`${JSON.stringify({
   sha256,
   npmIntegrity: metadata.npmIntegrity,
   entryCount: metadata.entryCount,
-  alias: { packageName: alias.packageName, filename: alias.filename, sha256: alias.sha256 },
 }, null, 2)}\n`);
 
 function isAllowedPath(filePath) {

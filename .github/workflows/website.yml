@@ -2,11 +2,6 @@ name: Deploy website
 
 on:
   workflow_dispatch:
-    inputs:
-      allow_missing_npm_alias:
-        description: 'Deploy even if opentig@latest is not on npm at the version of @opentig/cli@latest (urgent fixes only; the site then shows npx commands that fail)'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -54,11 +49,6 @@ jobs:
       - run: pnpm run build:website
         env:
           WEBSITE_RELEASE_FILE: ${{ runner.temp }}/latest-release.json
-      # The site tells visitors to run npx opentig@latest; it must exist at the CLI's version.
-      - name: Require the opentig alias on npm at the CLI version
-        run: node website/scripts/npm-alias.mjs
-        env:
-          OPENTIG_ALLOW_MISSING_NPM_ALIAS: ${{ inputs.allow_missing_npm_alias && '1' || '' }}
       - name: Deploy the validated build with the pinned Wrangler CLI
         working-directory: website
         run: pnpm exec wrangler deploy

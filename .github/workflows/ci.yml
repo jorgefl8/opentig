@@ -272,8 +272,6 @@ jobs:
         run: |
           artifact="$(node -p "require('./dist/headless/opentig-headless.json').filename")"
           npx --yes --package "./dist/headless/$artifact" opentig --version
-      - name: Run the packed opentig alias with the packed CLI it depends on
-        run: node scripts/smoke-npm-alias.mjs dist/headless
       - run: npm install --global --allow-scripts=bun bun@1.3.0
       - name: Run packed CLI with bunx
         shell: bash

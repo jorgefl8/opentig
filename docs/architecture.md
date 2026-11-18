@@ -216,11 +216,9 @@ boundary tests live under `src/main/runtime`; supervisor tests live under
 `src/main/server`; renderer transport tests live under `src/renderer/lib`.
 
 `pnpm run release:pack:headless` builds the web client and server once, then emits
-the `@opentig/cli` tarball, the tarball of its short-name alias `opentig` (a
-command that imports `@opentig/cli/bin` at exactly the same version), and JSON
-metadata containing their version, SHA-256, npm integrity, and exact file lists.
-`pnpm run release:inspect:headless` rejects version drift, checkout paths,
-source/tests/state, Electron/native imports, undeclared artifacts, missing
-license notices, and an alias that would run anything but that CLI version. Release automation consumes that tested tarball rather than rebuilding it.
+one tarball plus JSON metadata containing its version, SHA-256, npm integrity,
+and exact file list. `pnpm run release:inspect:headless` rejects version drift,
+checkout paths, source/tests/state, Electron/native imports, undeclared
+artifacts, and missing license notices. Release automation consumes that tested tarball rather than rebuilding it.
 
 For Dev builds, platform requirements, and website/documentation checks, see [development and packaging](development.md).

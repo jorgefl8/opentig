@@ -8,8 +8,7 @@
     "opentig": "dist/bin.mjs"
   },
   "exports": {
-    ".": "./dist/server.mjs",
-    "./bin": "./dist/bin.mjs"
+    ".": "./dist/server.mjs"
   },
   "files": [
     "dist",

@@ -15,7 +15,7 @@ const installScriptFiles = new Set([
   'website/public/install.sh', 'website/public/install.ps1',
   'website/scripts/install-scripts.test.mjs', 'website/scripts/verify-install.mjs',
   'scripts/pack-headless.mjs', 'scripts/inspect-headless.mjs', 'scripts/headless-release.mjs',
-  'scripts/smoke-npm-alias.mjs', 'scripts/bundled-npm.mjs',
+  'scripts/bundled-npm.mjs',
   'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
   '.github/workflows/ci.yml', '.github/workflows/headless-release.yml', 'scripts/ci-scope.mjs',
 ]);

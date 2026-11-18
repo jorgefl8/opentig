@@ -70,9 +70,6 @@ jobs:
           node ../automation/scripts/smoke-headless-release.mjs
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-      - name: Run the packed opentig alias with the packed CLI it depends on
-        working-directory: source
-        run: node ../automation/scripts/smoke-npm-alias.mjs dist/headless
       - name: Prepare a login session that can enable lingering
         run: |
           sudo loginctl enable-linger "$(id -un)"
