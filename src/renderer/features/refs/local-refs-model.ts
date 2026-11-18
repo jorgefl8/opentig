@@ -1,4 +1,4 @@
-import type { BranchDetails, BranchInfo, ManagedWorktree, WorktreeAgents, WorktreeDetails } from '../../../shared/git-types';
+import type { BranchDetails, BranchInfo, BrokenWorktreeLink, ManagedWorktree, WorktreeAgents, WorktreeDetails } from '../../../shared/git-types';
 import type { PullRequestSummary } from '../../../shared/contracts';
 
 export type LocalRefsTab = 'branches' | 'worktrees';
@@ -86,7 +86,7 @@ export function branchDetailBadges(details: BranchDetails): RefBadge[] {
   });
 }
 
-export function worktreeBadges(worktree: Pick<ManagedWorktree, 'main' | 'current' | 'bare' | 'detached' | 'locked' | 'prunable' | 'leftoverFiles'>): RefBadge[] {
+export function worktreeBadges(worktree: Pick<ManagedWorktree, 'main' | 'current' | 'bare' | 'detached' | 'locked' | 'prunable' | 'leftoverFiles' | 'brokenLink'>): RefBadge[] {
   const badges: RefBadge[] = [];
   if (worktree.main) badges.push({ label: 'Main', tone: 'neutral' });
   if (worktree.current) badges.push({ label: 'Open', tone: 'current' });
@@ -94,6 +94,7 @@ export function worktreeBadges(worktree: Pick<ManagedWorktree, 'main' | 'current
   if (worktree.detached) badges.push({ label: 'Detached HEAD', tone: 'warning' });
   if (worktree.locked) badges.push({ label: 'Locked', tone: 'warning' });
   if (worktree.prunable) badges.push({ label: worktree.leftoverFiles ? 'Incomplete' : 'Missing', tone: 'warning' });
+  if (worktree.brokenLink) badges.push({ label: 'Broken link', tone: 'warning' });
   return badges;
 }
 
@@ -107,6 +108,8 @@ export interface DeleteEligibility {
   allowed: boolean;
   /** Dirty linked worktrees may be removed only through explicit force confirmation. */
   forceAllowed?: boolean;
+  /** The only way out is dropping Git's entry, which leaves the folder on disk. */
+  cleanupOnly?: boolean;
   /** Why the action is offered or refused, in the user's terms. */
   reason: string;
 }
@@ -175,14 +178,48 @@ export function worktreeRemoveEligibility(details: WorktreeDetails): DeleteEligi
   if (details.current) return { allowed: false, reason: 'OpenTig has this worktree open. Switch to another worktree first.' };
   if (details.bare) return { allowed: false, reason: 'This entry is a bare repository, not a removable worktree.' };
   if (details.locked) return { allowed: false, reason: `Locked${details.locked === 'locked' ? '' : `: ${details.locked}`}. Unlock it in Git before removing it.` };
-  if (details.prunable) return { allowed: false, forceAllowed: true, reason: details.leftoverFiles
+  // Git refuses even a forced removal while its `.git` file doesn't lead back here.
+  if (details.brokenLink) {
+    const explanation = brokenLinkExplanation(details.brokenLink, details.onlyGitFile === true);
+    return { allowed: false, forceAllowed: true, cleanupOnly: true, reason: [explanation.lead, explanation.path, explanation.cause, explanation.nothingLost, BROKEN_LINK_ACTIONS].filter(Boolean).join(' ') };
+  }
+  if (details.prunable) return { allowed: false, forceAllowed: true, cleanupOnly: true, reason: details.leftoverFiles
     ? 'This worktree is incomplete, for example because a removal stopped before it finished. Git can no longer use it, but its folder still has files.'
     : 'Git can no longer find this worktree on disk. Only its entry remains.' };
   if (details.operation) return { allowed: false, forceAllowed: true, reason: `A ${details.operation} is in progress here. Force removal permanently discards it and every local change.` };
+  if (details.unreadable) return { allowed: false, forceAllowed: true, reason: `Git can't read this worktree's local changes, so force removal may permanently delete uncommitted work. Git said: ${lastLine(details.unreadable)}` };
   const pending = localChangeSummary(details);
   if (pending) return { allowed: false, forceAllowed: true, reason: `${pending} would be permanently lost by force removal.` };
   if (details.submodules) return { allowed: false, forceAllowed: true, reason: 'It contains submodules, which Git removes only with force. Force removal deletes them and everything inside them.' };
   return { allowed: true, reason: 'No local changes. Removing it deletes the folder from disk and leaves its branch intact.' };
+}
+
+/** What the two ways out of a broken link do; the panel shows the button names in bold. */
+export const BROKEN_LINK_ACTIONS = 'Repair link reconnects it to this repository. Clean up entry makes Git forget it and leaves the folder on disk.';
+
+/** Why a worktree's link is broken, in parts the panel styles: the path goes on its own line. */
+export interface BrokenLinkExplanation {
+  lead: string;
+  /** Where its `.git` file points, as written there. */
+  path: string | null;
+  cause: string | null;
+  /** Only when the folder holds nothing but its `.git` file. */
+  nothingLost: string | null;
+}
+
+export function brokenLinkExplanation(link: BrokenWorktreeLink, onlyGitFile: boolean): BrokenLinkExplanation {
+  const nothingLost = onlyGitFile ? 'The folder has no other files, so no work would be lost.' : null;
+  if (link.pointsTo === null) {
+    return { lead: 'Its .git file doesn\'t say where its repository is, so Git can\'t use or remove this worktree as it is.', path: null, cause: null, nothingLost };
+  }
+  if (link.pointsToMissing) {
+    return { lead: 'Its .git file points to a folder that no longer exists:', path: link.pointsTo, cause: 'The repository was probably moved, so Git can\'t use or remove this worktree as it is.', nothingLost };
+  }
+  return { lead: 'Its .git file points to a folder that is not this repository\'s entry for it:', path: link.pointsTo, cause: 'Git can\'t use or remove this worktree as it is.', nothingLost };
+}
+
+function lastLine(text: string): string {
+  return text.trim().split(/\r?\n/).filter((line) => line.trim()).pop()?.trim() ?? text;
 }
 
 /** A human count of everything that is not committed, or `null` when clean. */

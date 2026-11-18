@@ -2,11 +2,11 @@ import { formatDate, formatDateTime } from '@shared/date-format';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconCheck, IconCopy, IconExternalLink, IconGitBranch,
-  IconRefresh, IconSearch, IconX,
+  IconAlertTriangle, IconCheck, IconCopy, IconExternalLink, IconGitBranch,
+  IconLink, IconRefresh, IconSearch, IconX,
 } from '@tabler/icons-react';
-import type { PullRequestSummary, RecentRepository } from '../../../shared/contracts';
-import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeAgents, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
+import type { PullRequestSummary, RecentRepository, WorktreeRepairResult } from '../../../shared/contracts';
+import type { BranchDetails, BrokenWorktreeLink, LocalRefsSnapshot, RemoteBranchDetails, WorktreeAgents, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
 import { StatusWord } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -16,7 +16,7 @@ import { opentig } from '@/lib/opentig-api';
 import { UNCONFIRMED_RESULT_MESSAGE, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  agentsAt, samePath, branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
+  agentsAt, samePath, branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, brokenLinkExplanation, filterBranches, filterWorktrees,
   localChangeSummary, mergedPullRequestTip, nextSelectionKey, removingWorktreeBadges, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
   normalizeWorktreePath, type LocalRefsFocus, type LocalRefsTab, type RefBadge,
 } from './local-refs-model';
@@ -69,6 +69,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // The worktree whose link was just repaired, until another one is selected.
+  const [repairedPath, setRepairedPath] = useState<string | null>(null);
   // Removals this window started, shown until the server's snapshot takes over.
   const [startedRemovals, setStartedRemovals] = useState<ReadonlySet<string>>(new Set());
   // Kept for the session, so a dismissed notice doesn't return while the server still holds it.
@@ -163,12 +165,14 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     setConfirming(null);
     setActionError(null);
     setCopied(false);
+    setRepairedPath(null);
   }, [open]);
 
   useEffect(() => {
     setConfirming(null);
     setActionError(null);
     setCopied(false);
+    setRepairedPath(null);
   }, [tab, selectedBranch, selectedWorktree]);
 
   const run = async (operation: string, action: () => Promise<boolean>) => {
@@ -256,6 +260,19 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
       void load().catch(() => undefined);
     }
   };
+
+  // Repairing deletes nothing, so it asks no confirmation; reading the worktree again shows its real state.
+  const repairWorktree = (target: WorktreeDetails) => run('repair-worktree', async () => {
+    const result = await opentig.refs.repairWorktree({ repositoryId, path: target.path });
+    await load();
+    if (result.status === 'repaired' || result.status === 'not-broken') {
+      setRepairedPath(target.path);
+      onMutated(null);
+      return true;
+    }
+    setActionError(repairFailure(result));
+    return false;
+  });
 
   const dismissNotice = (removal: WorktreeRemovalState) => {
     const dismissed = new Set(dismissedNotices).add(removalNoticeKey(removal));
@@ -433,6 +450,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 agents={agentsAt(props.worktreeAgents, worktreeDetails.path)}
                 deleteBranchByDefault={Boolean(props.focus?.worktree && samePath(props.focus.worktree, worktreeDetails.path))}
                 removing={removingPaths.has(worktreeDetails.path)}
+                repairing={busy === 'repair-worktree'}
+                repaired={repairedPath !== null && samePath(repairedPath, worktreeDetails.path) && !worktreeDetails.brokenLink}
                 anyBusy={Boolean(busy)}
                 confirming={confirming === 'remove-worktree'}
                 actionError={actionError}
@@ -440,6 +459,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 onConfirm={() => setConfirming('remove-worktree')}
                 onCancel={() => setConfirming(null)}
                 onRemove={(force, deleteBranch, cleanupOnly) => void removeWorktree(worktreeDetails, force, deleteBranch, cleanupOnly)}
+                onRepair={() => void repairWorktree(worktreeDetails)}
                 onCopyPath={() => void copyPath(worktreeDetails.path)}
                 onOpen={() => props.onOpenWorktree(worktreeDetails.path)}
                 onShowBranch={() => {
@@ -514,17 +534,18 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   );
 }
 
-function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
+function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault, removing, repairing, repaired, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onRepair, onCopyPath, onOpen, onShowBranch }: {
   details: WorktreeDetails;
   /** HEAD's commit, shortened as Git abbreviates it (see `shortCommitId`). */
   shortOid: string | null;
-  agents: string[]; deleteBranchByDefault: boolean; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
-  onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean, cleanupOnly: boolean): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
+  agents: string[]; deleteBranchByDefault: boolean; removing: boolean; repairing: boolean; repaired: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
+  onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean, cleanupOnly: boolean): void; onRepair(): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
 }) {
   const [deleteBranch, setDeleteBranch] = useState(deleteBranchByDefault);
   const eligibility = worktreeRemoveEligibility(details);
   const changes = localChangeSummary(details);
   const force = eligibility.forceAllowed === true;
+  const cleanup = eligibility.cleanupOnly === true;
   const removalAllowed = eligibility.allowed || force;
   useEffect(() => setDeleteBranch(deleteBranchByDefault), [details.path, deleteBranchByDefault]);
   return (
@@ -543,7 +564,7 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
             : <code>{shortOid ?? '—'}</code>}
         </Fact>
         <Fact label="Committed">{details.lastCommit?.date ? formatDateTime(details.lastCommit.date) : '—'}</Fact>
-        {!removing && <Fact label="Local changes">{details.available ? (changes ?? 'None') : 'Not readable'}</Fact>}
+        {!removing && <Fact label="Local changes">{details.available && !details.unreadable ? (changes ?? 'None') : 'Not readable'}</Fact>}
       </dl>
       <div className="local-refs-detail-actions">
         <Button variant="ghost" size="sm" onClick={onCopyPath} disabled={anyBusy}>
@@ -570,19 +591,27 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
           </p>
         </div>
       ) : <DestructiveSection
-        reason={eligibility.reason}
+        reason={details.brokenLink && cleanup ? <BrokenLinkReason link={details.brokenLink} onlyGitFile={details.onlyGitFile === true} /> : eligibility.reason}
+        notice={repaired ? <p className="local-refs-reason"><IconCheck className="local-refs-ok" aria-hidden="true" /><span>Link repaired.</span></p> : null}
+        extraAction={details.brokenLink && !details.main ? (
+          <Button variant="ghost" size="sm" className="local-refs-repair" onClick={() => { if (!repairing) onRepair(); }} disabled={anyBusy && !repairing} aria-disabled={repairing || undefined}>
+            {repairing ? <Spinner /> : <IconLink />} {repairing ? 'Repairing…' : 'Repair link'}
+          </Button>
+        ) : null}
         actionError={actionError}
         confirming={confirming}
         busy={false}
         anyBusy={anyBusy}
-        actionLabel={details.prunable ? 'Clean up entry' : force ? 'Force remove worktree' : 'Remove worktree'}
-        confirmLabel={details.prunable ? 'Clean up entry' : force ? 'Permanently remove' : 'Remove worktree'}
+        actionLabel={cleanup ? 'Clean up entry' : force ? 'Force remove worktree' : 'Remove worktree'}
+        confirmLabel={cleanup ? 'Clean up entry' : force ? 'Permanently remove' : 'Remove worktree'}
         allowed={removalAllowed}
         confirmation={<>
-          {details.prunable
-            ? <>Remove Git's entry for this worktree? {details.leftoverFiles ? <>The files in <strong className="local-refs-path">{details.path}</strong> stay on disk, so delete that folder yourself. </> : null}</>
+          {cleanup
+            ? <>Remove Git's entry for this worktree? {details.brokenLink && details.onlyGitFile
+              ? <>The folder <strong className="local-refs-path">{details.path}</strong> stays on disk with only its .git file, so delete it yourself. </>
+              : details.leftoverFiles || details.brokenLink ? <>The files in <strong className="local-refs-path">{details.path}</strong> stay on disk, so delete that folder yourself. </> : null}</>
             : force
-            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? (details.operation ? `The ${details.operation}` : details.submodules ? 'Its submodules' : 'The current Git operation')}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>
+            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? (details.operation ? `The ${details.operation}` : details.unreadable ? 'Any local changes' : details.submodules ? 'Its submodules' : 'The current Git operation')}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>
             : <>Remove the worktree at <strong className="local-refs-path">{details.path}</strong>? The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>}
           {deleteBranch && details.branch
             ? <>The branch <strong>{details.branch}</strong> will also be force-deleted. Commits found only on that branch may become inaccessible.</>
@@ -590,9 +619,26 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
         </>}
         onConfirm={onConfirm}
         onCancel={onCancel}
-        onAct={() => details.prunable ? onRemove(false, deleteBranch, true) : onRemove(force, deleteBranch, false)}
+        onAct={() => cleanup ? onRemove(false, deleteBranch, true) : onRemove(force, deleteBranch, false)}
       />}
     </>
+  );
+}
+
+/** Where a broken link points and the two ways out, with the path on its own line. */
+function BrokenLinkReason({ link, onlyGitFile }: { link: BrokenWorktreeLink; onlyGitFile: boolean }) {
+  const explanation = brokenLinkExplanation(link, onlyGitFile);
+  return (
+    <p className="local-refs-reason">
+      <IconAlertTriangle className="local-refs-warning" aria-hidden="true" />
+      <span>
+        {explanation.lead}
+        {explanation.path ? <span className="local-refs-path local-refs-selectable">{explanation.path}</span> : ' '}
+        {explanation.cause && <>{explanation.cause} </>}
+        {explanation.nothingLost && <><b>{explanation.nothingLost}</b> </>}
+        <b>Repair link</b> reconnects it to this repository. <b>Clean up entry</b> makes Git forget it and leaves the folder on disk.
+      </span>
+    </p>
   );
 }
 
@@ -600,11 +646,18 @@ function WorktreeDetailPanel({ details, shortOid, agents, deleteBranchByDefault,
  * Renders the destructive control only for a backend state Git can act on;
  * every other state gets an explanation and no button at all.
  */
-function DestructiveSection({ reason, actionError, confirming, busy, anyBusy, allowed, actionLabel, confirmLabel, confirmation, onConfirm, onCancel, onAct }: {
-  reason: string; actionError: string | null; confirming: boolean; busy: boolean; anyBusy: boolean;
+function DestructiveSection({ reason, notice, extraAction, actionError, confirming, busy, anyBusy, allowed, actionLabel, confirmLabel, confirmation, onConfirm, onCancel, onAct }: {
+  /** A string becomes a plain paragraph; anything else is rendered as given. */
+  reason: ReactNode;
+  /** Shown above the reason, such as the outcome of the last action. */
+  notice?: ReactNode;
+  /** A harmless action offered before the destructive one, on the same row. */
+  extraAction?: ReactNode;
+  actionError: string | null; confirming: boolean; busy: boolean; anyBusy: boolean;
   allowed: boolean; actionLabel: string; confirmLabel: string; confirmation: ReactNode;
   onConfirm(): void; onCancel(): void; onAct(): void;
 }) {
+  const destructive = allowed ? <Button variant="ghost" size="sm" className="danger-action" onClick={onConfirm} disabled={anyBusy}>{actionLabel}</Button> : null;
   return (
     <div className="local-refs-danger">
       {actionError && <p className="local-refs-danger-error" role="alert">{actionError}</p>}
@@ -620,8 +673,9 @@ function DestructiveSection({ reason, actionError, confirming, busy, anyBusy, al
         </div>
       ) : (
         <>
-          <p className="local-refs-reason">{reason}</p>
-          {allowed && <Button variant="ghost" size="sm" className="danger-action" onClick={onConfirm} disabled={anyBusy}>{actionLabel}</Button>}
+          {notice}
+          {typeof reason === 'string' ? <p className="local-refs-reason">{reason}</p> : reason}
+          {extraAction ? <span className="local-refs-danger-actions">{extraAction}{destructive}</span> : destructive}
         </>
       )}
     </div>
@@ -678,10 +732,19 @@ function worktreeFailure(status: string): string {
     case 'locked': return 'The worktree is locked. Unlock it in Git first.';
     case 'submodules': return 'The worktree contains submodules, so it was kept. Force removal deletes them too.';
     case 'prunable': return 'Git can no longer use this worktree. Refresh to see how to clean it up.';
+    case 'broken-link': return 'This worktree\'s link to the repository is broken, so Git can\'t remove it. Refresh to repair it or clean up its entry.';
+    case 'unreadable': return 'Git can\'t read this worktree\'s local changes, so it was kept. Force removal deletes them too.';
     case 'bare': return 'This entry is a bare repository, not a removable worktree.';
     case 'cancelled': return 'The removal was cancelled before it started, so nothing changed.';
     default: return 'The worktree no longer exists.';
   }
+}
+
+function repairFailure(result: Exclude<WorktreeRepairResult, { status: 'repaired' | 'not-broken' }>): string {
+  if (result.status === 'missing') return worktreeFailure('missing');
+  // Every Git the app supports has `worktree repair`; this only explains an older one in plain words.
+  if (/unknown subcommand|usage: git worktree/i.test(result.message)) return 'This version of Git can\'t repair worktree links. Update Git, or use Clean up entry.';
+  return `Git could not repair this link, so nothing changed. Clean up entry still works.${result.message ? ` Git said: ${result.message}` : ''}`;
 }
 
 function removalNoticeKey(removal: WorktreeRemovalState): string {

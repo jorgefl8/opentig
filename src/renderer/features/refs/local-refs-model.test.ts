@@ -269,4 +269,21 @@ describe('worktrees Git lost track of', () => {
     expect(worktreeBadges(lost)).toEqual([{ label: 'Missing', tone: 'warning' }]);
     expect(worktreeBadges({ ...lost, leftoverFiles: true })).toEqual([{ label: 'Incomplete', tone: 'warning' }]);
   });
+
+  it('offers only a cleanup for a broken link, says where it points, and promises nothing is lost only for an empty folder', () => {
+    const broken = { ...lost, prunable: null, detached: true, brokenLink: { pointsTo: 'C:/old/repo/.git/worktrees/review', pointsToMissing: true }, stagedCount: 1 };
+
+    const eligibility = worktreeRemoveEligibility(broken);
+    expect(eligibility).toMatchObject({ allowed: false, cleanupOnly: true });
+    expect(eligibility.reason).toContain('C:/old/repo/.git/worktrees/review');
+    expect(eligibility.reason).toContain('The repository was probably moved');
+    expect(eligibility.reason).not.toContain('no work would be lost');
+    expect(worktreeRemoveEligibility({ ...broken, onlyGitFile: true }).reason).toContain('The folder has no other files, so no work would be lost.');
+    expect(worktreeBadges(broken)).toEqual([{ label: 'Detached HEAD', tone: 'warning' }, { label: 'Broken link', tone: 'warning' }]);
+  });
+
+  it('never offers a plain removal for a worktree whose changes Git could not read', () => {
+    const unreadable = { ...lost, prunable: null, available: true, unreadable: 'error: bad signature\nfatal: index file corrupt' };
+    expect(worktreeRemoveEligibility(unreadable)).toEqual({ allowed: false, forceAllowed: true, reason: expect.stringContaining('fatal: index file corrupt') });
+  });
 });

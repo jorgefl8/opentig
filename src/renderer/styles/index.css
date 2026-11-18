@@ -818,6 +818,12 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .local-refs-reason { color: var(--muted-foreground); }
   .local-refs-reason svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
   .local-refs-danger-error { color: var(--destructive); }
+  .local-refs-reason .local-refs-path { display: block; margin: 2px 0; color: var(--foreground); }
+  .local-refs-reason b { color: var(--foreground); font-weight: var(--weight-strong); }
+  .local-refs-reason .local-refs-warning { color: var(--warning); }
+  .local-refs-reason .local-refs-ok { color: var(--success); }
+  .local-refs-danger-actions { display: flex; flex-wrap: wrap; gap: 2px; margin-left: -12px; }
+  .local-refs-danger-actions > .local-refs-repair { color: var(--foreground); font-weight: var(--weight-strong); }
   .local-refs-confirm { display: grid; gap: 8px; font-size: var(--text-ui); line-height: 1.5; }
   .local-refs-confirm-actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .local-refs-placeholder { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 26px 16px; color: var(--muted-foreground); font-size: var(--text-meta); text-align: center; }

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Page } from '@playwright/test';
@@ -291,6 +291,52 @@ test('a linked worktree can be removed together with its branch', async ({ paire
   expect(existsSync(worktreePath)).toBe(false);
   expect(await repository.git('worktree', 'list', '--porcelain')).not.toContain('spike');
   expect(await localBranches(repository)).toEqual(['main']);
+});
+
+test('worktrees left behind by a moved repository are explained, and can be repaired or cleaned up', async ({ pairedPage: page, repository }) => {
+  const review = `${repository.path}-review`;
+  const leftover = `${repository.path}-leftover`;
+  await repository.git('worktree', 'add', '-q', '-b', 'review', review);
+  await repository.git('worktree', 'add', '-q', '--detach', leftover);
+  await writeFile(path.join(review, 'README.md'), '# Changed in review\n');
+  // A cleanup of temporary files emptied this one, all but its .git file.
+  for (const entry of await readdir(leftover)) if (entry !== '.git') await rm(path.join(leftover, entry), { recursive: true });
+  const moved = `${repository.path}-moved`;
+  await rename(repository.path, moved);
+  const git = async (cwd: string, ...args: string[]) => (await promisify(execFile)('git', ['-C', cwd, ...args])).stdout.trim();
+  await openRepository(page, { ...repository, path: moved, name: path.basename(moved) });
+  const dialog = await openBranchManager(page);
+  await dialog.getByRole('tab', { name: /^Worktrees/ }).click();
+  const rows = dialog.getByRole('listbox', { name: 'Worktrees' });
+
+  await expect(rows.getByRole('option', { name: /sample-project-leftover/ })).toContainText('Broken link');
+  await rows.getByRole('option', { name: /sample-project-leftover/ }).click();
+  await expect(dialog.getByText('Its .git file points to a folder that no longer exists:')).toBeVisible();
+  await expect(dialog.getByText(/The repository was probably moved, so Git can't use or remove this worktree as it is\. The folder has no other files, so no work would be lost\./)).toBeVisible();
+  await expect(dialog.getByText('Not readable')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Open worktree' })).toBeHidden();
+  await expect(dialog.getByRole('button', { name: /Force remove/ })).toBeHidden();
+  await dialog.getByRole('button', { name: 'Clean up entry' }).click();
+  await expect(dialog.getByText(/stays on disk with only its \.git file, so delete it yourself/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Clean up entry' }).click();
+
+  await expect(rows.getByRole('option', { name: /sample-project-leftover/ })).toBeHidden({ timeout: 20_000 });
+  const notice = dialog.getByRole('alert').filter({ hasText: 'Git no longer tracks this worktree, but its folder is still on disk' });
+  await expect(notice).toContainText(leftover);
+  await expect(notice.getByRole('button', { name: 'Copy path' })).toBeVisible();
+  expect(existsSync(path.join(leftover, '.git'))).toBe(true);
+  expect(await git(moved, 'worktree', 'list', '--porcelain')).not.toContain(leftover);
+
+  await rows.getByRole('option', { name: /sample-project-review/ }).click();
+  await expect(rows.getByRole('option', { name: /sample-project-review/ })).toContainText('Broken link');
+  await expect(dialog.getByText(/so Git can't use or remove this worktree as it is\. Repair link reconnects it/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Repair link' }).click();
+
+  await expect(dialog.getByText('Link repaired.')).toBeVisible();
+  await expect(dialog.getByText('1 unstaged change', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Open worktree' })).toBeVisible();
+  await expect(rows.getByRole('option', { name: /sample-project-review/ })).not.toContainText('Broken link');
+  expect(await git(review, 'status', '--porcelain')).toBe('M README.md');
 });
 
 test.describe('coding agents in worktrees', () => {
