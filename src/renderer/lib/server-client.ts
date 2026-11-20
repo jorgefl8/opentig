@@ -175,6 +175,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       get: (request) => invoke(IPC.diffGet, request),
       getCommit: (repositoryId, oid) => invoke(IPC.diffCommit, repositoryId, oid),
       getCommitFile: (repositoryId, oid, path, oldPath) => invoke(IPC.diffCommitFile, repositoryId, oid, path, oldPath),
+      getFileVersions: (request, maxBytes) => invoke(IPC.diffFileVersions, request, maxBytes),
     },
     index: {
       stage: (repositoryId, paths) => invoke(IPC.indexStage, repositoryId, paths),
@@ -253,6 +254,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       getCommitAuthorAvatar: (repositoryId, oid) => invoke(IPC.githubCommitAuthorAvatar, repositoryId, oid),
       getPullRequestFiles: (repositoryId, number, scope) => invoke(IPC.githubPrFiles, repositoryId, number, scope),
       getPullRequestFileDiff: (repositoryId, number, scope, file) => invoke(IPC.githubPrFileDiff, repositoryId, number, scope, file),
+      getPullRequestFileVersions: (repositoryId, number, scope, file, maxBytes) => invoke(IPC.githubPrFileVersions, repositoryId, number, scope, file, maxBytes),
       getPullRequestCommits: (repositoryId, number) => invoke(IPC.githubPrCommits, repositoryId, number),
       createPullRequest: (input) => invoke(IPC.githubPrCreate, input),
       listReleases: (repositoryId, fresh) => keptInvoke(IPC.githubReleaseList, repositoryId, fresh),

@@ -6,7 +6,7 @@ import type { CliDetection } from '../ai/cli-selection';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { ActionJobLog, ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, PullRequestFileList, PullRequestFilesScope, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLineCounts, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { ActionJobLog, FileVersionsResult, ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, PullRequestFileList, PullRequestFilesScope, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLineCounts, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError, GitOperationError, serializeError } from '../../shared/errors';
 import type { KeptAnswerSink, KeptRefreshOutcome } from '../../shared/kept-reads';
 import { GitHubReadCache, remoteFingerprint, type GitHubReadScope } from './GitHubReadCache';
@@ -844,6 +844,11 @@ export class GitHubService {
   async getPullRequestFileDiff(repositoryId: string, prNumber: number, scope: PullRequestFilesScope, file: { path: string; oldPath: string | null }): Promise<DiffResult> {
     const cwd = this.repositories.get(repositoryId).path;
     return this.shareRead(repositoryId, ['file-diff', prNumber, scope, file.path, file.oldPath], () => this.localGit.fileDiff(cwd, scope, file.path, file.oldPath));
+  }
+
+  /** Both versions of the file `getPullRequestFileDiff` compares, whole; see `PullRequestLocalGit.fileVersions`. */
+  getPullRequestFileVersions(repositoryId: string, _prNumber: number, scope: PullRequestFilesScope, file: { path: string; oldPath: string | null }, maxBytes: number): Promise<FileVersionsResult> {
+    return this.localGit.fileVersions(this.repositories.get(repositoryId).path, scope, file.path, file.oldPath, maxBytes);
   }
 
   /** Without the commits locally (offline remote, shallow history, an unusual remote layout) GitHub's own diff still covers PRs within its limits. */

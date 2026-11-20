@@ -68,6 +68,29 @@ describe('PullRequestLocalGit', () => {
     expect(diff.patch.match(/^diff --git /gm)).toHaveLength(2);
   });
 
+  it('reads a file whole at the merge base and the head, or at a commit of the pull request and its parent', async () => {
+    const fixture = await repositoryWithUpstream();
+    const range = await remotePullRequest(fixture, 1);
+    const author = path.join(fixture.root, 'pr-author');
+    const first = await git(author, ['rev-parse', 'HEAD~1']);
+    await git(author, ['switch', '-q', 'main']);
+    await writeFile(path.join(author, 'committed.txt'), 'base moved\n');
+    await git(author, ['commit', '-q', '-am', 'Move base']);
+    await git(author, ['push', '-q', 'origin', 'main']);
+    const moved = { ...range, baseOid: await git(author, ['rev-parse', 'HEAD']) };
+    const local = new PullRequestLocalGit(new GitProcess());
+    expect(await local.ensureRange(fixture.work, 'origin', moved)).toBe(true);
+    const scope = { baseOid: moved.baseOid, headOid: moved.headOid };
+
+    // The base moved since, but the pull request is compared from where it branched off.
+    expect(await local.fileVersions(fixture.work, scope, 'committed.txt', null, 1024)).toMatchObject({ status: 'ready', old: { content: 'base\n' }, new: { content: 'changed\n' } });
+    expect(await local.fileVersions(fixture.work, { ...scope, commitOid: range.headOid }, 'committed.txt', null, 1024)).toMatchObject({ status: 'ready', old: { content: 'base\n' }, new: { content: 'changed\n' } });
+    expect(await local.fileVersions(fixture.work, { ...scope, commitOid: first }, 'many/file-0.txt', null, 1024)).toMatchObject({ status: 'ready', old: null, new: { content: '0\n' } });
+    await expect(local.fileVersions(fixture.work, { ...scope, commitOid: moved.baseOid }, 'committed.txt', null, 1024)).rejects.toThrow('That commit is not one of this pull request’s.');
+    await expect(local.fileVersions(fixture.work, scope, '../committed.txt', null, 1024)).rejects.toThrow('Invalid file.');
+    await expect(local.fileVersions(fixture.work, scope, 'committed.txt', '/etc/passwd', 1024)).rejects.toThrow('Invalid file.');
+  });
+
   it('keeps a diff above the transport limit to complete files that fit one response', async () => {
     const fixture = await repositoryWithUpstream();
     const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);

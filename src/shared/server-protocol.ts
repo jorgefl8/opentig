@@ -87,4 +87,6 @@ export interface OpenTigServerIdentity {
   worktreeRepair?: true;
   /** Answers `github:commit-author-avatar`. Absent on servers older than it. */
   commitAuthorAvatars?: true;
+  /** Answers `diff:file-versions` and `github:pr-file-versions`. Absent on servers older than them. */
+  fileVersions?: true;
 }

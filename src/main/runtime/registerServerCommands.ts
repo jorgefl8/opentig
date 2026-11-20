@@ -19,7 +19,7 @@ import { PendingCuts } from './PendingCuts';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
 import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, prNumbersArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestFileArg, pullRequestFilesScopeArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, githubIdArg, runPageArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
-import { bootstrapRequestArg, createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
+import { bootstrapRequestArg, createTrackingBranchArg, deleteRemoteBranchArg, fileVersionsBytesArg, fileVersionsRequestArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
   registry: CommandRegistry,
@@ -423,6 +423,11 @@ export function registerServerCommands(
     oldPath === undefined ? undefined : stringArg(oldPath, 'commit-file-diff'),
     context.signal,
   ));
+  handleWithContext(IPC.diffFileVersions, 'file-versions', (context, request, maxBytes) => services.operations.fileVersions(
+    fileVersionsRequestArg(request, 'file-versions'),
+    fileVersionsBytesArg(maxBytes, 'file-versions'),
+    context.signal,
+  ));
   handle(IPC.indexStage, 'stage', (id, paths) => services.operations.stage(stringArg(id, 'stage', 64), pathsArg(paths, 'stage')));
   handle(IPC.indexUnstage, 'unstage', (id, paths) => services.operations.unstage(stringArg(id, 'unstage', 64), pathsArg(paths, 'unstage')));
   handle(IPC.indexDiscard, 'discard', async (id, paths) => {
@@ -648,6 +653,10 @@ export function registerServerCommands(
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));
   handle(IPC.githubCommitAuthorAvatar, 'gh-commit-author-avatar', (id, oid) => services.github.getCommitAuthorAvatar(stringArg(id, 'gh-commit-author-avatar', 64), oidArg(oid, 'gh-commit-author-avatar')));
   handle(IPC.githubPrFiles, 'gh-pr-files', (id, prNumber, scope) => services.github.getPullRequestFiles(stringArg(id, 'gh-pr-files', 64), prNumberArg(prNumber, 'gh-pr-files'), pullRequestFilesScopeArg(scope, 'gh-pr-files')));
+  handle(IPC.githubPrFileVersions, 'gh-pr-file-versions', (id, prNumber, scope, file, maxBytes) => services.github.getPullRequestFileVersions(
+    stringArg(id, 'gh-pr-file-versions', 64), prNumberArg(prNumber, 'gh-pr-file-versions'), pullRequestFilesScopeArg(scope, 'gh-pr-file-versions'),
+    pullRequestFileArg(file, 'gh-pr-file-versions'), fileVersionsBytesArg(maxBytes, 'gh-pr-file-versions'),
+  ));
   handle(IPC.githubPrFileDiff, 'gh-pr-file-diff', (id, prNumber, scope, file) => services.github.getPullRequestFileDiff(
     stringArg(id, 'gh-pr-file-diff', 64), prNumberArg(prNumber, 'gh-pr-file-diff'), pullRequestFilesScopeArg(scope, 'gh-pr-file-diff'), pullRequestFileArg(file, 'gh-pr-file-diff'),
   ));

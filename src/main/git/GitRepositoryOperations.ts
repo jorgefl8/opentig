@@ -1,4 +1,4 @@
-import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult, WorktreeRepairResult } from '../../shared/contracts';
+import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, FileVersionsRequest, FileVersionsResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult, WorktreeRepairResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
   FileChange, FileHistoryPage, LocalRefsSnapshot, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
@@ -7,11 +7,12 @@ import { AiOperationError, GitOperationError } from '../../shared/errors';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { FileService } from '../files/FileService';
-import { lstat, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, open, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types';
 import type { RepositoryInstructionFile } from '../ai/RepositoryAiInstructions';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
+import { FileVersionUnavailable, firstParent, readFileVersions, type FileVersionSource, type FileVersionsGit } from './FileVersions';
 import { LOG_FORMAT, parseLog } from './LogParser';
 import { FILE_HISTORY_WALK_FORMAT, parseFileHistoryWalk, type FileHistoryChange, type FileHistoryWalk } from './FileHistoryParser';
 import { selectHistoryBase } from './HistoryBase';
@@ -174,6 +175,34 @@ export class GitRepositoryOperations {
     this.assertKnownOid(repositoryId, oid);
     const paths = this.repositories.validatePaths(repositoryId, oldPath ? [filePath, oldPath] : [filePath]);
     return this.readCommitPatch(repositoryId, oid, paths, new Set([filePath]), filePath, signal);
+  }
+
+  /**
+   * Both versions of the file a diff compares, whole: a commit's against its first parent, with a rename's
+   * old path on the old side; the index against `HEAD` for staged changes; the working tree against the
+   * index for unstaged ones. See `readFileVersions` for the limits.
+   */
+  async fileVersions(request: FileVersionsRequest, maxBytes: number, signal?: AbortSignal): Promise<FileVersionsResult> {
+    const repository = this.repositories.get(request.repositoryId);
+    const git: FileVersionsGit = async (args, options) => this.git.run(repository.path, args, { ...options, readOnly: true, localOnly: true, ...(signal ? { signal } : {}) });
+    const [filePath] = this.repositories.validatePaths(request.repositoryId, [request.path]);
+    if (request.kind === 'commit') {
+      this.assertKnownOid(request.repositoryId, request.oid);
+      const [oldPath] = request.oldPath ? this.repositories.validatePaths(request.repositoryId, [request.oldPath]) : [filePath];
+      const parent = await firstParent(git, request.oid);
+      return readFileVersions(git, {
+        old: parent ? { from: 'tree', rev: parent, path: oldPath! } : null,
+        new: { from: 'tree', rev: request.oid, path: filePath! },
+      }, maxBytes);
+    }
+    if (request.kind === 'staged') {
+      const head = await this.git.run(repository.path, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { operation: 'file-versions', readOnly: true, ...(signal ? { signal } : {}) })
+        .then((output) => output.stdout.toString('utf8').trim(), () => '');
+      return readFileVersions(git, { old: head ? { from: 'tree', rev: head, path: filePath! } : null, new: { from: 'index', path: filePath! } }, maxBytes);
+    }
+    const absolute = this.repositories.resolvePath(request.repositoryId, filePath!);
+    const worktree: FileVersionSource = { from: 'worktree', read: (limit) => readWorktreeVersion(absolute, limit) };
+    return readFileVersions(git, { old: { from: 'index', path: filePath! }, new: worktree }, maxBytes);
   }
 
   private async readCommitPatch(repositoryId: string, oid: string, paths: string[], selectedPaths: Set<string>, resultPath: string, signal?: AbortSignal): Promise<DiffResult> {
@@ -1771,6 +1800,25 @@ function splitBlockedReason(stagedChanges: FileChange[], summaryTruncated: boole
 function bounded(value: string, limit: number): { value: string; truncated: boolean } {
   if (value.length <= limit) return { value, truncated: false };
   return { value: `${value.slice(0, limit)}\n[content truncated by OpenTig]`, truncated: true };
+}
+
+/**
+ * A working-tree file as `git diff` reads it, up to `maxBytes`. A symbolic link is not followed: Git
+ * diffs the path it points to, not that file's text.
+ */
+async function readWorktreeVersion(absolute: string, maxBytes: number): Promise<Buffer> {
+  const metadata = await lstat(absolute).catch(() => null);
+  if (!metadata?.isFile() || metadata.size > maxBytes) throw new FileVersionUnavailable();
+  const handle = await open(absolute, 'r');
+  try {
+    // One byte more than allowed tells a file that grew since it was measured.
+    const buffer = Buffer.alloc(maxBytes + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (bytesRead > maxBytes) throw new FileVersionUnavailable();
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
 }
 
 function makeDiffResult(path: string, buffer: Buffer): DiffResult {

@@ -1,6 +1,7 @@
 import { GitOperationError } from '../../shared/errors';
+import { FILE_VERSION_MAX_BYTES } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestFilesScope, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, FileVersionsRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestFilesScope, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -184,6 +185,26 @@ export function pullRequestFileArg(value: unknown, operation: string): { path: s
   if (!value || typeof value !== 'object') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid file.' });
   const file = value as Record<string, unknown>;
   return { path: stringArg(file.path, operation, 4096), oldPath: file.oldPath === undefined || file.oldPath === null ? null : stringArg(file.oldPath, operation, 4096) };
+}
+
+/** Which diff's two versions of a file to read: a change in the worktree or the index, or a commit's. */
+export function fileVersionsRequestArg(value: unknown, operation: string): FileVersionsRequest {
+  if (!value || typeof value !== 'object') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid file.' });
+  const request = value as Record<string, unknown>;
+  const repositoryId = stringArg(request.repositoryId, operation, 64);
+  const path = stringArg(request.path, operation, 4096);
+  if (request.kind === 'staged' || request.kind === 'unstaged') return { kind: request.kind, repositoryId, path };
+  if (request.kind !== 'commit') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid file.' });
+  const oldPath = request.oldPath === undefined || request.oldPath === null ? undefined : stringArg(request.oldPath, operation, 4096);
+  return { kind: 'commit', repositoryId, oid: oidArg(request.oid, operation), path, ...(oldPath === undefined ? {} : { oldPath }) };
+}
+
+/** How much both versions of a file may weigh together, at most what two versions at the limit do. */
+export function fileVersionsBytesArg(value: unknown, operation: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 2 * FILE_VERSION_MAX_BYTES) {
+    throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid size.' });
+  }
+  return value;
 }
 
 const MAX_BRANCH_REF_LENGTH = 512;

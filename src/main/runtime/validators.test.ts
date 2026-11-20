@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deletePullRequestEntryArg, editPullRequestEntryArg, generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, publishReleaseArg, pullRequestActionArg, reviewPullRequestArg, runWorkflowArg, tagNameArg, updatePullRequestArg, updateReleaseArg, workflowPathArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
-import { createTrackingBranchArg, deleteRemoteBranchArg, prNumbersArg, pullRequestFileArg, pullRequestFilesScopeArg, pullRequestRangeArg } from './validators';
+import { createTrackingBranchArg, deleteRemoteBranchArg, fileVersionsBytesArg, fileVersionsRequestArg, prNumbersArg, pullRequestFileArg, pullRequestFilesScopeArg, pullRequestRangeArg } from './validators';
 
 const OID = 'a'.repeat(40);
 const REVISION = 'b'.repeat(64);
@@ -78,6 +78,18 @@ describe('pull request files validators', () => {
     for (const value of [null, { path: '' }, { path: 'a\u0000b' }, { path: 'x'.repeat(4097) }, { path: 'a', oldPath: 7 }]) {
       expect(() => pullRequestFileArg(value, 'gh-pr-file-diff')).toThrow(GitOperationError);
     }
+  });
+});
+
+describe('file versions validators', () => {
+  it('take a commit only by its id, a known kind of diff, and a byte budget no larger than two files at the limit', () => {
+    expect(fileVersionsRequestArg({ kind: 'commit', repositoryId: 'r', oid: OID, path: 'a.ts', oldPath: null }, 'file-versions')).toEqual({ kind: 'commit', repositoryId: 'r', oid: OID, path: 'a.ts' });
+    expect(fileVersionsRequestArg({ kind: 'staged', repositoryId: 'r', path: 'a.ts', oid: 'ignored' }, 'file-versions')).toEqual({ kind: 'staged', repositoryId: 'r', path: 'a.ts' });
+    for (const value of [null, { kind: 'commit', repositoryId: 'r', oid: 'HEAD', path: 'a.ts' }, { kind: 'tree', repositoryId: 'r', path: 'a.ts' }, { kind: 'unstaged', repositoryId: 'r', path: 'a\u0000b' }]) {
+      expect(() => fileVersionsRequestArg(value, 'file-versions')).toThrow(GitOperationError);
+    }
+    expect(fileVersionsBytesArg(2 * 1024 * 1024, 'file-versions')).toBe(2 * 1024 * 1024);
+    for (const value of [-1, 1.5, '1', 2 * 1024 * 1024 + 1]) expect(() => fileVersionsBytesArg(value, 'file-versions')).toThrow(GitOperationError);
   });
 });
 

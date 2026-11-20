@@ -290,7 +290,7 @@ export class OpenTigWebSocketTransport {
       }));
       if (input.command === IPC.bootstrap && result.ok && isRecord(result.value)) {
         // This transport understands `cancel` and `acceptKept`; a client only sends them to a server that says so.
-        result.value = { ...result.value, server: { ...this.options.identity, requestCancellation: true, keptReads: true, repositorySnapshots: true, actionJobLogs: true, fileHistory: true, pullRequestFiles: true, repositoryPerClient: true, worktreeRepair: true, commitAuthorAvatars: true } satisfies OpenTigServerIdentity };
+        result.value = { ...result.value, server: { ...this.options.identity, requestCancellation: true, keptReads: true, repositorySnapshots: true, actionJobLogs: true, fileHistory: true, pullRequestFiles: true, repositoryPerClient: true, worktreeRepair: true, commitAuthorAvatars: true, fileVersions: true } satisfies OpenTigServerIdentity };
       }
       if (result.ok && kept && !timedOut) {
         this.send(socket, { type: 'result', id: input.id, result, kept: { readAt: kept.readAt } });

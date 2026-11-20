@@ -105,6 +105,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'diff.get': command(IPC.diffGet, 'diff', false),
   'diff.getCommit': command(IPC.diffCommit, 'commit-diff', false),
   'diff.getCommitFile': command(IPC.diffCommitFile, 'commit-file-diff', false),
+  'diff.getFileVersions': command(IPC.diffFileVersions, 'file-versions', false),
 
   'index.stage': command(IPC.indexStage, 'stage', true),
   'index.unstage': command(IPC.indexUnstage, 'unstage', true),
@@ -177,6 +178,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.getPullRequestCommitDiff': command(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.getPullRequestFiles': command(IPC.githubPrFiles, 'gh-pr-files', false, { timeoutMs: PULL_REQUEST_DIFF_TIMEOUT_MS }),
   'github.getPullRequestFileDiff': command(IPC.githubPrFileDiff, 'gh-pr-file-diff', false, { timeoutMs: PULL_REQUEST_DIFF_TIMEOUT_MS }),
+  'github.getPullRequestFileVersions': command(IPC.githubPrFileVersions, 'gh-pr-file-versions', false),
   'github.getPullRequestCommits': command(IPC.githubPrCommits, 'gh-pr-commits', false, { timeoutMs: PULL_REQUEST_COMMITS_TIMEOUT_MS }),
   'github.getCommitAuthorAvatar': command(IPC.githubCommitAuthorAvatar, 'gh-commit-author-avatar', false, { timeoutMs: COMMIT_AUTHOR_AVATAR_TIMEOUT_MS }),
   'github.createPullRequest': command(IPC.githubPrCreate, 'gh-pr-create', true, { timeoutMs: PULL_REQUEST_CREATE_TIMEOUT_MS }),

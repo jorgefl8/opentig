@@ -1,9 +1,10 @@
-import type { DiffResult, PullRequestCommit, PullRequestFile, PullRequestFilesScope } from '../../shared/contracts';
+import type { DiffResult, FileVersionsResult, PullRequestCommit, PullRequestFile, PullRequestFilesScope } from '../../shared/contracts';
 import { parseCommitFiles, parseNumstat, parseRawCommitFiles } from '../git/CommitFilesParser';
 import { GitOperationError } from '../../shared/errors';
 import { PULL_REQUEST_DIFF_GIT_TIMEOUT_MS, PULL_REQUEST_FETCH_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES } from '../../shared/server-protocol';
 import type { GitProcess } from '../git/GitProcess';
+import { firstParent, readFileVersions, type FileVersionsGit } from '../git/FileVersions';
 
 const OID = /^[0-9a-f]{40,64}$/i;
 const PATCH_LIMIT_BYTES = 32 * 1024 * 1024;
@@ -163,6 +164,35 @@ export class PullRequestLocalGit {
       throw new GitOperationError({ code: 'UNKNOWN', operation: 'pr-local-file-diff', message: 'The file’s diff does not match the pull request’s files.' });
     }
     return diffResult(path, sections.filter((_, index) => files[index]!.path === path).join(''), false);
+  }
+
+  /**
+   * Both versions of a file `fileDiff` compares, whole: at the merge base of the range and at its head, as
+   * three dots compare them, or at a commit of the pull request and its first parent. A rename's old path
+   * is read on the old side. Paths are checked as `fileDiff` checks them; nothing is fetched.
+   */
+  async fileVersions(cwd: string, scope: PullRequestFilesScope, path: string, oldPath: string | null, maxBytes: number): Promise<FileVersionsResult> {
+    if (!isGitPath(path) || (oldPath !== null && !isGitPath(oldPath))) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'pr-local-file-versions', message: 'Invalid file.' });
+    }
+    const git: FileVersionsGit = (args, options) => this.git.run(cwd, args, { ...options, readOnly: true, localOnly: true });
+    const { older, newer } = await this.revisions(cwd, scope);
+    return readFileVersions(git, {
+      old: older ? { from: 'tree', rev: older, path: oldPath ?? path } : null,
+      new: { from: 'tree', rev: newer, path },
+    }, maxBytes);
+  }
+
+  /** The two commits `comparison` compares, for reading files at each. Null for a root commit's parent. */
+  private async revisions(cwd: string, scope: PullRequestFilesScope): Promise<{ older: string | null; newer: string }> {
+    await this.comparison(cwd, scope);
+    const git: FileVersionsGit = (args, options) => this.git.run(cwd, args, { ...options, readOnly: true, localOnly: true });
+    if (scope.commitOid) return { older: await firstParent(git, scope.commitOid), newer: scope.commitOid };
+    // `git diff base...head` compares the head with the merge base, which `merge-base` names the same way.
+    const output = await this.git.run(cwd, ['merge-base', scope.baseOid, scope.headOid, '--'], { operation: 'pr-local-file-versions', readOnly: true, localOnly: true, timeoutMs: FILE_DIFF_TIMEOUT_MS, maxOutputBytes: 64 * 1024 });
+    const base = output.stdout.toString('utf8').trim();
+    if (!OID.test(base)) throw new GitOperationError({ code: 'UNKNOWN', operation: 'pr-local-file-versions', message: 'The pull request has no merge base.' });
+    return { older: base, newer: scope.headOid };
   }
 
   /**

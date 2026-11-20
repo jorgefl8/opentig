@@ -62,6 +62,28 @@ export interface DiffResult {
   watchId?: string;
 }
 
+/** The most one version of a file may weigh to be read whole for its diff. Past it, the diff is its patch alone. */
+export const FILE_VERSION_MAX_BYTES = 1024 * 1024;
+
+/** The diff whose two versions of one file are read whole: a change in the worktree or the index, or a commit's against its first parent. */
+export type FileVersionsRequest =
+  | { kind: Exclude<DiffKind, 'commit'>; repositoryId: string; path: string }
+  | { kind: 'commit'; repositoryId: string; oid: string; path: string; oldPath?: string | undefined };
+
+/** One version of a file, whole. `oid` names its blob when it comes from Git's objects, and is null for the working tree. */
+export interface FileVersion {
+  content: string;
+  oid: string | null;
+}
+
+/**
+ * The two versions of a file a diff compares, each null when the file is not on that side. Unavailable
+ * when either is not a regular text file, or they weigh more than allowed.
+ */
+export type FileVersionsResult =
+  | { status: 'ready'; old: FileVersion | null; new: FileVersion | null }
+  | { status: 'unavailable' };
+
 /** A file a pull request, or one of its commits, changes, as Git in the local clone lists it. */
 export interface PullRequestFile extends CommitFile {
   /** Bytes of its larger version, which tells a large file before its diff is read; null when Git could not say. */
@@ -1145,6 +1167,11 @@ export interface OpenTigApi {
     get(request: DiffRequest): Promise<DiffResult>;
     getCommit(repositoryId: string, oid: string): Promise<DiffResult>;
     getCommitFile(repositoryId: string, oid: string, path: string, oldPath?: string): Promise<DiffResult>;
+    /**
+     * Both versions of the file a diff compares, whole, so the diff can be read in the context of the
+     * whole file. `maxBytes` bounds the two together. Only on a server whose identity has `fileVersions`.
+     */
+    getFileVersions(request: FileVersionsRequest, maxBytes: number): Promise<FileVersionsResult>;
   };
   index: {
     stage(repositoryId: string, paths: string[]): Promise<GitResult>;
@@ -1246,6 +1273,8 @@ export interface OpenTigApi {
     getPullRequestFiles(repositoryId: string, number: number, scope: PullRequestFilesScope): Promise<PullRequestFileList>;
     /** One file's diff in a pull request or one of its commits. Only on a server whose identity has `pullRequestFiles`. */
     getPullRequestFileDiff(repositoryId: string, number: number, scope: PullRequestFilesScope, file: { path: string; oldPath?: string | null }): Promise<DiffResult>;
+    /** Both versions of the file that diff compares, as `diff.getFileVersions` reads them. Only on a server whose identity has `fileVersions`. */
+    getPullRequestFileVersions(repositoryId: string, number: number, scope: PullRequestFilesScope, file: { path: string; oldPath?: string | null }, maxBytes: number): Promise<FileVersionsResult>;
     getPullRequestCommits(repositoryId: string, number: number): Promise<PullRequestCommitList>;
     /**
      * The picture of a commit's author, as GitHub links that commit to an account in the repository's
@@ -1316,7 +1345,7 @@ export const IPC = {
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
   repositoryFileHistoryState: 'repository:file-history-state', repositorySnapshot: 'repository:snapshot', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
-  diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
+  diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', diffFileVersions: 'diff:file-versions', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
   commitsList: 'commits:list', commitsFiles: 'commits:files', commitsFileHistory: 'commits:file-history', commitsRecognize: 'commits:recognize', commitsCountAfter: 'commits:count-after', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
@@ -1328,5 +1357,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review', githubPrEntryEdit: 'github:pr-entry-edit', githubPrEntryDelete: 'github:pr-entry-delete',
-  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrListLineCounts: 'github:pr-list-line-counts', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrFiles: 'github:pr-files', githubPrFileDiff: 'github:pr-file-diff', githubPrCommits: 'github:pr-commits', githubCommitAuthorAvatar: 'github:commit-author-avatar', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubActionJobLog: 'github:action-job-log', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrListLineCounts: 'github:pr-list-line-counts', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrFiles: 'github:pr-files', githubPrFileDiff: 'github:pr-file-diff', githubPrFileVersions: 'github:pr-file-versions', githubPrCommits: 'github:pr-commits', githubCommitAuthorAvatar: 'github:commit-author-avatar', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubActionJobLog: 'github:action-job-log', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;
