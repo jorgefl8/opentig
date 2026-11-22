@@ -91,10 +91,11 @@ describe('GitRepositoryOperations file versions', () => {
 
   it('takes a path literally, never as a pattern or a revision', async () => {
     const fixture = await repository();
-    const oid = await commit(fixture, { '*.txt': 'star\n', 'dir/a b[1].txt': 'odd\n', 'dir/x.txt': 'x\n' }, 'Odd names');
+    // As a pattern, `[x].txt` would name `x.txt`. Both names are valid on every system.
+    const oid = await commit(fixture, { '[x].txt': 'bracket\n', 'x.txt': 'x\n', 'dir/a b[1].txt': 'odd\n', 'dir/x.txt': 'x\n' }, 'Odd names');
     await fixture.known();
     const read = (name: string) => fixture.operations.fileVersions({ kind: 'commit', repositoryId: fixture.repositoryId, oid, path: name }, ALL);
-    expect(await read('*.txt')).toMatchObject({ status: 'ready', new: { content: 'star\n' } });
+    expect(await read('[x].txt')).toMatchObject({ status: 'ready', new: { content: 'bracket\n' } });
     expect(await read('dir/a b[1].txt')).toMatchObject({ status: 'ready', new: { content: 'odd\n' } });
     // A directory is not a file, and a path the commit lacks reads as no version.
     expect(await read('dir')).toEqual({ status: 'unavailable' });
@@ -113,11 +114,11 @@ describe('GitRepositoryOperations file versions', () => {
   it('gives up on binary files, links, conflicts and anything past the limits', async () => {
     const fixture = await repository();
     const big = 'x'.repeat(FILE_VERSION_MAX_BYTES) + '\n';
-    const oid = await commit(fixture, { 'big.txt': big, 'nul.txt': 'a\0b\n', 'small.txt': 'a\n'.repeat(100) }, 'Sizes');
+    const oid = await commit(fixture, { 'big.txt': big, 'zero.txt': 'a\0b\n', 'small.txt': 'a\n'.repeat(100) }, 'Sizes');
     await fixture.known();
     const read = (name: string, maxBytes = ALL) => fixture.operations.fileVersions({ kind: 'commit', repositoryId: fixture.repositoryId, oid, path: name }, maxBytes);
     expect(await read('big.txt')).toEqual({ status: 'unavailable' });
-    expect(await read('nul.txt')).toEqual({ status: 'unavailable' });
+    expect(await read('zero.txt')).toEqual({ status: 'unavailable' });
     expect(await read('small.txt', 199)).toEqual({ status: 'unavailable' });
     expect(await read('small.txt', 200)).toMatchObject({ status: 'ready' });
 
@@ -127,11 +128,14 @@ describe('GitRepositoryOperations file versions', () => {
     expect(await fixture.operations.fileVersions({ kind: 'unstaged', repositoryId: fixture.repositoryId, path: 'small.txt' }, 300)).toEqual({ status: 'unavailable' });
     expect(await fixture.operations.fileVersions({ kind: 'unstaged', repositoryId: fixture.repositoryId, path: 'small.txt' }, 400)).toMatchObject({ status: 'ready' });
 
-    await writeFile(path.join(fixture.work, 'target.txt'), 'target\n');
-    await symlink('target.txt', path.join(fixture.work, 'link.txt'));
-    await git(fixture.work, ['add', 'link.txt']);
-    expect(await fixture.operations.fileVersions({ kind: 'staged', repositoryId: fixture.repositoryId, path: 'link.txt' }, ALL)).toEqual({ status: 'unavailable' });
-    expect(await fixture.operations.fileVersions({ kind: 'unstaged', repositoryId: fixture.repositoryId, path: 'link.txt' }, ALL)).toEqual({ status: 'unavailable' });
+    // Windows needs a privilege to make a symbolic link.
+    if (process.platform !== 'win32') {
+      await writeFile(path.join(fixture.work, 'target.txt'), 'target\n');
+      await symlink('target.txt', path.join(fixture.work, 'link.txt'));
+      await git(fixture.work, ['add', 'link.txt']);
+      expect(await fixture.operations.fileVersions({ kind: 'staged', repositoryId: fixture.repositoryId, path: 'link.txt' }, ALL)).toEqual({ status: 'unavailable' });
+      expect(await fixture.operations.fileVersions({ kind: 'unstaged', repositoryId: fixture.repositoryId, path: 'link.txt' }, ALL)).toEqual({ status: 'unavailable' });
+    }
 
     await git(fixture.work, ['switch', '-q', '-c', 'other']);
     await commit(fixture, { 'file.txt': 'other\n' }, 'Other');
