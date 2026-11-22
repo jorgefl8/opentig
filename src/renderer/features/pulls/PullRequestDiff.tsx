@@ -14,6 +14,7 @@ import { queryKeys } from '@/lib/query-client';
 import { withSignal } from '@/lib/websocket-transport';
 import { serializedErrorFromReason } from '@shared/errors';
 import { opentig } from '@/lib/opentig-api';
+import { useServerFeatures } from '@/lib/server-features';
 import { Spinner } from '@/components/ui/spinner';
 import { noteViewState, restoredViewState } from '@/features/viewer/viewer-memory';
 import { pullRequestFilesQueryOptions } from './pull-request-files-query';
@@ -108,6 +109,12 @@ export default function PullRequestDiff({ code, range, changedFiles, commitsSett
       return gate(read, signal, true);
     });
   }, [gate, prNumber, relisting, repositoryId, scope]);
+  // Both versions of a file, from the clone, at the commits its diff compares.
+  const readsFileVersions = useServerFeatures().fileVersions;
+  const readFileVersions = useCallback((file: ListedFile, signal: AbortSignal, maxBytes: number) => withSignal(
+    signal,
+    () => opentig.github.getPullRequestFileVersions(repositoryId, prNumber, scope, { path: file.path, oldPath: file.oldPath }, maxBytes),
+  ), [prNumber, repositoryId, scope]);
   const contentKey = mode === 'all' ? `pull:${prNumber}:all` : `pull:${prNumber}:commit:${selectedCommit?.oid ?? ''}`;
 
   const scopeControl = (
@@ -165,6 +172,7 @@ export default function PullRequestDiff({ code, range, changedFiles, commitsSett
           notice={<UnlistedFiles listed={listed} changedFiles={mode === 'all' ? changedFiles : null} scope={mode === 'all' ? 'pull request' : 'commit'} />}
           foldMemoryKey={`${repositoryId}:${contentKey}`}
           readFile={readFile}
+          readFileVersions={readsFileVersions ? readFileVersions : undefined}
           onDiffViewChange={onDiffViewChange}
           onWrapLinesChange={onWrapLinesChange}
           onClose={onClose}

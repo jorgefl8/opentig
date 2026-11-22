@@ -29,3 +29,11 @@ export function fileHighlightKey(path: string, content: string): string {
 export function diffHighlightKey(filePatch: string, language: string): string {
   return `diff\u0000${language}\u0000${contentHash(filePatch)}`;
 }
+
+/**
+ * A diff read with both whole files is tokenized from their first lines, and so is colored unlike the
+ * same patch read alone: its key adds both texts to the patch's own key, which it never equals.
+ */
+export function wholeDiffHighlightKey(patchKey: string, oldContent: string, newContent: string): string {
+  return `whole\u0000${patchKey}\u0000${contentHash(oldContent)}\u0000${contentHash(newContent)}`;
+}

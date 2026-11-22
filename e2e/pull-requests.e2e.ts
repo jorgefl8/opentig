@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
-import { cloneOfGitHub, openRepository, pullRequestBranch } from './support/app';
+import { chartStylesheet, cloneOfGitHub, expectHighlightedInContext, openRepository, pullRequestBranch } from './support/app';
 import { expect, test } from './support/fixtures';
 
 // Pull requests come from a stand-in GitHub CLI (see support/stand-in-gh.mjs); their code comes from Git in the clone.
@@ -106,6 +106,32 @@ test('a pull request’s code lists its files at once, reads each one as it unfo
   await expect(viewer.getByText('"dependency-0": "1.0.0",', { exact: false }).first()).toBeVisible({ timeout: 15_000 });
   expect(commands).toContain('github:pr-files');
   expect(commands).not.toContain('github:pr-diff');
+});
+
+test('a pull request’s code is highlighted in the context of its whole files, for all changes and by commit', async ({ pairedPage: page, repository, github }) => {
+  await cloneOfGitHub(repository);
+  await repository.commit('styles/chart.css', chartStylesheet(), 'Add chart colors');
+  const branch = await pullRequestBranch(repository, 'feature/extra-colors', [
+    { message: 'Add an extra chart color', files: { 'styles/chart.css': chartStylesheet(['  --color-extra-1: var(--extra-1);\n']) } },
+  ]);
+  await github({
+    login: 'e2e-tester', nameWithOwner: 'e2e/sample-project',
+    pulls: [{ number: 41, title: 'Add an extra chart color', headRefName: 'feature/extra-colors', baseRefName: 'main', ...branch, changedFiles: 1 }],
+  });
+  await page.reload();
+  await openRepository(page, repository);
+  await section(page, 'GitHub').click();
+  await page.getByRole('list', { name: /pull requests$/ }).getByRole('button', { name: /Add an extra chart color/ }).click();
+  const viewer = page.getByRole('main');
+  await viewer.getByRole('tablist', { name: 'Pull request view' }).getByRole('tab', { name: 'Code' }).click();
+
+  const file = viewer.getByRole('button', { name: /^styles\/\s*chart\.css$/ });
+  if (await file.getAttribute('aria-expanded') !== 'true') await file.click();
+  await expectHighlightedInContext(viewer.getByRole('code').filter({ hasText: '--color-extra-1' }), '--color-chart-62');
+
+  await viewer.getByRole('button', { name: 'By commit', exact: true }).click();
+  if (await file.getAttribute('aria-expanded') !== 'true') await file.click();
+  await expectHighlightedInContext(viewer.getByRole('code').filter({ hasText: '--color-extra-1' }), '--color-chart-62');
 });
 
 test('the pull request list shows placeholder rows while GitHub answers, and its rows take their place without moving', async ({ pairedPage: page, repository, github }) => {

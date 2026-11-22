@@ -74,6 +74,28 @@ export async function hoverCenter(page: Page, target: Locator): Promise<void> {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 }
 
+/**
+ * A stylesheet of one `:root` block of 100 custom properties, each set with `var()`, and `added` after
+ * the 61st: its diff has a single hunk that starts deep inside the block, whose `{` is out of its sight.
+ */
+export function chartStylesheet(added: string[] = []): string {
+  const lines = Array.from({ length: 100 }, (_, index) => `  --color-chart-${index + 1}: var(--chart-${index + 1});\n`);
+  return `:root {\n${[...lines.slice(0, 61), ...added, ...lines.slice(61)].join('')}}\n`;
+}
+
+/**
+ * Waits until the diff line holding `property` colors it unlike the `var` that sets it, as a stylesheet
+ * read from its first line does. Read from its hunk alone, the line is outside any block and all one color.
+ */
+export async function expectHighlightedInContext(code: Locator, property: string): Promise<void> {
+  const line = code.locator('[data-line]').filter({ hasText: `${property}:` }).first();
+  await expect.poll(() => line.evaluate((element, name) => {
+    const token = (text: string) => [...element.querySelectorAll('span')].find((span) => span.textContent?.trim() === text);
+    const [named, call] = [token(name), token('var')];
+    return Boolean(named && call && getComputedStyle(named).color !== getComputedStyle(call).color);
+  }, property)).toBe(true);
+}
+
 type NavigationRequests = { requested: Record<string, number>; unanswered: number };
 
 function readNavigationRequests(page: Page): Promise<NavigationRequests> {

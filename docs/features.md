@@ -100,7 +100,7 @@ The workspace shell loads first. Files, History, Search, and the viewers for cha
 **Review and stage changes**
 
 1. Open **Changes** to see every changed file as a flat list or recursive tree. The line at the top counts the files and the lines added and removed in the worktree.
-2. Open a diff in unified or split mode, with optional line wrapping. The diff's split/unified button switches the mode, and the choice is remembered.
+2. Open a diff in unified or split mode, with optional line wrapping. The diff's split/unified button switches the mode, and the choice is remembered. Once the diff is colored with its whole file, as described under **Diff colors** below, the row that counts the unmodified lines above or between changes unfolds them with its button.
 3. Stage or unstage individual files, folders, or everything at once.
 
 Conflicts come first in their own group. A **Staged** group appears once something is staged, and files that aren't staged then sit under **Not staged**. With nothing staged and no conflicts, there's one list with no labels.
@@ -137,6 +137,8 @@ Settings includes AI run metadata and failed-operation diagnostics, and lets you
 <summary>Diff colors, file headers, and change-list controls</summary>
 
 Diffs use the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks. Added, deleted, and modified lines retain their diff colors. Language grammars load for the file being viewed rather than at startup.
+
+A diff is first colored from its changed lines and the few lines around them, which appear at once. OpenTig then reads both versions of the file, from the start up to the last change, and colors the same lines again with the code above them, so a change inside a CSS block, a long comment, a template string or a Markdown code fence is colored as it is in the Files editor. The new colors replace the old in place, without moving the lines, and the rows of unmodified lines before and between changes can then be unfolded. This covers working-tree and staged changes, commits in **History** and a single file opened from one, and a pull request's **Code** read from the local clone. The versions compared are the ones the diff compares: the index and the working tree, `HEAD` and the index, a commit and its first parent (nothing for a root commit), and a rename's old path on the old side. A diff stays colored from its patch alone when either version is not a regular text file or is over 1 MB, when both versions up to the last change exceed 20,000 lines, when the files do not hold exactly the lines Git shows (line-ending conversion, a text conversion set in `.gitattributes`), or once the files read for one diff or commit add up to about 4 MB; added and deleted files are already shown whole.
 
 File headers show the folder path and filename on one line, then the lines added and removed and the file's status letter. A side with no lines is left out, so a deleted file shows only what was removed, and a binary file shows **bin** instead of counts. A renamed file also shows the path it came from. When space runs short the folder path shortens first and hovering shows the full path; a filename too long for the row wraps. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
 

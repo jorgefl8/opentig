@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { File, UnresolvedFile, Virtualizer } from '@pierre/diffs/react';
 import type { MergeConflictRegion, MergeConflictResolution } from '@pierre/diffs/react';
-import type { DiffResult, DiffViewPreference, FileResult, ThemePreference } from '@shared/contracts';
+import type { DiffResult, DiffViewPreference, FileResult, FileVersionsResult, ThemePreference } from '@shared/contracts';
+import type { FileVersionsReader } from './whole-file-diff';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { CommitFilesWorkspace, DiffWorkspace, type DiffCommitLayout } from './DiffWorkspace';
@@ -32,6 +33,8 @@ type PierreDiffViewerProps =
       onWrapLinesChange?(value: boolean): void;
       onClose?(): void;
       onOpenFile?(path: string): void;
+      /** Both versions of the diff's file, read whole to highlight it in context. */
+      readFileVersions?: FileVersionsReader | undefined;
     }
   | {
       kind: 'commit-files';
@@ -44,6 +47,7 @@ type PierreDiffViewerProps =
       readFile(file: CommitFile, signal: AbortSignal): Promise<DiffResult>;
       readAll(signal: AbortSignal): Promise<DiffResult>;
       keepFileDiff(file: CommitFile, diff: DiffResult): void;
+      readFileVersions?: ((file: CommitFile, signal: AbortSignal, maxBytes: number) => Promise<FileVersionsResult>) | undefined;
       onDiffViewChange?(value: DiffViewPreference): void;
       onWrapLinesChange?(value: boolean): void;
       onOpenFile?(path: string): void;
@@ -81,7 +85,7 @@ export default function PierreDiffViewer(props: PierreDiffViewerProps) {
   );
 }
 
-function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initiallyCollapsed, compact, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile }: Extract<PierreDiffViewerProps, { kind: 'diff' }>) {
+function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initiallyCollapsed, compact, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, readFileVersions }: Extract<PierreDiffViewerProps, { kind: 'diff' }>) {
   return (
     <DiffWorkspace
       key={contentKey}
@@ -98,6 +102,7 @@ function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initia
       onWrapLinesChange={onWrapLinesChange}
       onClose={onClose}
       onOpenFile={onOpenFile}
+      readFileVersions={readFileVersions}
     />
   );
 }

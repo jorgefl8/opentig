@@ -6,7 +6,7 @@ import { isLowEndDevice } from '@/lib/low-end-device';
 import { whenIdle } from '@/lib/when-idle';
 import { LazyPullRequestViewer as PullRequestViewer } from '@/features/pulls/pull-request-viewer-chunks';
 import { IconDots } from '@tabler/icons-react';
-import type { DiffResult, DiffViewPreference, FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
+import type { DiffResult, DiffViewPreference, FileResult, FileVersionsRequest, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
 import type { CommitFile, CommitInfo } from '../../../shared/git-types';
 import { isKnownImagePath, isSvgPath } from '../../../shared/image-types';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ import { loadPierreEditor } from './pierre-editor';
 import { commitDiffKey, commitFileDiffKey, commitFiles, immutableDiff, keepImmutableDiff, takeFileAhead } from './viewer-prefetch';
 import { changeGeneration, keepDiff, keepFile, keptDiff, keptFile, type FileStamp } from './content-cache';
 import { withSignal } from '@/lib/websocket-transport';
+import { useServerFeatures } from '@/lib/server-features';
+import type { FileVersionsReader } from './whole-file-diff';
 import { ContentFade } from '@/components/Reveal';
 import { Spinner } from '@/components/ui/spinner';
 // The code viewers start downloading with the document they will show, so it mounts once, on a viewer that is already there.
@@ -107,7 +109,7 @@ interface ViewerProps {
 
 /** A document on screen, and the repository it was read from: while another loads, it may not be the open one. */
 type ViewerData =
-  | { docKey: string; repositoryId: string; type: 'diff'; value: DiffResult }
+  | { docKey: string; repositoryId: string; type: 'diff'; value: DiffResult; versions: FileVersionsRequest }
   | { docKey: string; repositoryId: string; type: 'commit-files'; value: CommitFile[] }
   | { docKey: string; repositoryId: string; type: 'file' | 'conflict'; value: FileResult }
   | { docKey: string; repositoryId: string; type: 'image'; value: ImageFileResult }
@@ -136,6 +138,7 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
   const [error, setError] = useState<string | null>(null);
   const [allowLarge, setAllowLarge] = useState(false);
   const requestToken = useRef(0);
+  const readsFileVersions = useServerFeatures().fileVersions;
   const fileDirty = useRef(false);
   const docKey = documentKey(repositoryId, selection);
   // A link to a section of another HTML or Markdown file opens the file and then scrolls to that section.
@@ -249,10 +252,14 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
             await prepareHighlight((prime) => prime.prepareDiffHighlight(next.patch));
             if (token !== requestToken.current) return;
           }
+          // The two versions of the file this diff compares, should they be read whole.
+          const versions: FileVersionsRequest = selection.type === 'commit-file'
+            ? { kind: 'commit', repositoryId, oid: selection.oid, path: selection.path, ...(selection.oldPath ? { oldPath: selection.oldPath } : {}) }
+            : { kind: selection.kind, repositoryId, path: selection.path };
           setData((current) => current && current.docKey === docKey && current.type === 'diff'
             && current.value.patch === next.patch && current.value.binary === next.binary
             ? current
-            : { docKey, repositoryId, type: 'diff', value: next });
+            : { docKey, repositoryId, type: 'diff', value: next, versions });
         }
       } catch (reason) {
         if (token === requestToken.current && !signal.aborted) setError(reason instanceof Error ? reason.message : 'Could not load the viewer.');
@@ -266,6 +273,12 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
 
   const themeType = theme === 'system' ? 'system' : theme;
   const overflow = wrapLines ? 'wrap' : 'scroll';
+  // The versions of the file the diff on screen compares, named with that diff rather than with what is selected now.
+  const versionsRequest = readsFileVersions && data?.type === 'diff' ? data.versions : null;
+  const readDiffVersions = useCallback<FileVersionsReader>(
+    (signal, maxBytes) => withSignal(signal, () => opentig.diff.getFileVersions(versionsRequest!, maxBytes)),
+    [versionsRequest],
+  );
   // Kept internally so an in-place refresh never clobbers an unsaved editor;
   // App tracks dirtiness through the draft store instead.
   const handleFileDirtyChange = useCallback((dirty: boolean) => {
@@ -375,6 +388,7 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
         selection={commitSelection}
         commit={commits.find((item) => item.oid === commitSelection.oid)}
         value={{ files: data.value }}
+        readsFileVersions={readsFileVersions}
         diffView={diffView}
         themeType={themeType}
         wrapLines={wrapLines}
@@ -502,6 +516,8 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
         selection={commitSelection}
         commit={commits.find((item) => item.oid === commitSelection.oid)}
         value={{ diff: data.value }}
+        readDiffVersions={versionsRequest ? readDiffVersions : undefined}
+        readsFileVersions={readsFileVersions}
         diffView={diffView}
         themeType={themeType}
         wrapLines={wrapLines}
@@ -527,6 +543,7 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
             onDiffViewChange={onDiffViewChange}
             onWrapLinesChange={onWrapLinesChange}
             onClose={() => onSelect(null)}
+            readFileVersions={versionsRequest ? readDiffVersions : undefined}
           />
         </Suspense> : <div className="viewer-message">No differences to show.</div>}
       </div>
@@ -575,10 +592,14 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
 
 type CommitSelection = Extract<NonNullable<ViewerSelection>, { type: 'commit' | 'commit-file' }>;
 
-function CommitDiffViewer({ contentKey, repositoryId, selection, commit, value, diffView, themeType, wrapLines, canUndo, githubRepository, onUndo, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange }: {
+function CommitDiffViewer({ contentKey, repositoryId, selection, commit, value, readDiffVersions, readsFileVersions, diffView, themeType, wrapLines, canUndo, githubRepository, onUndo, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange }: {
   contentKey: string; repositoryId: string; selection: CommitSelection; commit: CommitInfo | undefined;
   /** A whole commit's files, or the diff of the one file picked from it. */
   value: { files: CommitFile[] } | { diff: DiffResult };
+  /** Both versions of the one file picked, read whole. */
+  readDiffVersions?: FileVersionsReader | undefined;
+  /** The server reads files whole, so the commit's diffs are highlighted in context. */
+  readsFileVersions: boolean;
   diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean; canUndo: boolean; githubRepository: string | null | undefined;
   onUndo: ((commit: CommitInfo) => void) | undefined; onSelect(selection: ViewerSelection): void; onOpenFile(path: string): void;
   onDiffViewChange(value: DiffViewPreference): void; onWrapLinesChange(value: boolean): void;
@@ -610,6 +631,10 @@ function CommitDiffViewer({ contentKey, repositoryId, selection, commit, value, 
   ), [oid, repositoryId]);
   const readAll = useCallback((signal: AbortSignal) => immutableDiff(commitDiffKey(repositoryId, oid), () => opentig.diff.getCommit(repositoryId, oid), signal), [oid, repositoryId]);
   const keepFileDiff = useCallback((file: CommitFile, diff: DiffResult) => keepImmutableDiff(commitFileDiffKey(repositoryId, oid, file.path, file.oldPath), diff), [oid, repositoryId]);
+  const readFileVersions = useCallback((file: CommitFile, signal: AbortSignal, maxBytes: number) => withSignal(signal, () => opentig.diff.getFileVersions(
+    { kind: 'commit', repositoryId, oid, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}) },
+    maxBytes,
+  )), [oid, repositoryId]);
   const hasChanges = 'files' in value ? value.files.length > 0 : Boolean(value.diff.patch);
   return (
     <div className="commit-diff-viewer">
@@ -627,6 +652,7 @@ function CommitDiffViewer({ contentKey, repositoryId, selection, commit, value, 
             readFile={readFile}
             readAll={readAll}
             keepFileDiff={keepFileDiff}
+            readFileVersions={readsFileVersions ? readFileVersions : undefined}
             onDiffViewChange={onDiffViewChange}
             onWrapLinesChange={onWrapLinesChange}
             onOpenFile={onOpenFile}
@@ -640,6 +666,7 @@ function CommitDiffViewer({ contentKey, repositoryId, selection, commit, value, 
             themeType={themeType}
             wrapLines={wrapLines}
             commitLayout={{ tools, lead: message, listFiles: false }}
+            readFileVersions={readDiffVersions}
             scopeControl={<Button type="button" variant="ghost" size="xs" onClick={() => onSelect({ type: 'commit', oid: selection.oid, subject: commit?.subject ?? selection.oid.slice(0, 8) })}>All files</Button>}
             onDiffViewChange={onDiffViewChange}
             onWrapLinesChange={onWrapLinesChange}

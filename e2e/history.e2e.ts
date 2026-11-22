@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Locator, Page } from '@playwright/test';
-import { openRepository } from './support/app';
+import { chartStylesheet, expectHighlightedInContext, openRepository } from './support/app';
 import { expect, test, type GitRepository } from './support/fixtures';
 
 const execFileAsync = promisify(execFile);
@@ -140,6 +140,37 @@ test('a single file picked from an expanded commit opens alone, including a rena
   await expect(viewer.getByRole('button', { name: 'All files', exact: true })).toBeHidden();
   await expect(viewer.getByRole('button', { name: 'README.txt', exact: true })).toBeVisible();
   await expect(viewer.getByRole('button', { name: /^docs\/\s*guide\.md$/ })).toBeVisible();
+});
+
+test('a commit’s diff is highlighted in the context of its whole file, and the unmodified lines above its hunk unfold', async ({ pairedPage: page, repository }) => {
+  await repository.commit('styles/chart.css', chartStylesheet(), 'Add chart colors');
+  await repository.commit('styles/chart.css', chartStylesheet(['  --color-extra-1: var(--extra-1);\n', '  --color-extra-2: var(--extra-2);\n']), 'Add extra chart colors');
+
+  const list = await openHistory(page, repository);
+  await list.getByRole('button', { name: 'Add extra chart colors', exact: true }).click();
+  const viewer = page.getByRole('main');
+  const file = viewer.getByRole('button', { name: /^styles\/\s*chart\.css$/ });
+  if (await file.getAttribute('aria-expanded') !== 'true') await file.click();
+  const code = viewer.getByRole('code').filter({ hasText: '--color-extra-1' });
+  // The hunk starts 59 lines into the `:root` block; read with them, its properties are colored as such.
+  await expectHighlightedInContext(code, '--color-chart-62');
+  await expectHighlightedInContext(code, '--color-extra-1');
+
+  const firstLine = code.locator('[data-line]').filter({ hasText: /^\s*--color-chart-1: / });
+  await expect(firstLine).toHaveCount(0);
+  // The row of unmodified lines spans the gutter and the code; its button is in the first.
+  await code.locator('[data-separator]').filter({ hasText: '59 unmodified lines' }).locator('[data-expand-button]').first().click();
+  await expect(firstLine).toBeVisible();
+  await expect(code.getByText('59 unmodified lines')).toBeHidden();
+  await expectHighlightedInContext(code, '--color-chart-1');
+
+  // The same file opened alone, from the commit's row, is highlighted the same way.
+  const row = commitRow(list, 'Add extra chart colors');
+  await row.hover();
+  await row.getByRole('button', { name: 'Expand commit' }).click();
+  await row.getByRole('button', { name: 'Open the diff of styles/chart.css' }).click();
+  await expect(viewer.getByRole('button', { name: 'All files', exact: true })).toBeVisible();
+  await expectHighlightedInContext(viewer.getByRole('code').filter({ hasText: '--color-extra-1' }), '--color-chart-62');
 });
 
 test('searching history counts matches and moves between them', async ({ pairedPage: page, repository }) => {

@@ -5,7 +5,7 @@ import {
   IconArrowsMaximize, IconArrowsMinimize, IconChevronRight, IconFileArrowRight, IconHistory,
   IconLayoutColumns, IconLayoutRows, IconSearch, IconTextWrap, IconX,
 } from '@tabler/icons-react';
-import { isLargePullRequestFile, type DiffResult, type DiffViewPreference, type ThemePreference } from '@shared/contracts';
+import { isLargePullRequestFile, type DiffResult, type DiffViewPreference, type FileVersionsResult, type ThemePreference } from '@shared/contracts';
 import type { ChangeKind, CommitFile } from '@shared/git-types';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Spinner } from '@/components/ui/spinner';
@@ -26,6 +26,9 @@ import { ColorHoverPreview } from './ColorHoverPreview';
 import { ColorSwatchLayer } from './ColorSwatchLayer';
 import { createColorSwatchRegistry } from './color-swatch-registry';
 import { noteViewState, rememberedFolds, rememberedKnown, rememberFolds, restoredViewState } from './viewer-memory';
+import { useWholeFileDiff } from './useWholeFileDiff';
+import { WholeFileDiffs, type FileVersionsReader } from './whole-file-diff';
+import type { FileDiffMetadata } from '@pierre/diffs';
 
 /** A commit reads as one document: its message and files lead into its diffs. */
 export interface DiffCommitLayout {
@@ -59,6 +62,8 @@ interface DiffWorkspaceProps {
   onClose?: (() => void) | undefined;
   /** Offers each file's current version in Files, from its header. */
   onOpenFile?: ((path: string) => void) | undefined;
+  /** Both versions of the one file this diff shows, read whole to highlight it in context. Unused when the patch has more files. */
+  readFileVersions?: FileVersionsReader | undefined;
 }
 
 export function DiffWorkspace(props: DiffWorkspaceProps) {
@@ -93,7 +98,7 @@ function DiffDocument(props: DiffWorkspaceProps) {
   );
 }
 
-function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, foldMemoryKey, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
+function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, foldMemoryKey, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, readFileVersions, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
   const largeCommit = Boolean(commitLayout?.listFiles) && (files.length > LARGE_COMMIT_FILES || diff.lineCount > LARGE_COMMIT_LINES);
   const [collapsed, setCollapsedState] = useState<Set<string>>(() => {
     const folded = initiallyCollapsed || largeCommit;
@@ -114,6 +119,7 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
   const sections = useRef(new Map<string, HTMLElement>());
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [colorSwatches] = useState(createColorSwatchRegistry);
+  const [wholeFiles] = useState(() => new WholeFileDiffs());
   const highlightPool = useWorkerPool();
   useEffect(() => primeDiffsWhenIdle(highlightPool, files.map((file) => file.fileDiff)), [files, highlightPool]);
   const allCollapsed = files.length > 0 && files.every((file) => collapsed.has(file.key));
@@ -188,10 +194,13 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
                     : <CompactFileHeader file={file} actions={diffActions(false)} />
                   : <CollapsibleFileHeader file={headerFile(file)} collapsed={isCollapsed} onToggle={() => toggleFile(file.key)} onOpenFile={onOpenFile} />}
                 <Reveal open={!isCollapsed} animate={animatesFileToggle(file, files.length)}>
-                  <FileDiff
-                    key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
+                  <WholeFileDiff
+                    viewKey={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
+                    fileKey={file.key}
                     fileDiff={file.fileDiff}
-                    options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
+                    wholeFiles={wholeFiles}
+                    read={files.length === 1 ? readFileVersions : undefined}
+                    options={diffOptions(diffView, themeType, wrapLines)}
                   />
                 </Reveal>
               </section>
@@ -201,6 +210,20 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
       </div>
     </div>
   );
+}
+
+type DiffOptions = NonNullable<React.ComponentProps<typeof FileDiff>['options']>;
+
+function diffOptions(diffView: DiffViewPreference, themeType: ThemePreference, wrapLines: boolean): DiffOptions {
+  return { diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS };
+}
+
+/** A file's diff from its patch, then from both whole files once `read` brings them. */
+function WholeFileDiff({ viewKey, fileKey, fileDiff, wholeFiles, read, options }: {
+  viewKey: string; fileKey: string; fileDiff: FileDiffMetadata; wholeFiles: WholeFileDiffs; read: FileVersionsReader | undefined; options: DiffOptions;
+}) {
+  const shown = useWholeFileDiff(fileKey, fileDiff, wholeFiles, read);
+  return <FileDiff key={viewKey} fileDiff={shown} options={options} />;
 }
 
 function diffPathParts(path: string): { name: string; directory: string } {
@@ -330,6 +353,8 @@ interface CommitFilesWorkspaceProps {
   readAll(signal: AbortSignal): Promise<DiffResult>;
   /** Puts one file's part of that read where `readFile` finds it. */
   keepFileDiff(file: CommitFile, diff: DiffResult): void;
+  /** Both versions of one file, read whole to highlight its diff in context. */
+  readFileVersions?: ((file: CommitFile, signal: AbortSignal, maxBytes: number) => Promise<FileVersionsResult>) | undefined;
   onDiffViewChange?: ((value: DiffViewPreference) => void) | undefined;
   onWrapLinesChange?: ((value: boolean) => void) | undefined;
   onOpenFile?: ((path: string) => void) | undefined;
@@ -363,6 +388,8 @@ interface PullRequestFilesWorkspaceProps {
   foldMemoryKey: string;
   /** One file's diff; `urgent` when the user unfolded that file alone. */
   readFile(file: ListedFile, signal: AbortSignal, urgent: boolean): Promise<DiffResult>;
+  /** Both versions of one file, read whole to highlight its diff in context. */
+  readFileVersions?: ((file: ListedFile, signal: AbortSignal, maxBytes: number) => Promise<FileVersionsResult>) | undefined;
   onDiffViewChange?: ((value: DiffViewPreference) => void) | undefined;
   onWrapLinesChange?: ((value: boolean) => void) | undefined;
   onClose?: (() => void) | undefined;
@@ -416,10 +443,11 @@ function sizeLabel(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, layout, foldMemoryKey, readFile, readAll, keepFileDiff, onDiffViewChange, onWrapLinesChange, onOpenFile }: {
+function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, layout, foldMemoryKey, readFile, readFileVersions, readAll, keepFileDiff, onDiffViewChange, onWrapLinesChange, onOpenFile }: {
   contentKey: string; files: readonly ListedFile[]; diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean; layout: FilesLayout;
   foldMemoryKey?: string | undefined;
   readFile(file: ListedFile, signal: AbortSignal, urgent: boolean): Promise<DiffResult>;
+  readFileVersions?: ((file: ListedFile, signal: AbortSignal, maxBytes: number) => Promise<FileVersionsResult>) | undefined;
   readAll?: ((signal: AbortSignal) => Promise<DiffResult>) | undefined;
   keepFileDiff?: ((file: CommitFile, diff: DiffResult) => void) | undefined;
   onDiffViewChange?: ((value: DiffViewPreference) => void) | undefined;
@@ -460,6 +488,7 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
   const phone = useMobileChrome() !== null;
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [colorSwatches] = useState(createColorSwatchRegistry);
+  const [wholeFiles] = useState(() => new WholeFileDiffs());
   const large = (file: ListedFile) => pullRequest && isLargePullRequestFile({ size: file.size ?? null, additions: file.additions, deletions: file.deletions });
   const needle = filter.trim().toLowerCase();
   const shown = needle ? files.filter((file) => file.path.toLowerCase().includes(needle) || file.oldPath?.toLowerCase().includes(needle)) : files;
@@ -581,6 +610,8 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
                     onRead={noteRead}
                     everything={everything}
                     readFile={readFile}
+                    readFileVersions={readFileVersions}
+                    wholeFiles={wholeFiles}
                     diffView={diffView}
                     themeType={themeType}
                     wrapLines={wrapLines}
@@ -594,8 +625,10 @@ function FilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, lay
   );
 }
 
-function CommitFileDiff({ contentKey, file, fileKey, asked, onRead, everything, readFile, diffView, themeType, wrapLines }: {
+function CommitFileDiff({ contentKey, file, fileKey, asked, onRead, everything, readFile, readFileVersions, wholeFiles, diffView, themeType, wrapLines }: {
   contentKey: string; file: ListedFile; fileKey: string;
+  readFileVersions: ((file: ListedFile, signal: AbortSignal, maxBytes: number) => Promise<FileVersionsResult>) | undefined;
+  wholeFiles: WholeFileDiffs;
   /** Files unfolded on their own, whose reads go first. */
   asked: React.RefObject<Set<string>>;
   /** Told how much the file's diff weighs once read. */
@@ -604,6 +637,7 @@ function CommitFileDiff({ contentKey, file, fileKey, asked, onRead, everything, 
   diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean;
 }) {
   const [state, setState] = useState<{ diff: DiffResult } | { error: string } | null>(null);
+  const readVersions = useCallback<FileVersionsReader>((signal, maxBytes) => readFileVersions!(file, signal, maxBytes), [file, readFileVersions]);
   useEffect(() => {
     // Whether it was unfolded alone only orders the read.
     const urgent = asked.current.has(fileKey);
@@ -626,10 +660,13 @@ function CommitFileDiff({ contentKey, file, fileKey, asked, onRead, everything, 
   if ('error' in state) return <div className="diff-file-loading text-destructive" role="alert">{state.error}</div>;
   // Larger than one response can carry: said by name, rather than shown as nothing.
   if (state.diff.truncated && !state.diff.patch) return <div className="diff-file-loading" role="status">{visiblePath(file.path)}’s diff is too large to show here{file.size ? ` (${sizeLabel(file.size)})` : ''}.</div>;
-  return <ParsedCommitFileDiff contentKey={contentKey} diff={state.diff} diffView={diffView} themeType={themeType} wrapLines={wrapLines} />;
+  return <ParsedCommitFileDiff contentKey={contentKey} fileKey={fileKey} diff={state.diff} read={readFileVersions ? readVersions : undefined} wholeFiles={wholeFiles} diffView={diffView} themeType={themeType} wrapLines={wrapLines} />;
 }
 
-function ParsedCommitFileDiff({ contentKey, diff, diffView, themeType, wrapLines }: { contentKey: string; diff: DiffResult; diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean }) {
+function ParsedCommitFileDiff({ contentKey, fileKey, diff, read, wholeFiles, diffView, themeType, wrapLines }: {
+  contentKey: string; fileKey: string; diff: DiffResult; read: FileVersionsReader | undefined; wholeFiles: WholeFileDiffs;
+  diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean;
+}) {
   const result = useParsedDiff(diff.patch, contentKey);
   const highlightPool = useWorkerPool();
   const parsed = result?.files?.[0];
@@ -638,10 +675,13 @@ function ParsedCommitFileDiff({ contentKey, diff, diffView, themeType, wrapLines
   if (!result) return <div className="diff-file-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Preparing diff…" /></div>;
   if (!parsed) return <div className="diff-file-loading">No differences to show.</div>;
   return (
-    <FileDiff
-      key={`${contentKey}:${diffView}:${wrapLines}`}
+    <WholeFileDiff
+      viewKey={`${contentKey}:${diffView}:${wrapLines}`}
+      fileKey={fileKey}
       fileDiff={parsed.fileDiff}
-      options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
+      wholeFiles={wholeFiles}
+      read={result.files.length === 1 ? read : undefined}
+      options={diffOptions(diffView, themeType, wrapLines)}
     />
   );
 }

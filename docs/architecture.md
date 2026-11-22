@@ -67,6 +67,9 @@ native capability.
    this in the bootstrap result's `server.requestCancellation`, and a client
    sends `cancel` only to a server that does, so either side can be older
    than the other without a protocol version change.
+   Newer reads are announced the same way, such as `server.fileVersions` for
+   the whole-file reads that color diffs in context; a client asks an older
+   server for none of them and keeps the behavior that server supports.
 6. Repository and filesystem changes are published as runtime events to every
    connected owner session.
 7. After reconnect, each client bootstraps fresh authoritative state.

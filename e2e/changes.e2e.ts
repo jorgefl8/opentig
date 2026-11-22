@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Locator, Page } from '@playwright/test';
-import { colorPreview, colorSwatches, hoverCenter, openRepository } from './support/app';
+import { chartStylesheet, colorPreview, colorSwatches, expectHighlightedInContext, hoverCenter, openRepository } from './support/app';
 import { expect, test, type GitRepository } from './support/fixtures';
 
 /** A list of changes: the unlabeled one when nothing is staged, or "Staged" / "Not staged". */
@@ -402,6 +402,21 @@ test('a stylesheet diff shows swatches on both sides of a changed color', async 
   await expect(colorPreview(page, 'rebeccapurple')).toBeVisible();
   await hoverCenter(page, swatches.nth(0));
   await expect(colorPreview(page, '#3b82f6')).toBeVisible();
+});
+
+test('staged and unstaged diffs are highlighted in the context of their whole files', async ({ pairedPage: page, repository }) => {
+  await repository.commit('styles/staged.css', chartStylesheet(), 'Add staged colors');
+  await repository.commit('styles/working.css', chartStylesheet(), 'Add working colors');
+  await write(repository, 'styles/staged.css', chartStylesheet(['  --color-staged: var(--staged);\n']));
+  await repository.git('add', 'styles/staged.css');
+  await write(repository, 'styles/working.css', chartStylesheet(['  --color-working: var(--working);\n']));
+  await openRepository(page, repository);
+  await openChanges(page, 2);
+
+  await changeRow(page, 'Not staged', 'styles/working.css').click();
+  await expectHighlightedInContext(page.getByRole('code').filter({ hasText: '--color-working' }), '--color-chart-62');
+  await changeRow(page, 'Staged', 'styles/staged.css').click();
+  await expectHighlightedInContext(page.getByRole('code').filter({ hasText: '--color-staged' }), '--color-chart-62');
 });
 
 test('starting up paints the changes the server last saw, and holds Commit until they are read again', async ({ pairedPage: page, repository }) => {
