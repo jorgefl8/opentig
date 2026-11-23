@@ -411,6 +411,13 @@ test('a read-only file, which has no caret, shows the blame of the line clicked'
   // A click outside the editor lets the line go.
   await fileTree(page).click();
   await expect(blameText(page)).toBeHidden();
+
+  // The tree still opens files, read-only: its rows cannot be dragged, but they are not disabled.
+  const readme = fileTree(page).getByRole('treeitem', { name: 'README.md' });
+  await expect(readme).toBeEnabled();
+  await expect(readme).not.toHaveAttribute('aria-roledescription', 'draggable');
+  await readme.click();
+  await expect(page.getByRole('heading', { name: 'Sample project', exact: true })).toBeVisible();
 });
 
 test('without GitHub the blame card keeps the placeholder in place of the picture', async ({ pairedPage: page, repository }) => {

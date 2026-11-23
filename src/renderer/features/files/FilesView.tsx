@@ -892,6 +892,8 @@ const FileRow = memo(function FileRow({ entry, depth, expanded, pendingChildren,
     id: `file-drop:${entry.path}`,
     data: { targetDirectory, expandPath: entry.type === 'directory' ? entry.path : null },
   });
+  // A row that cannot be dragged, as in a merge, still opens and selects: it is not disabled, nor draggable.
+  const { 'aria-disabled': _dragDisabled, ...dragAttributes } = attributes;
   const setRowRef = (element: HTMLButtonElement | null) => {
     rowElement.current = element;
     setDraggableRef(element);
@@ -902,7 +904,7 @@ const FileRow = memo(function FileRow({ entry, depth, expanded, pendingChildren,
       <button
         type="button"
         ref={setRowRef}
-        {...attributes}
+        {...(readOnly ? {} : dragAttributes)}
         role="treeitem"
         data-path={entry.path}
         data-list-item=""
