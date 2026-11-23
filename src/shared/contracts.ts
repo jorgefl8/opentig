@@ -284,7 +284,11 @@ export type UndoLatestCommitResult =
   | { status: 'unsupported-root' };
 
 export type PullResult =
-  | { status: 'success'; commits: number; restoredLocalChanges: boolean; rebased: boolean; localCommits: number }
+  | {
+    status: 'success'; commits: number; restoredLocalChanges: boolean; rebased: boolean; localCommits: number;
+    /** A fast-forward-only pull moved the branch past local changes Git did not need to touch. */
+    keptLocalChanges?: boolean;
+  }
   | { status: 'up-to-date' }
   | { status: 'blocked-conflicts'; files: string[] }
   | { status: 'blocked-operation'; operation: string }
@@ -292,7 +296,18 @@ export type PullResult =
   | { status: 'diverged'; ahead: number; behind: number }
   | { status: 'rebase-conflict'; files: string[] }
   | { status: 'stash-conflict'; files: string[]; stashOid: string; updated: boolean }
-  | { status: 'restore-failed'; stashOid: string; updated: boolean; recoveredChanges: boolean };
+  | { status: 'restore-failed'; stashOid: string; updated: boolean; recoveredChanges: boolean }
+  /** A fast-forward-only pull found local changes in files the pull changes; Git touched nothing. */
+  | { status: 'blocked-local-changes'; files: string[] };
+
+export interface PullOptions {
+  /**
+   * Only fast-forwards: no safety stash and no rebase. A branch with commits of its own answers
+   * `diverged`, and local changes in the way answer `blocked-local-changes`, both with nothing
+   * changed. Only on a server whose identity has `fastForwardPull`.
+   */
+  fastForwardOnly?: boolean;
+}
 
 export type FetchResult =
   | { status: 'success'; ahead: number; behind: number }
@@ -1223,7 +1238,7 @@ export interface OpenTigApi {
     /** Worktrees in which a coding agent is working; the others are left out. */
     worktreeAgents(repositoryId: string): Promise<WorktreeAgents[]>;
     selectWorktree(repositoryId: string, path: string): Promise<RepositoryInfo>;
-    pull(repositoryId: string): Promise<PullResult>;
+    pull(repositoryId: string, options?: PullOptions): Promise<PullResult>;
     pushContext(repositoryId: string, remote?: string): Promise<import('./repository-access').PublicationContext>;
     push(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult>;
     /** Updates remote-tracking refs without merging or rebasing. */

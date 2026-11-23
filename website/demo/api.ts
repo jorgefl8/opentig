@@ -111,7 +111,7 @@ export const opentig: OpenTigApi = {
       preferences,
       performanceAutomation: false,
       // The sample answers the commands of these features as an installed server would.
-      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true, fileHistory: true, pullRequestFiles: true, commitAuthorAvatars: true, fileVersions: true },
+      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true, fileHistory: true, pullRequestFiles: true, commitAuthorAvatars: true, fileVersions: true, fastForwardPull: true },
     }),
     capabilities: async () => ({
       runtimeMode: "headless",
@@ -364,10 +364,18 @@ export const opentig: OpenTigApi = {
     fetch: async () => ({ status: "success", ahead: model.ahead(), behind: model.behind() }),
     fetchBranches: async () => ({ status: "success", ahead: model.ahead(), behind: model.behind() }),
     // A pull puts the visitor's unpushed commits on top of the remote's, as the installed app does.
-    pull: async () => {
+    // Pull all's fast-forward only goes ahead when nothing of the visitor's is in the way.
+    pull: async (_id, options) => {
+      if (options?.fastForwardOnly && model.behind() > 0) {
+        if (model.ahead() > 0) return { status: "diverged", ahead: model.ahead(), behind: model.behind() };
+        const inTheWay = model.changesInTheWayOfPull();
+        if (inTheWay.length > 0) return { status: "blocked-local-changes", files: inTheWay };
+      }
+      const kept = model.status().changes.length > 0;
       const result = model.pull();
       if (!result) return { status: "up-to-date" };
       changed();
+      if (options?.fastForwardOnly) return { status: "success", commits: result.commits, restoredLocalChanges: false, rebased: false, localCommits: 0, ...(kept ? { keptLocalChanges: true } : {}) };
       return { status: "success", commits: result.commits, restoredLocalChanges: result.restoredLocalChanges, rebased: result.localCommits > 0, localCommits: result.localCommits };
     },
     listBranches: async () => sampleBranches(model),

@@ -3127,6 +3127,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (result.status === 'no-upstream') {
         return { title: 'Branch has no upstream configured', duration: 10_000 };
       }
+      if (result.status === 'blocked-local-changes') {
+        return { title: 'Local changes are in the way', description: 'Nothing changed.', duration: 10_000 };
+      }
       return {
         title: 'A Git operation is in progress',
         description: `Finish or cancel ${result.operation} before updating.`,

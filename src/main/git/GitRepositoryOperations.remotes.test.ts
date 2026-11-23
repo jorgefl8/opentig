@@ -180,3 +180,48 @@ describe('GitRepositoryOperations fetch and pull', () => {
     expect(await fixture.repositories.status(fixture.repositoryId, false)).toMatchObject({ operation: null, ahead: 1, behind: 1 });
   });
 });
+
+describe('GitRepositoryOperations fast-forward-only pull', () => {
+  const fastForwardOnly = { fastForwardOnly: true };
+
+  it('moves past local changes Git does not need to touch, without a stash', async () => {
+    const fixture = await repositoryWithUpstream();
+    await commitOnRemote(fixture, 'incoming.txt', 'from origin\n', 'Remote commit');
+    await writeFile(path.join(fixture.work, 'unstaged.txt'), 'mine\n');
+    await writeFile(path.join(fixture.work, 'new.txt'), 'untracked\n');
+    const before = await git(fixture.work, ['status', '--porcelain']);
+
+    expect(await fixture.operations.pull(fixture.repositoryId, fastForwardOnly)).toEqual({
+      status: 'success', commits: 1, restoredLocalChanges: false, rebased: false, localCommits: 0, keptLocalChanges: true,
+    });
+    expect(await git(fixture.work, ['rev-parse', 'HEAD'])).toBe(await git(fixture.work, ['rev-parse', '@{upstream}']));
+    expect(await git(fixture.work, ['status', '--porcelain'])).toBe(before);
+    expect(await git(fixture.work, ['stash', 'list'])).toBe('');
+  });
+
+  it.each([
+    ['a modified file the pull changes', 'unstaged.txt'],
+    ['an untracked file the pull would bring', 'incoming.txt'],
+  ])('touches nothing when %s is in the way', async (_case, file) => {
+    const fixture = await repositoryWithUpstream();
+    await commitOnRemote(fixture, file, 'from origin\n', 'Remote commit');
+    await writeFile(path.join(fixture.work, file), 'mine\n');
+    const head = await git(fixture.work, ['rev-parse', 'HEAD']);
+    const before = await git(fixture.work, ['status', '--porcelain']);
+
+    expect(await fixture.operations.pull(fixture.repositoryId, fastForwardOnly)).toEqual({ status: 'blocked-local-changes', files: [file] });
+    expect(await git(fixture.work, ['rev-parse', 'HEAD'])).toBe(head);
+    expect(await git(fixture.work, ['status', '--porcelain'])).toBe(before);
+    expect(await git(fixture.work, ['stash', 'list'])).toBe('');
+  });
+
+  it('answers diverged for a branch with commits of its own and does not rebase it', async () => {
+    const fixture = await repositoryWithUpstream();
+    await git(fixture.work, ['commit', '--allow-empty', '-m', 'Local commit']);
+    const head = await git(fixture.work, ['rev-parse', 'HEAD']);
+    await commitOnRemote(fixture, 'incoming.txt', 'from origin\n', 'Remote commit');
+
+    expect(await fixture.operations.pull(fixture.repositoryId, fastForwardOnly)).toEqual({ status: 'diverged', ahead: 1, behind: 1 });
+    expect(await git(fixture.work, ['rev-parse', 'HEAD'])).toBe(head);
+  });
+});

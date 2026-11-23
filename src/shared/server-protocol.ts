@@ -89,4 +89,9 @@ export interface OpenTigServerIdentity {
   commitAuthorAvatars?: true;
   /** Answers `diff:file-versions` and `github:pr-file-versions`. Absent on servers older than them. */
   fileVersions?: true;
+  /**
+   * Understands `{ fastForwardOnly: true }` on `refs:pull`. Absent on servers older than it, which
+   * ignore the option and run the full pull, with its safety stash and rebase.
+   */
+  fastForwardPull?: true;
 }

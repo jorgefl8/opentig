@@ -716,6 +716,15 @@ export class DemoRepository {
     return { status: "pushed", commits };
   }
   /**
+   * The local changes a fast-forward would have to overwrite, as Git refuses it: files the remote's
+   * commits change that are changed here too, staged or not, or that are new here.
+   */
+  changesInTheWayOfPull(): string[] {
+    const touched = new Set(this.incoming.flatMap((commit) => [...new Set([...Object.keys(commit.before), ...Object.keys(commit.after)])]
+      .filter((path) => commit.before[path] !== commit.after[path])));
+    return [...touched].filter((path) => this.working[path] !== this.head[path] || this.index[path] !== this.head[path]);
+  }
+  /**
    * Bring in the remote's commits and put the local ones on top of them, as a rebasing pull does.
    * The local commits get new identifiers; uncommitted and staged changes stay as they were.
    */

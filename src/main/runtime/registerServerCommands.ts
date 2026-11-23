@@ -18,7 +18,7 @@ import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry
 import { PendingCuts } from './PendingCuts';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
-import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, prNumbersArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestFileArg, pullRequestFilesScopeArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, githubIdArg, runPageArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
+import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, prNumbersArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, pullOptionsArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestFileArg, pullRequestFilesScopeArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, githubIdArg, runPageArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
 import { bootstrapRequestArg, createTrackingBranchArg, deleteRemoteBranchArg, fileVersionsBytesArg, fileVersionsRequestArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
@@ -571,7 +571,7 @@ export function registerServerCommands(
       for (const siblingId of siblingIds) services.events.repositoryChanged(siblingId, 'worktrees');
     }
   });
-  handle(IPC.refsPull, 'pull', (id) => services.operations.pull(stringArg(id, 'pull', 64)));
+  handle(IPC.refsPull, 'pull', (id, options) => services.operations.pull(stringArg(id, 'pull', 64), pullOptionsArg(options)));
   handle(IPC.refsPushContext, 'push-context', (id, remote) => services.operations.publicationContext(stringArg(id, 'push-context', 64), remote == null ? undefined : stringArg(remote, 'push-context', 512)));
   handle(IPC.refsPush, 'push', (id, publish, expected) => services.operations.push(stringArg(id, 'push', 64), publishBranchArg(publish), expected == null ? undefined : stringArg(expected, 'push', 64)));
   handle(IPC.refsFetch, 'fetch', (id) => services.operations.fetch(stringArg(id, 'fetch', 64)));

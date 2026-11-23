@@ -1,4 +1,4 @@
-import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, FileVersionsRequest, FileVersionsResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult, WorktreeRepairResult } from '../../shared/contracts';
+import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, FileVersionsRequest, FileVersionsResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult, WorktreeRepairResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
   FileChange, FileHistoryPage, LocalRefsSnapshot, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
@@ -843,8 +843,45 @@ export class GitRepositoryOperations {
     return { status: 'success', ahead: status.ahead, behind: status.behind };
   }
 
-  async pull(repositoryId: string): Promise<PullResult> {
-    return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.pullInContext(repositoryId));
+  async pull(repositoryId: string, options: PullOptions = {}): Promise<PullResult> {
+    return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => (
+      options.fastForwardOnly ? this.fastForwardPullInContext(repositoryId) : this.pullInContext(repositoryId)
+    ));
+  }
+
+  /**
+   * Fetches and fast-forwards, and nothing more: no safety stash and no rebase. Git moves the
+   * branch past local changes it does not need to touch and refuses, touching nothing, when one
+   * is in the way, so whatever this answers short of success left the worktree as it was.
+   */
+  private async fastForwardPullInContext(repositoryId: string): Promise<PullResult> {
+    const repository = this.repositories.get(repositoryId);
+    let status = await this.repositories.status(repositoryId, false);
+    const existingConflicts = conflictPaths(status);
+    if (existingConflicts.length > 0) return { status: 'blocked-conflicts', files: existingConflicts };
+    if (status.operation) return { status: 'blocked-operation', operation: status.operation };
+    if (!status.upstream) return { status: 'no-upstream' };
+
+    await this.runFetch(repository.path, 'pull-fetch');
+
+    status = await this.repositories.status(repositoryId, false);
+    if (!status.upstream) return { status: 'no-upstream' };
+    if (status.behind === 0) return { status: 'up-to-date' };
+    if (status.ahead > 0) return { status: 'diverged', ahead: status.ahead, behind: status.behind };
+
+    const commits = status.behind;
+    const keptLocalChanges = status.changes.length > 0;
+    try {
+      await this.git.runWrite(repository.path, ['merge', '--ff-only', '--no-edit', '@{upstream}'], {
+        operation: 'pull-fast-forward',
+        timeoutMs: 120_000,
+        maxOutputBytes: 16 * 1024 * 1024,
+      });
+    } catch (error) {
+      if (!(error instanceof GitOperationError) || error.detail.code !== 'DIRTY_WORKTREE') throw error;
+      return { status: 'blocked-local-changes', files: status.changes.map((change) => change.path) };
+    }
+    return { status: 'success', commits, restoredLocalChanges: false, rebased: false, localCommits: 0, ...(keptLocalChanges ? { keptLocalChanges } : {}) };
   }
 
   private async pullInContext(repositoryId: string): Promise<PullResult> {

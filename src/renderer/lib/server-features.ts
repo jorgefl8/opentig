@@ -24,9 +24,11 @@ export interface ServerFeatures {
   commitAuthorAvatars: boolean;
   /** `diff.getFileVersions` and `github.getPullRequestFileVersions`: diffs highlighted from the whole files. */
   fileVersions: boolean;
+  /** `refs.pull` with `fastForwardOnly`, which Pull all in the repository list needs. */
+  fastForwardPull: boolean;
 }
 
-export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, pullRequestFiles: false, repositoryPerClient: false, worktreeRepair: false, commitAuthorAvatars: false, fileVersions: false };
+export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false, pullRequestFiles: false, repositoryPerClient: false, worktreeRepair: false, commitAuthorAvatars: false, fileVersions: false, fastForwardPull: false };
 
 export function serverFeatures(identity: OpenTigServerIdentity | undefined): ServerFeatures {
   return {
@@ -37,6 +39,7 @@ export function serverFeatures(identity: OpenTigServerIdentity | undefined): Ser
     worktreeRepair: identity?.worktreeRepair === true,
     commitAuthorAvatars: identity?.commitAuthorAvatars === true,
     fileVersions: identity?.fileVersions === true,
+    fastForwardPull: identity?.fastForwardPull === true,
   };
 }
 

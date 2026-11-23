@@ -1,7 +1,7 @@
 import { GitOperationError } from '../../shared/errors';
 import { FILE_VERSION_MAX_BYTES } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, FileVersionsRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestFilesScope, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, FileVersionsRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullOptions, PullRequestFilesScope, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -219,6 +219,16 @@ export function publishBranchArg(value: unknown): PublishBranchOptions | undefin
     expectedOid: oidArg(request.expectedOid, 'push'),
     ...(request.asNewBranch === true ? { asNewBranch: true } : {}),
   };
+}
+
+/** A pull's options. Absent means the full pull, so an older client's request means what it always did. */
+export function pullOptionsArg(value: unknown): PullOptions {
+  if (value == null) return {};
+  const request = requestObject(value, 'pull');
+  if (request.fastForwardOnly !== undefined && typeof request.fastForwardOnly !== 'boolean') {
+    throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'pull', message: 'Invalid pull options.' });
+  }
+  return request.fastForwardOnly ? { fastForwardOnly: true } : {};
 }
 
 export function branchDetailsArg(value: unknown, operation: string): BranchDetailsRequest {
