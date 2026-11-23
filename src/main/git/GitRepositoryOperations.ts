@@ -12,7 +12,7 @@ import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types'
 import type { RepositoryInstructionFile } from '../ai/RepositoryAiInstructions';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
-import { FileVersionUnavailable, firstParent, readFileVersions, type FileVersionSource, type FileVersionsGit } from './FileVersions';
+import { FileVersionUnavailable, REGULAR_FILE_MODES, firstParent, readFileVersions, type FileVersionSource, type FileVersionsGit } from './FileVersions';
 import { LOG_FORMAT, parseLog } from './LogParser';
 import { FILE_HISTORY_WALK_FORMAT, parseFileHistoryWalk, type FileHistoryChange, type FileHistoryWalk } from './FileHistoryParser';
 import { selectHistoryBase } from './HistoryBase';
@@ -140,7 +140,13 @@ export class GitRepositoryOperations {
     if (request.kind === 'staged') args.push('--cached');
     args.push('--no-color', '--no-ext-diff', '--unified=3', '--', ...paths);
     const output = await this.git.run(repository.path, args, { operation: `diff-${request.kind}`, readOnly: true, maxOutputBytes: 32 * 1024 * 1024, ...(signal ? { signal } : {}) });
-    return makeDiffResult(request.path, output.stdout);
+    const result = makeDiffResult(request.path, output.stdout);
+    if (request.kind === 'unstaged' && !result.patch) {
+      const read: GitTaskRunner = (readArgs, options) => this.git.run(repository.path, readArgs, { ...options, readOnly: true, ...(signal ? { signal } : {}) });
+      // The diff is shown whatever this check meets, such as a clean filter that fails.
+      if (await statOnlyEntry(read, paths[0]!).catch(() => null)) result.emptyReason = 'stat-only';
+    }
+    return result;
   }
 
   async commitDiff(repositoryId: string, oid: string, signal?: AbortSignal): Promise<DiffResult> {
@@ -259,6 +265,35 @@ export class GitRepositoryOperations {
     const valid = this.repositories.validatePaths(repositoryId, paths);
     await this.git.runWrite(repository.path, ['--literal-pathspecs', 'restore', '--worktree', '--', ...valid], { operation: 'discard' });
     return { ok: true };
+  }
+
+  /**
+   * Clears a file Git lists as changed only from the size or times it keeps for it, its content being
+   * the staged version (see `statOnlyEntry`). `git update-index --refresh` cannot: a size that differs
+   * counts as a change without the content being read. `git add` would, but it stages whatever the file
+   * holds by then. Instead the index entry is written back as it is, the same mode and blob, which
+   * stages nothing and leaves Git no size or times for it; `git add --refresh` then compares the
+   * content and records the file's current ones, for this path alone.
+   */
+  async refreshIndexEntry(repositoryId: string, filePath: string): Promise<GitResult> {
+    await this.ensureWritable(repositoryId);
+    const repository = this.repositories.get(repositoryId);
+    const [valid] = this.repositories.validatePaths(repositoryId, [filePath]);
+    return this.git.runWriteTask(repository.path, async (run) => {
+      const read: GitTaskRunner = (args, options) => run(args, { ...options, readOnly: true });
+      // Already cleared, by another window or by Git itself: there is nothing left to do.
+      if (!(await worktreeStatus(read, valid!)).unstaged) return { ok: true };
+      const entry = await statOnlyEntry(read, valid!);
+      if (!entry) {
+        throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'refresh-index', message: 'Its content is no longer the same as the staged version, so nothing was changed. Open it again to see its changes.' });
+      }
+      await run(['update-index', '--cacheinfo', entry.mode, entry.oid, valid!], { operation: 'refresh-index' });
+      await run(['--literal-pathspecs', 'add', '--refresh', '--', valid!], { operation: 'refresh-index' });
+      if ((await worktreeStatus(read, valid!)).modified) {
+        throw new GitOperationError({ code: 'UNKNOWN', operation: 'refresh-index', message: 'Git still lists the file as changed. It may have changed on disk meanwhile.' });
+      }
+      return { ok: true };
+    });
   }
 
   async unstageAll(repositoryId: string): Promise<GitResult> {
@@ -1819,6 +1854,42 @@ async function readWorktreeVersion(absolute: string, maxBytes: number): Promise<
   } finally {
     await handle.close();
   }
+}
+
+/** A file's index entry, as `git status` lists one changed in the working tree. */
+interface WorktreeModifiedEntry { mode: string; worktreeMode: string; oid: string }
+
+/**
+ * Whether `git status` lists a tracked file with unstaged changes, a conflict included, and its index
+ * entry when it lists it as modified in the working tree, in no conflict. Status lists what the Changes list shows: a file whose times alone
+ * changed is compared and left out, but a different size counts as a change without the content being read.
+ */
+async function worktreeStatus(run: GitTaskRunner, filePath: string): Promise<{ unstaged: boolean; modified: WorktreeModifiedEntry | null }> {
+  const output = await run(
+    ['--literal-pathspecs', 'status', '--porcelain=v2', '-z', '--untracked-files=no', '--ignore-submodules=all', '--', filePath],
+    { operation: 'stat-only-check', maxOutputBytes: 1024 * 1024 },
+  );
+  const records = output.stdout.toString('utf8').split('\0').filter(Boolean);
+  // A rename's record is followed by its old path, which has no fields of its own.
+  const unstaged = records.some((record) => record.startsWith('u ') || (/^[12] /.test(record) && record[3] !== '.'));
+  if (records.length !== 1) return { unstaged, modified: null };
+  // `1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>`; renames and conflicts have records of their own.
+  const match = /^1 [.MAT]M N\.\.\. \d{6} (\d{6}) (\d{6}) [0-9a-f]+ ([0-9a-f]+) ([\s\S]*)$/.exec(records[0]!);
+  if (!match || match[4] !== filePath) return { unstaged, modified: null };
+  return { unstaged, modified: { mode: match[1]!, worktreeMode: match[2]!, oid: match[3]! } };
+}
+
+/**
+ * The index entry of a file listed as modified whose content, read as `git add` would store it (line
+ * endings converted and filters applied, as `.gitattributes` and `core.autocrlf` say), is the blob the
+ * index already has: only the size or times Git keeps for it differ, so its diff is empty. Null for
+ * anything else, a mode that changed included, whose diff shows it.
+ */
+async function statOnlyEntry(run: GitTaskRunner, filePath: string): Promise<{ mode: string; oid: string } | null> {
+  const entry = (await worktreeStatus(run, filePath)).modified;
+  if (!entry || entry.mode !== entry.worktreeMode || !REGULAR_FILE_MODES.has(entry.mode)) return null;
+  const hashed = await run(['hash-object', `--path=${filePath}`, '--', filePath], { operation: 'stat-only-check', maxOutputBytes: 1024 });
+  return hashed.stdout.toString('utf8').trim() === entry.oid ? { mode: entry.mode, oid: entry.oid } : null;
 }
 
 function makeDiffResult(path: string, buffer: Buffer): DiffResult {

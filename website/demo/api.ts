@@ -289,6 +289,9 @@ export const opentig: OpenTigApi = {
       changed();
       return { ok: true };
     },
+    // The sample compares contents, never sizes or times, so no file is listed without a difference to show:
+    // its diffs never carry `emptyReason`, and there is nothing for a refresh to clear.
+    refresh: async () => ({ ok: true }),
     prepareCommitGroup: async (input) => {
       model.prepareGroup(input.paths, input.expectedStagedPaths);
       changed();

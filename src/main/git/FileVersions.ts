@@ -23,7 +23,7 @@ const GIT_TIMEOUT_MS = 15_000;
 const OPERATION = 'file-versions';
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** Regular files, executable or not. A symbolic link or a submodule is not a file whose text a diff shows. */
-const REGULAR_FILE_MODES = new Set(['100644', '100755']);
+export const REGULAR_FILE_MODES = new Set(['100644', '100755']);
 
 /** A version that cannot be shown whole; the diff keeps its patch alone. */
 export class FileVersionUnavailable extends Error {}

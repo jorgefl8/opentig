@@ -111,6 +111,8 @@ With no changes, the section says so and, when the branch has commits that aren'
 
 Changed Markdown, HTML, and SVG files open their staged or unstaged diff; use **Open file** for the rendered preview. Image files open their preview and have a separate **View changes** action.
 
+Git can list a file as changed although its content is the last staged version, for example when a tool rewrote it with other line endings that Git converts (`core.autocrlf` or `.gitattributes`): its size on disk no longer matches what Git recorded, so Git counts it as changed without comparing its content. Its unstaged diff then explains this instead of showing no differences, and **Clear from Changes** has Git record the file again. Only that file is touched and nothing is staged; if its content differs from the staged version by then, nothing changes and OpenTig says so. A change of the file's mode alone is shown as a diff, not cleared.
+
 To discard a file's or folder's unstaged changes, review the affected paths in the confirmation dialog. Discarding is unavailable while another repository operation, such as a refresh or a stage, is still running. Untracked files go to system Trash (the Recycle Bin on Windows). A folder whose untracked files are all being discarded goes to Trash as one item, unless it also holds tracked or Git-ignored files. Folders the discard leaves empty are removed.
 
 **Resolve conflicts**

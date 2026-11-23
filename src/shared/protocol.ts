@@ -112,6 +112,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'index.discard': command(IPC.indexDiscard, 'discard', true),
   'index.stageAll': command(IPC.indexStageAll, 'stage-all', true),
   'index.unstageAll': command(IPC.indexUnstageAll, 'unstage-all', true),
+  'index.refresh': command(IPC.indexRefresh, 'refresh-index', true),
   'index.prepareCommitGroup': command(IPC.indexPrepareCommitGroup, 'prepare-commit-group', true),
   'index.updateConflict': command(IPC.indexUpdateConflict, 'update-conflict', true, { maxRequestBytes: CONTENT_MAX_REQUEST_BYTES }),
   'index.resolveConflict': command(IPC.indexResolveConflict, 'resolve-conflict', true, { maxRequestBytes: CONTENT_MAX_REQUEST_BYTES }),

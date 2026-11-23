@@ -449,6 +449,7 @@ export function registerServerCommands(
   });
   handle(IPC.indexStageAll, 'stage-all', (id) => services.operations.stageAll(stringArg(id, 'stage-all', 64)));
   handle(IPC.indexUnstageAll, 'unstage-all', (id) => services.operations.unstageAll(stringArg(id, 'unstage-all', 64)));
+  handle(IPC.indexRefresh, 'refresh-index', (id, filePath) => services.operations.refreshIndexEntry(stringArg(id, 'refresh-index', 64), stringArg(filePath, 'refresh-index')));
   handle(IPC.indexPrepareCommitGroup, 'prepare-commit-group', (input) => services.operations.prepareCommitGroup(prepareCommitGroupArg(input, 'prepare-commit-group')));
   handle(IPC.indexResolveConflict, 'resolve-conflict', (id, filePath, content) => services.operations.resolveConflict(
     stringArg(id, 'resolve-conflict', 64),

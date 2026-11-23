@@ -183,6 +183,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       discard: (repositoryId, paths) => invoke(IPC.indexDiscard, repositoryId, paths),
       stageAll: (repositoryId) => invoke(IPC.indexStageAll, repositoryId),
       unstageAll: (repositoryId) => invoke(IPC.indexUnstageAll, repositoryId),
+      refresh: (repositoryId, path) => invoke(IPC.indexRefresh, repositoryId, path),
       prepareCommitGroup: (input) => invoke(IPC.indexPrepareCommitGroup, input),
       updateConflict: (repositoryId, path, content) => invoke(IPC.indexUpdateConflict, repositoryId, path, content),
       resolveConflict: (repositoryId, path, content) => invoke(IPC.indexResolveConflict, repositoryId, path, content),

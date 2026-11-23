@@ -459,3 +459,30 @@ test('starting up paints the changes the server last saw, and holds Commit until
   release();
   await expect(commit).toBeEnabled();
 });
+
+test('a file listed as changed with no differences explains why, and can be cleared without staging it', async ({ pairedPage: page, repository }) => {
+  // Git stores these with Unix line endings and records the size of the Windows ones written to disk.
+  await repository.git('config', 'core.autocrlf', 'true');
+  await repository.commit('notes.txt', 'first\r\nsecond\r\n', 'Add notes');
+  await repository.commit('todo.txt', 'one\r\ntwo\r\n', 'Add todo');
+  // A tool rewrites them with Unix line endings: the same content for Git, but a different size.
+  await write(repository, 'notes.txt', 'first\nsecond\n');
+  await write(repository, 'todo.txt', 'one\ntwo\n');
+  const index = await repository.git('ls-files', '-s');
+  await openRepository(page, repository);
+  await openChanges(page, 2);
+
+  await page.getByRole('button', { name: 'View changes for notes.txt' }).click();
+  await expect(page.getByText('Git lists this file as changed, but its content matches the last staged version.')).toBeVisible();
+  await expect(page.getByText('No differences to show.')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Clear from Changes' }).click();
+
+  await expect(changeRow(page, 'Changes', 'notes.txt')).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Repository views' }).getByRole('button', { name: 'Changes 1' })).toBeVisible();
+  // Only that file: the other one is still listed.
+  await expect(changeRow(page, 'Changes', 'todo.txt')).toBeVisible();
+  expect(await stagedFiles(repository)).toBe('');
+  expect(await repository.git('ls-files', '-s')).toBe(index);
+  expect(await repository.git('status', '--porcelain')).toBe('M todo.txt');
+  expect(await readFile(path.join(repository.path, 'notes.txt'), 'utf8')).toBe('first\nsecond\n');
+});

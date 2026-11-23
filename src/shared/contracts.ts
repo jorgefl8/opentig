@@ -60,7 +60,16 @@ export interface DiffResult {
   lineCount: number;
   /** For a working-tree diff: the server watch that reports changes to its file, when one does. */
   watchId?: string;
+  /**
+   * Why a working-tree diff is empty although the file is listed as changed. `stat-only`: its content,
+   * as Git would stage it, is the staged version; only the size or times Git keeps for it differ on
+   * disk, as when only its line endings changed. `index.refresh` clears it. Only a server that has
+   * `index.refresh` sends it.
+   */
+  emptyReason?: DiffEmptyReason;
 }
+
+export type DiffEmptyReason = 'stat-only';
 
 /** The most one version of a file may weigh to be read whole for its diff. Past it, the diff is its patch alone. */
 export const FILE_VERSION_MAX_BYTES = 1024 * 1024;
@@ -1179,6 +1188,11 @@ export interface OpenTigApi {
     discard(repositoryId: string, paths: string[]): Promise<GitResult>;
     stageAll(repositoryId: string): Promise<GitResult>;
     unstageAll(repositoryId: string): Promise<GitResult>;
+    /**
+     * Clears one file Git lists as changed whose content is the staged version (a diff's `stat-only`):
+     * Git records its size and times again. Stages nothing, and fails when the content differs.
+     */
+    refresh(repositoryId: string, path: string): Promise<GitResult>;
     prepareCommitGroup(input: PrepareCommitGroupInput): Promise<GitResult>;
     updateConflict(repositoryId: string, path: string, content: string): Promise<GitResult>;
     resolveConflict(repositoryId: string, path: string, content: string): Promise<GitResult>;
@@ -1346,7 +1360,7 @@ export const IPC = {
   repositoryFileHistoryState: 'repository:file-history-state', repositorySnapshot: 'repository:snapshot', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', diffFileVersions: 'diff:file-versions', indexStage: 'index:stage',
-  indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
+  indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexRefresh: 'index:refresh', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
   commitsList: 'commits:list', commitsFiles: 'commits:files', commitsFileHistory: 'commits:file-history', commitsRecognize: 'commits:recognize', commitsCountAfter: 'commits:count-after', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',

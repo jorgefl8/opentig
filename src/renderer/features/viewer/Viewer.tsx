@@ -29,6 +29,7 @@ import { withSignal } from '@/lib/websocket-transport';
 import { useServerFeatures } from '@/lib/server-features';
 import type { FileVersionsReader } from './whole-file-diff';
 import { ContentFade } from '@/components/Reveal';
+import { StatOnlyChange } from './StatOnlyChange';
 import { Spinner } from '@/components/ui/spinner';
 // The code viewers start downloading with the document they will show, so it mounts once, on a viewer that is already there.
 const PierreDiffViewer = lazyWithPreload(() => import('./PierreDiffViewer'));
@@ -105,6 +106,8 @@ interface ViewerProps {
   onResolveConflict(path: string, content: string): Promise<boolean>;
   /** A phone's diff bar discards the change it shows. */
   onDiscardDiff?: ((path: string) => void) | undefined;
+  /** Clears an unstaged change whose content is the staged version (a diff's `stat-only`), then refreshes Changes. */
+  onClearStatOnly?: ((path: string) => Promise<void>) | undefined;
 }
 
 /** A document on screen, and the repository it was read from: while another loads, it may not be the open one. */
@@ -132,7 +135,7 @@ async function prepareHighlight(work: (prime: typeof import('./highlight-prime')
 
 const NO_FILE_STAMP = () => null;
 
-function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, fileStamp = NO_FILE_STAMP, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onDiscardDiff }: ViewerProps) {
+function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, fileStamp = NO_FILE_STAMP, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onDiscardDiff, onClearStatOnly }: ViewerProps) {
   const [data, setData] = useState<ViewerData>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -545,7 +548,9 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
             onClose={() => onSelect(null)}
             readFileVersions={versionsRequest ? readDiffVersions : undefined}
           />
-        </Suspense> : <div className="viewer-message">No differences to show.</div>}
+        </Suspense> : data.value.emptyReason === 'stat-only' && selection.type === 'diff' && selection.kind === 'unstaged' && onClearStatOnly
+          ? <StatOnlyChange path={selection.path} readOnly={readOnly} onClear={onClearStatOnly} />
+          : <div className="viewer-message">No differences to show.</div>}
       </div>
     );
   } else {

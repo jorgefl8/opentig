@@ -1725,6 +1725,25 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } finally { setBusy(null); }
   };
 
+  /** Clears a file Git lists as changed although its content is the staged version. Nothing is staged. */
+  const clearStatOnlyChange = async (path: string): Promise<void> => {
+    if (!repository) return;
+    const repositoryId = repository.id;
+    // A file that also has staged changes keeps them: its staged diff is what is left to show.
+    const staged = status?.changes.some((change) => change.path === path && change.staged) ?? false;
+    try {
+      await opentig.index.refresh(repositoryId, path);
+      const shown = viewerSelectionRef.current;
+      if (repositoryRef.current?.id === repositoryId && shown?.type === 'diff' && shown.kind === 'unstaged' && shown.path === path) {
+        selectViewer(staged ? { type: 'diff', path, kind: 'staged' } : null);
+      }
+    } catch (reason) {
+      reportError('Could not clear the file from Changes', reason);
+    } finally {
+      if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
+    }
+  };
+
   const discardChanges = (paths: string[]) => {
     if (!repository || busy || status?.readOnly || paths.length === 0) return;
     setBusy('discard');
@@ -3572,6 +3591,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     onDiffViewChange: (value: Preferences['diffView']) => void updatePreference({ diffView: value }),
     onWrapLinesChange: changeWrapLines,
     onDiscardDiff: (path: string) => discardChanges([path]),
+    onClearStatOnly: clearStatOnlyChange,
     onDraftChange: storeFileDraft,
     // The repository the save began in, which the viewer passes: by the time the write returns another may be open.
     onDraftSaved: (path: string, repositoryId: string) => {
