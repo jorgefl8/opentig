@@ -66,6 +66,8 @@ describe('GitRepositoryOperations stat-only changes', () => {
 
   it('shows a real change, line endings Git does not convert included, and refuses to clear it without staging anything', async () => {
     const fixture = await standaloneRepository();
+    // Git for Windows converts line endings unless told not to.
+    await git(fixture.work, ['config', 'core.autocrlf', 'false']);
     await writeFile(path.join(fixture.work, 'file.txt'), 'content\r\n');
     const lineEndings = await unstagedDiff(fixture, 'file.txt');
     expect(lineEndings.patch).toContain('+content\r');
