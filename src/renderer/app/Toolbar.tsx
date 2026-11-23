@@ -9,6 +9,7 @@ import type { BranchInfo, RepositoryStatus, WorktreeAgents, WorktreeInfo } from 
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
+import { pickerItemMatches } from '@/components/searchable-picker-filter';
 import { AppName } from '@/components/AppName';
 import { OpenTigMark } from '@/components/OpenTigMark';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -22,6 +23,9 @@ import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavi
 import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, shortenRepositoryPath, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import { countsAfterFailedFetch, needsBranchPublication, syncCountsOf, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
 import { createBackgroundSyncPool, type BackgroundSyncPool } from '@/features/repositories/background-sync-pool';
+import { joinsPullAll, pullAllRowNote, type PullAllRun } from '@/features/repositories/pull-all';
+import { PullAllControl, PullAllRowChip } from '@/features/repositories/PullAllControls';
+import { useServerFeatures } from '@/lib/server-features';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
@@ -99,6 +103,13 @@ export interface ToolbarProps {
    * takes from its notice. The operation holds the row until it has.
    */
   onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled: () => Promise<void>): Promise<void>;
+  /** Pull all's run, while its states show on the list's rows. */
+  pullAllRun?: PullAllRun | null | undefined;
+  /** Fast-forwards these rows; `recount` reads a row's counts again once its pull is done. */
+  onPullAll(entries: ReadonlyArray<{ item: RepositoryOption; projectName: string | null }>, recount: (repositoryId: string) => Promise<void>): void;
+  onStopPullAll(): void;
+  /** The list closed after the run ended: its rows go back to what they always show. */
+  onClearPullAll(): void;
   settingsOpen: boolean; settingsSection: SettingsSection;
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
@@ -121,6 +132,9 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
   const navigation = useNavigationKeys();
   const repoSwitcherKey = shortcuts.repoSwitcher.toLowerCase();
   const [repositorySelectOpen, setRepositorySelectOpen] = useState(false);
+  const [repositorySearch, setRepositorySearch] = useState('');
+  const features = useServerFeatures();
+  const pullAllRun = props.pullAllRun ?? null;
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [refsOpen, setRefsOpen] = useState(false);
   const [refsTab, setRefsTab] = useState<LocalRefsTab>('branches');
@@ -231,6 +245,18 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
   useEffect(() => {
     if (repositorySelectOpen) refreshRepositorySyncCounts(picker.repositories);
   }, [picker.repositories, refreshRepositorySyncCounts, repositorySelectOpen]);
+  // A run's states stay while the list is open, and when it opens again after closing mid-run;
+  // closing it once the run has ended lets the rows go back to what they always show.
+  const pickerWasOpen = useRef(false);
+  const pullAllFinished = pullAllRun?.finished === true;
+  const { onClearPullAll } = props;
+  useEffect(() => {
+    if (pickerWasOpen.current && !repositorySelectOpen) {
+      setRepositorySearch('');
+      if (pullAllFinished) onClearPullAll();
+    }
+    pickerWasOpen.current = repositorySelectOpen;
+  }, [onClearPullAll, pullAllFinished, repositorySelectOpen]);
   const { onRepositoryPickerOpen } = props;
   useEffect(() => {
     if (repositorySelectOpen) onRepositoryPickerOpen();
@@ -334,15 +360,18 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
         </>,
       };
     }
+    const runState = pullAllRun?.rows.get(group.recent.id);
     return {
       value: group.key,
       label: group.name,
       description: checkoutLabel || 'Repository',
+      note: pullAllRowNote(runState),
       search: group.recent.path,
       tooltip: group.recent.path,
       icon: <RepositoryFaviconImage src={favicons.get(group.key)} />,
       trailing: <>
-      <span className="repository-sync-actions">
+      {runState?.phase !== 'running' && <PullAllRowChip state={runState} />}
+      {runState?.phase !== 'queued' && <span className="repository-sync-actions">
         {visibleRepositorySyncActions(counts, props.repositorySyncOperations.get(group.recent.id)).map((action) => {
           const running = props.repositorySyncOperations.get(group.recent.id);
           const disabled = Boolean(running) || Boolean(counts?.readOnly || counts?.operation) || (Boolean(props.busy) && group.recent.id === props.repository.id);
@@ -375,25 +404,46 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
             </Tooltip>
           );
         })}
-      </span>
+      </span>}
       <Kbd className="repo-select-index">{repositoryIndex.get(group.key)}</Kbd>
       </>,
     };
   };
   const githubUrl = props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner ? `https://github.com/${props.githubInfo.nameWithOwner}` : null;
+  const repositorySections = [
+    ...picker.projectSections.map((section) => ({ id: section.id, label: section.name, projectName: section.name as string | null, repositories: section.repositories })),
+    { id: 'unassigned', label: 'Repositories', projectName: null, repositories: picker.unassigned },
+  ];
+  const repositoryGroups = repositorySections.map((section) => ({
+    id: section.id,
+    label: section.label,
+    items: section.repositories.map((repository) => repositoryItem(repository, section.projectName)),
+  }));
+  // Pull all takes the rows the search leaves on screen, with the counts known so far: the
+  // button shows with the first counts to arrive and its number grows as the rest do.
+  const shownRepositories = repositorySections.flatMap((section, index) => section.repositories
+    .filter((_, row) => pickerItemMatches(section.label, repositoryGroups[index]!.items[row]!, repositorySearch))
+    .map((item) => ({ item, projectName: section.projectName })));
+  const pullAllEntries = features.fastForwardPull ? shownRepositories.filter(({ item }) => joinsPullAll(repositorySyncCounts.get(item.recent.id), {
+    running: props.repositorySyncOperations.has(item.recent.id),
+    unavailable: props.unavailableRepositoryIds.has(item.recent.id),
+    openAndBusy: item.recent.id === props.repository.id && Boolean(props.busy),
+    previous: pullAllRun?.rows.get(item.recent.id),
+  })) : [];
+  const pullAllLeftOut = shownRepositories.filter(({ item }) => {
+    const counts = repositorySyncCounts.get(item.recent.id);
+    return Boolean(counts && counts.behind > 0 && counts.ahead > 0) && !props.repositorySyncOperations.has(item.recent.id) && !props.unavailableRepositoryIds.has(item.recent.id);
+  }).map(({ item }) => item.name);
   const repositoryControl = (
       <SearchablePicker
-        groups={[
-          ...picker.projectSections.map((section) => ({
-            id: section.id,
-            label: section.name,
-            items: section.repositories.map((repository) => repositoryItem(repository, section.name)),
-          })),
-          { id: 'unassigned', label: 'Repositories', items: picker.unassigned.map((repository) => repositoryItem(repository)) },
-        ]}
+        groups={repositoryGroups}
+        searchAction={features.fastForwardPull ? (
+          <PullAllControl run={pullAllRun} count={pullAllEntries.length} searching={repositorySearch.trim() !== ''} leftOut={pullAllLeftOut}
+            onPull={() => props.onPullAll(pullAllEntries, recountRepository)} onStop={props.onStopPullAll} />
+        ) : undefined}
         open={repositorySelectOpen}
         onOpenChange={(open) => { setRepositorySelectOpen(open); if (!open) clearRepositoryNumberShortcut(); }}
-        onSearchChange={clearRepositoryNumberShortcut}
+        onSearchChange={(query) => { setRepositorySearch(query); clearRepositoryNumberShortcut(); }}
         focusSearch={false}
         value={pendingRepository?.key ?? currentRepositoryKey}
         onValueChange={(key) => { setMobileContextOpen(false); onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null); }}

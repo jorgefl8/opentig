@@ -2147,6 +2147,26 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
 /* The detached HEAD's note sits above the branches; the menu grows by about its height rather than taking it from the list. */
 .searchable-picker[data-slot="combobox-content"]:has(.branch-detached-notice) { max-height: min(36rem, var(--available-height)); }
 .repository-picker .searchable-picker-list { max-height: none; }
+/* A row's result in place of its branch, coloured like the chip at its right. */
+.searchable-picker-copy small[data-tone="success"] { color: var(--success); }
+.searchable-picker-copy small[data-tone="warning"] { color: var(--warning); }
+.searchable-picker-copy small[data-tone="error"] { color: var(--destructive); }
+/* Pull all sits at the end of the search, tinted like the rows' own Pull. */
+.pull-all-control { display: inline-flex; flex: none; align-items: center; gap: 4px; }
+.searchable-picker [data-slot="combobox-input"] .pull-all-button { height: 24px; flex: none; gap: 3px; padding-inline: 6px 7px; border-radius: 6px; font-size: var(--text-ui); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+.searchable-picker [data-slot="combobox-input"] .pull-all-button svg { width: 13px; height: 13px; }
+.pull-all-progress { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: var(--text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pull-all-progress [data-slot="spinner"] { width: 13px; height: 13px; }
+.searchable-picker [data-slot="combobox-input"] .pull-all-stop { height: 24px; padding-inline: 8px; border-radius: 6px; color: var(--muted-foreground); font-size: var(--text-ui); font-weight: var(--weight-medium); }
+.searchable-picker [data-slot="combobox-input"] .pull-all-stop:hover { background: var(--row-hover); color: var(--foreground); }
+.pull-all-chip { display: inline-flex; height: 20px; flex: none; align-items: center; gap: 4px; padding: 0 7px; border-radius: 999px; font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; }
+.pull-all-chip svg { width: 12px; height: 12px; flex: none; }
+.pull-all-chip-icon { width: 20px; justify-content: center; padding: 0; }
+.pull-all-chip[data-tone="queued"] { background: color-mix(in oklch, var(--foreground) 7%, transparent); color: var(--muted-foreground); }
+.pull-all-chip[data-tone="success"] { background: color-mix(in oklch, var(--success) 14%, transparent); color: var(--success); }
+.pull-all-chip[data-tone="warning"] { background: color-mix(in oklch, var(--warning) 15%, transparent); color: var(--warning); }
+.pull-all-chip[data-tone="error"] { background: color-mix(in oklch, var(--destructive) 15%, transparent); color: var(--destructive); }
+.pull-all-chip[data-tone="off"] { border: 1px solid var(--border); color: var(--muted-foreground); }
 .searchable-picker-group { padding: 6px 8px 3px; font-size: var(--text-meta); font-weight: var(--weight-strong); line-height: 14px; }
 .searchable-picker-item { min-height: 32px; padding: 5px 28px 5px 8px; gap: 7px; border-radius: 5px; color: var(--popover-foreground); }
 .searchable-picker-item + .searchable-picker-item { margin-top: 2px; }
@@ -2258,6 +2278,7 @@ html .mobile-float .mobile-main-action.pr-primary-progress:disabled { background
   html .searchable-picker-copy strong { font-size: var(--text-body); }
   html .searchable-picker-copy small { font-size: var(--text-meta); }
   html .searchable-picker-footer button { min-height: 44px; }
+  html .searchable-picker [data-slot="combobox-input"] :is(.pull-all-button, .pull-all-stop) { height: 40px; padding-inline: 9px; font-size: var(--text-meta); }
 }
 
 /* GitHub settings share the settings rows. Unlayered like the dialog widths above,

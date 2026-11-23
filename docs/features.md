@@ -65,6 +65,12 @@ After you locate one moved repository, OpenTig looks for the other missing ones 
 
 Pull or push from an individual repository's row. Opening the picker fetches the listed repositories, four at a time, to refresh their checkout and ahead/behind counts. Only pending operations appear, with their commit counts; multiple repositories can sync concurrently with separate progress and result notifications. A row keeps its spinner until the repository's counts have been read again, then shows what is left: nothing once everything has been pulled or pushed, or the action with its count when a pull failed or a push was refused.
 
+**Pull all** sits beside the picker's search when at least one row can take it, with how many: **Pull all 6**, or **Pull 3 shown** while a search narrows the list, because it only takes the rows on screen. It appears with the first counts that arrive and its number grows as the rest do; rows whose counts arrive after you press it wait for the next run. Its tooltip names the rows on screen that need their own Pull.
+
+Pull all only fast-forwards. A row goes in when its branch tracks a remote branch, is behind it, and has no commits of its own; rows with local changes go in too. It leaves out branches that have diverged, have no upstream, or are on a detached HEAD, repositories that are read-only or in the middle of a Git operation, **Not found** rows, and rows already pulling or pushing. Each repository is fetched again first, and then Git either moves the branch past local changes it doesn't need to touch, keeping them as they were, or, when one is in the way, changes nothing and the row is skipped. There is no safety stash and no rebase; those stay with the row's own Pull. Only the worktree each row shows is pulled, never the repository's other worktrees.
+
+Up to four repositories pull at once, and one failing doesn't stop the others. While the run goes, the search box shows how many are done and **Stop**, and each row shows **Queued**, its spinner, or how it ended: green with the commits pulled ("2 commits pulled, local changes kept"), amber when skipped ("Local changes in the way"), or red when the pull failed ("Couldn't reach the remote"). Skipped and failed rows keep their own Pull, and a row skipped by the run on screen is left out of the next one. **Stop** starts no more repositories and marks them **Not pulled**; those already pulling finish. A single notification follows the run and ends with a summary such as "Pulled 4 of 6 repositories", with a line for each repository that wasn't pulled. Closing the picker doesn't stop the run, and the rows still show their states when it opens again. Closing it after the run has ended brings the rows back to their branches. There is no Push all: each push stays on its own row.
+
 Choose periodic remote checks, or turn them off, in **Settings → General**. Manual Refresh still fetches when periodic checks are off. See [remote checks and refresh](interface.md#remote-checks-and-refresh).
 
 <details>
@@ -195,7 +201,7 @@ This applies when the branch pushes to its upstream's remote and `push.default` 
 
 **Read progress and errors**
 
-Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. **Changes** remains the place to inspect unresolved work.
+Each pull or push has its own progress and result notification, except **Pull all** in the repository picker, which has one for the whole run. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. **Changes** remains the place to inspect unresolved work.
 
 **Push when the remote has commits you don't have**
 

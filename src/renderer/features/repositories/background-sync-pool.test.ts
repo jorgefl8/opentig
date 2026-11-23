@@ -38,4 +38,13 @@ describe('background sync pool', () => {
     pool.request(['a']);
     expect(started).toEqual(['a', 'b', 'c', 'a']);
   });
+
+  it('stop drops the repositories still waiting and lets the running ones finish', async () => {
+    const { pool, started, complete } = harness(2);
+    pool.request(['a', 'b', 'c', 'd']);
+    expect(pool.stop()).toEqual(['c', 'd']);
+    await complete('a');
+    await complete('b');
+    expect(started).toEqual(['a', 'b']);
+  });
 });

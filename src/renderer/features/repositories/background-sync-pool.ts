@@ -1,6 +1,8 @@
 export interface BackgroundSyncPool {
   /** Asks for each repository to be synced. One that is already waiting or running is left alone. */
   request(repositoryIds: Iterable<string>): void;
+  /** Drops the repositories still waiting, and says which; those running finish. */
+  stop(): string[];
 }
 
 /**
@@ -29,6 +31,9 @@ export function createBackgroundSyncPool(concurrency: number, sync: (repositoryI
         if (!running.has(repositoryId) && !waiting.includes(repositoryId)) waiting.push(repositoryId);
       }
       next();
+    },
+    stop() {
+      return waiting.splice(0);
     },
   };
 }

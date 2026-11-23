@@ -68,7 +68,7 @@ function ComboboxContent({
   )
 }
 
-function ComboboxInput({ className, ...props }: ComboboxPrimitive.Input.Props) {
+function ComboboxInput({ className, trailing, ...props }: ComboboxPrimitive.Input.Props & { trailing?: React.ReactNode }) {
   return (
     <div data-slot="combobox-input" className="flex items-center gap-2 border-b border-border/70 px-3">
       <IconSearch className="size-4 shrink-0 text-muted-foreground" />
@@ -79,6 +79,7 @@ function ComboboxInput({ className, ...props }: ComboboxPrimitive.Input.Props) {
         )}
         {...props}
       />
+      {trailing}
     </div>
   )
 }

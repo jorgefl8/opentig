@@ -63,6 +63,8 @@ import { Welcome } from '@/features/repositories/Welcome';
 import { RepositoryUnavailable } from '@/features/repositories/RepositoryUnavailable';
 import { RepositoryRelocationsDialog } from '@/features/repositories/RepositoryRelocationsDialog';
 import { touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
+import { PULL_ALL_CONCURRENCY, pullAllFailure, pullAllOutcome, pullAllSettled, pullAllSummary, startPullAll, stopPullAll, withPullAllRow, type PullAllRowState, type PullAllRun } from '@/features/repositories/pull-all';
+import { createBackgroundSyncPool } from '@/features/repositories/background-sync-pool';
 import { createRepositorySwitcher } from '@/features/repositories/repository-switch';
 import { announce, arrive, confirmedWatch, needsRead, NO_WATCH_TRUST, reconnected, startedUp, suspend, type WatchTrust } from './watch-trust';
 import { forgetReusedIds, relocatedId, ReopenAttempts, repositoryAgreement } from './repository-agreement';
@@ -295,6 +297,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const sidebarElement = useRef<HTMLElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [repositorySyncOperations, setRepositorySyncOperations] = useState<ReadonlyMap<string, ProjectSyncAction>>(() => new Map());
+  // Pull all's run lives here, not in the list, so closing the list neither stops it nor loses its states.
+  const [pullAllRun, setPullAllRun] = useState<PullAllRun | null>(null);
+  const pullAllStop = useRef<(() => void) | null>(null);
 
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [searchRevision, setSearchRevision] = useState(0);
@@ -3334,6 +3339,65 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   };
 
+  /**
+   * Fast-forwards several repositories of the list a few at a time, with their states on the rows
+   * and one notice for the whole run. Each takes the row's place as its own Pull would, so the
+   * row's buttons wait for it, and its counts are read again before the row is let go.
+   */
+  const pullAll = (entries: ReadonlyArray<{ item: RepositoryOption; projectName: string | null }>, recount: (repositoryId: string) => Promise<void>) => {
+    if (pullAllStop.current) return;
+    const chosen = entries.filter(({ item }) => !repositorySyncOperationsRef.current.has(item.recent.id));
+    if (chosen.length === 0) return;
+    let run = startPullAll(chosen.map(({ item, projectName }) => ({ id: item.recent.id, label: projectName ? `${projectName} · ${item.name}` : item.name })));
+    const loading = repositorySyncLoadingToast('all', 'pull', `Pulling ${chosen.length} ${chosen.length === 1 ? 'repository' : 'repositories'}…`);
+    const show = (next: PullAllRun) => { run = next; setPullAllRun(next); };
+    const finishIfSettled = () => {
+      if (run.finished || !pullAllSettled(run)) return;
+      pullAllStop.current = null;
+      show({ ...run, finished: true });
+      const summary = pullAllSummary(run);
+      sileo.show({
+        ...loading, type: summary.type, title: summary.title, duration: summary.duration,
+        ...(summary.lines.length > 0 ? { description: <>{summary.lines.map((line) => <span key={line} className="block">{line}</span>)}</> } : {}),
+      });
+    };
+    const settle = (repositoryId: string, state: PullAllRowState) => {
+      show(withPullAllRow(run, repositoryId, state));
+      finishIfSettled();
+    };
+    const pool = createBackgroundSyncPool(PULL_ALL_CONCURRENCY, async (repositoryId) => {
+      // Its own Pull or Push started while it waited: that one reports on it.
+      if (repositorySyncOperationsRef.current.has(repositoryId)) { settle(repositoryId, { phase: 'not-pulled' }); return; }
+      repositorySyncOperationsRef.current.set(repositoryId, 'pull');
+      setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+      show(withPullAllRow(run, repositoryId, { phase: 'running' }));
+      let outcome: PullAllRowState;
+      try {
+        outcome = pullAllOutcome(await opentig.refs.pull(repositoryId, { fastForwardOnly: true }));
+      } catch (reason) {
+        outcome = pullAllFailure(reason);
+      }
+      // A refresh that fails leaves the open repository as it was shown; the pull's outcome stands.
+      if (repositoryRef.current?.id === repositoryId) await refresh({ background: true }).catch(() => undefined);
+      await settleRepositorySync(() => recount(repositoryId), () => {
+        repositorySyncOperationsRef.current.delete(repositoryId);
+        setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+        settle(repositoryId, outcome);
+      });
+    });
+    // Those still waiting are not pulled; those pulling finish, and the last of them ends the run.
+    pullAllStop.current = () => {
+      pool.stop();
+      show(stopPullAll(run));
+      finishIfSettled();
+    };
+    show(run);
+    sileo.show({ ...loading, type: 'loading', duration: null });
+    pool.request(run.repositoryIds);
+  };
+  const stopPullAllRun = () => pullAllStop.current?.();
+  const clearPullAll = () => { if (!pullAllStop.current) setPullAllRun(null); };
+
   const ensureRepositoryCanBeManaged = (option: RepositoryOption) => {
     const ids = bootstrap?.recentRepositories.filter((item) => normalizeRepositoryKey(item.commonDir) === option.key).map((item) => item.id) ?? [];
     if (ids.some((id) => dirtyTabs(fileSessionsRef.current.get(id) ?? emptyFileSession).length > 0)) {
@@ -3518,6 +3582,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     onPull: () => void pullUpdates(),
     onPush: () => void pushUpdates(),
     onRepositorySync: syncRepository,
+    onPullAll: pullAll,
+    onStopPullAll: stopPullAllRun,
+    onClearPullAll: clearPullAll,
     onPreference: updateSettingsPreference,
     onForgetRepository: forgetRepository,
     onRelocateRepository: relocateRepository,
@@ -3998,6 +4065,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           busy={busy}
           githubRefreshing={githubRefreshingIds.has(repository.id)}
           repositorySyncOperations={repositorySyncOperations}
+          pullAllRun={pullAllRun}
           remoteProblem={remoteProblem?.repositoryId === repository.id ? remoteProblem : null}
           pendingRepositoryId={pendingRepositoryId}
           repositoryLoadPhase={repositoryLoadPhase}

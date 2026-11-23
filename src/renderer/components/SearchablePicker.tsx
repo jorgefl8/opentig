@@ -6,6 +6,7 @@ import { Kbd } from '@/components/ui/kbd';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { cn } from '@/lib/utils';
+import { pickerItemMatches } from './searchable-picker-filter';
 
 export interface SearchablePickerItem {
   value: string;
@@ -17,6 +18,8 @@ export interface SearchablePickerItem {
   search?: string;
   disabled?: boolean;
   pinned?: boolean;
+  /** Shown in place of the description, in a tone, while the search keeps matching the description. */
+  note?: { text: string; tone: 'success' | 'warning' | 'error' } | null | undefined;
 }
 
 export interface SearchablePickerGroup {
@@ -54,17 +57,20 @@ interface SearchablePickerProps {
   management?: SearchablePickerAction[];
   /** Says something about the current state above the list, without being one of its choices. */
   notice?: ReactNode;
+  /** A control at the end of the search box, for something done to the rows the list shows. */
+  searchAction?: ReactNode;
   disabled?: boolean | undefined;
   align?: 'start' | 'end';
   open?: boolean;
   onOpenChange?(open: boolean): void;
   focusSearch?: boolean;
-  onSearchChange?(): void;
+  /** The search as typed; it empties when the picker closes, without a call. */
+  onSearchChange?(query: string): void;
 }
 
 /** Compact selection for toolbars and forms; optional management actions stay outside the listbox. */
 export function SearchablePicker({ groups, value, onValueChange, label, triggerLabel, icon, triggerHint, triggerIndicator,
-  triggerId, size = 'sm', triggerClassName, contentClassName, shortcut, placeholder, management, notice, disabled, align = 'end',
+  triggerId, size = 'sm', triggerClassName, contentClassName, shortcut, placeholder, management, notice, searchAction, disabled, align = 'end',
   open: controlledOpen, onOpenChange, focusSearch = true, onSearchChange,
 }: SearchablePickerProps) {
   const comboboxId = useId();
@@ -95,9 +101,8 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
   const items = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const selected = items.find((item) => item.value === value) ?? null;
   const needle = query.trim().toLocaleLowerCase();
-  const filtered = useMemo(() => groups.map((group) => ({ ...group, items: group.items.filter((item) =>
-    item.pinned || `${group.label} ${item.label} ${item.description ?? ''} ${item.search ?? ''}`.toLocaleLowerCase().includes(needle),
-  ) })).filter((group) => group.items.length > 0), [groups, needle]);
+  const filtered = useMemo(() => groups.map((group) => ({ ...group, items: group.items.filter((item) => pickerItemMatches(group.label, item, needle)) }))
+    .filter((group) => group.items.length > 0), [groups, needle]);
   const filteredItems = useMemo(() => filtered.flatMap(group => group.items), [filtered]);
   // Small menus keep their ordinary layout; large menus mount only a viewport and overscan.
   const virtualized = filteredItems.length >= 100;
@@ -124,7 +129,7 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
       open={controlledOpen ?? internalOpen}
       onOpenChange={changeOpen}
       inputValue={query}
-      onInputValueChange={(next) => { setQuery(next); onSearchChange?.(); }}
+      onInputValueChange={(next) => { setQuery(next); onSearchChange?.(next); }}
       filter={null}
       disabled={disabled}
       itemToStringLabel={(item: SearchablePickerItem | null) => item?.label ?? ''}
@@ -144,7 +149,7 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
         <TooltipContent className="break-all">{triggerTruncated ? [triggerLabel, triggerHint].filter(Boolean).join(' · ') : triggerHint}</TooltipContent>
       </Tooltip>
       <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch && !mobile}>
-        <ComboboxInput placeholder={placeholder} aria-label={placeholder} />
+        <ComboboxInput placeholder={placeholder} aria-label={placeholder} trailing={searchAction} />
         {notice}
         {virtualized ? <VirtualPickerList query={needle} groups={filtered} selectedIndex={selected ? filteredItems.indexOf(selected) : -1} highlight={highlight} scrolling={scrolling} label={label} comboboxId={comboboxId} onScroll={dismissScrollingTooltips} /> : <ComboboxList className="searchable-picker-list" aria-label={label} onScroll={dismissScrollingTooltips} onWheelCapture={dismissScrollingTooltips}>
           {filtered.length === 0 && <div className="searchable-picker-empty" role="status">No matches</div>}
@@ -255,15 +260,15 @@ function PickerOption({ item, scrolling, index, id, setSize }: { item: Searchabl
     observer.observe(element);
     for (const child of element.children) observer.observe(child);
     return () => observer.disconnect();
-  }, [item.label, item.description]);
-  const visibleText = [item.label, item.description].filter(Boolean).join(' · ');
+  }, [item.label, item.description, item.note?.text]);
+  const visibleText = [item.label, item.note?.text ?? item.description].filter(Boolean).join(' · ');
   // Only a row cut short has a tooltip, and then it says the most it can, such as a full path.
   // On every row it got in the way of reading the menu, for detail rarely needed.
   // TooltipTrigger also supplies an ID; it must agree with the combobox's active descendant.
   return <Tooltip disabled={scrolling || !truncated}>
     <TooltipTrigger id={id} render={<ComboboxItem value={item} index={index} aria-posinset={setSize === undefined ? undefined : index + 1} aria-setsize={setSize} disabled={item.disabled} className={cn('searchable-picker-item', item.description && 'searchable-picker-item-detailed')} />}>
       {item.icon && <span className="searchable-picker-icon">{item.icon}</span>}
-      <span ref={copy} className="searchable-picker-copy"><strong>{item.label}</strong>{item.description && <small>{item.description}</small>}</span>
+      <span ref={copy} className="searchable-picker-copy"><strong>{item.label}</strong>{item.note ? <small data-tone={item.note.tone}>{item.note.text}</small> : item.description && <small>{item.description}</small>}</span>
       {item.trailing && <span className="searchable-picker-trailing">{item.trailing}</span>}
     </TooltipTrigger>
     <TooltipContent>{item.tooltip || visibleText}</TooltipContent>
